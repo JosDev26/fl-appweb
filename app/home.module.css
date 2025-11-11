@@ -1,0 +1,139 @@
+.container {
+  padding: 2rem;
+  min-height: 100vh;
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.title {
+  color: var(--foreground);
+  margin-bottom: 1rem;
+}
+
+.successMessage {
+  color: #22c55e;
+  margin-bottom: 2rem;
+  font-weight: 500;
+}
+
+.errorContainer {
+  margin-top: 1rem;
+}
+
+.errorMessage {
+  color: #ef4444;
+  margin-bottom: 0.5rem;
+}
+
+.errorDetails {
+  font-size: 0.9em;
+  margin-top: 1rem;
+  color: var(--foreground-muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.section {
+  color: var(--foreground);
+}
+
+.sectionTitle {
+  color: var(--foreground);
+  margin-bottom: 1rem;
+}
+
+.dataContainer {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--card-background);
+}
+
+.dataItem {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  background: var(--card-item-background);
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+}
+
+.dataItemTitle {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.dataItemDetails {
+  color: var(--foreground-muted);
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.infoSection {
+  margin-top: 2rem;
+  padding: 1rem;
+  background: var(--info-background);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.infoTitle {
+  color: var(--foreground);
+  margin-bottom: 1rem;
+}
+
+.infoList {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.infoList li {
+  color: var(--foreground);
+  margin-bottom: 0.5rem;
+}
+
+.infoList strong {
+  color: var(--foreground-emphasis);
+}
+
+.emptyMessage {
+  color: var(--foreground-muted);
+  font-style: italic;
+}
+
+/* Variables CSS para modo claro y oscuro */
+:root {
+  --foreground: #000;
+  --foreground-muted: #666;
+  --foreground-emphasis: #333;
+  --background: #fff;
+  --card-background: #fff;
+  --card-item-background: #f9f9f9;
+  --border: #ddd;
+  --border-light: #eee;
+  --info-background: #f0f8ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground: #fff;
+    --foreground-muted: #aaa;
+    --foreground-emphasis: #fff;
+    --background: #000;
+    --card-background: #111;
+    --card-item-background: #222;
+    --border: #333;
+    --border-light: #444;
+    --info-background: #1a1a2e;
+  }
+}

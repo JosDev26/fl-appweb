@@ -1,0 +1,56 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { SyncService } from '../../../lib/syncService';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { direction } = body; // 'usuarios-to-clientes' | 'clientes-to-usuarios' | 'bidirectional'
+
+    let result;
+
+    switch (direction) {
+      case 'usuarios-to-clientes':
+        result = await SyncService.syncUsuariosToClientes();
+        break;
+      
+      case 'clientes-to-usuarios':
+        result = await SyncService.syncClientesToUsuarios();
+        break;
+      
+      case 'bidirectional':
+      default:
+        result = await SyncService.syncBidirectional();
+        break;
+    }
+
+    return NextResponse.json(result, { 
+      status: result.success ? 200 : 500 
+    });
+
+  } catch (error) {
+    console.error('Error in sync API:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        message: `Error: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET() {
+  try {
+    const stats = await SyncService.getStats();
+    return NextResponse.json({ success: true, data: stats });
+  } catch (error) {
+    console.error('Error getting sync stats:', error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        message: `Error: ${error instanceof Error ? error.message : 'Error desconocido'}` 
+      },
+      { status: 500 }
+    );
+  }
+}
