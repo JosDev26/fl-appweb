@@ -1,0 +1,92 @@
+:root{
+  --yellow-color: #FAD02C;
+  --dark-blue-color: #19304B;
+}
+
+body{
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+    overflow-x: hidden; /* Prevent horizontal scrollbar */
+}
+/* Clase para elementos inicialmente ocultos */
+.hidden-initial {
+    opacity: 0;
+}
+h2{
+    font-size: calc(2vw + 1rem);
+    text-align: center;
+    font-weight: 800;
+    color: #fff;
+}
+.experience-container{
+    position: relative;
+    padding: clamp(1.5em, 2em, 3em) 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 100em;
+}
+.experience-container .experience-items .experience-item p{
+    text-align: center;
+    font-size: calc(0.7rem + 0.5vw);
+    text-wrap-style: balance;
+}
+.experience-container .experience-items{
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: clamp(1em, 1.5em, 2em);
+    flex-wrap: wrap;
+    padding: 0 1em;
+    position: relative;
+    z-index: 1;
+}
+.experience-container .experience-items h2{
+    color: var(--yellow-color);
+    padding: 0;
+    margin: 0;
+    font-size: clamp(2rem, 5vw, 4rem);
+}
+.experience-container p{
+    color: #fff;
+    padding: 0;
+    margin: 0;
+    font-weight: 500;
+}
+.experience-container .experience-items .experience-item{
+    display: flex;
+    flex-direction: column;
+    place-content: center;
+    border: clamp(6px, 0.8vw, 10px) solid var(--yellow-color);
+    width: clamp(200px, 15vw, 300px);
+    min-height: clamp(140px, 7vw, 200px);
+    padding: clamp(1em, 1.5vw + 0.5em, 2em);
+    background-color: var(--dark-blue-color);
+    flex: 0 1 auto;
+    position: relative;
+    z-index: 2;
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+    transform-origin: center;
+}
+
+.experience-container .experience-items .experience-item:hover{
+    box-shadow: 0 10px 30px rgba(250, 208, 44, 0.3);
+    border-color: #f5d957;
+}
+
+.experience-container .background-line{
+    position: absolute;
+    width: 100vw;
+    height: clamp(60px, 10vh, 120px);
+    background-color: var(--yellow-color);
+    z-index: 1;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+    left: 50%;
+    top: 50%;
+    margin-left: -50vw;
+    margin-top: calc(clamp(60px, 10vh, 120px) / -2);
+    pointer-events: none;
+} 

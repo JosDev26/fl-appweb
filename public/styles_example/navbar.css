@@ -1,0 +1,62 @@
+/* TODO: Hacer responsive la barra de navegación */
+/* TODO: Hacer animación de la barra de navegación */
+:root{
+  --yellow-color: #FAD02C;
+  --dark-blue-color: #19304B;
+}
+.item-menu{
+    
+    margin-left: -8px;
+}
+/*Parte de los bordes*/
+.item-menu:nth-child(even){
+    border-bottom: 10px solid var(--yellow-color);
+    border-left: 10px solid var(--yellow-color);
+    border-right: 10px solid var(--yellow-color);
+    padding: 0em 1em 1em 1em;
+}
+.item-menu:nth-child(odd){
+    border-top: 10px solid var(--yellow-color);
+    border-left: 10px solid var(--yellow-color);
+    border-right: 10px solid var(--yellow-color);
+    padding: 1em 1em 0em 1em;
+}
+
+/*Fin de los bordes*/
+.menu-escalonado-container{
+    width: 85vw;
+    justify-self: center;
+    align-content: center;
+    display: flex;
+    justify-content: center;
+}
+.menu-escalonado{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: 1fr;
+    width: 90%;
+    padding: 0;
+}
+.menu-escalonado .item-menu li{
+    list-style: none;
+    border: 1px solid rgba(255, 255, 0, 0);
+    text-align: center;
+    font-weight: 700;
+    width: 80%;
+    margin: 0 auto;
+    padding: 0.7em ;
+    cursor: pointer;
+    
+}
+.menu-escalonado .item-menu li a:link, .menu-escalonado .item-menu li a:visited {
+    color: var(--yellow-color);
+    text-decoration: none;
+}
+.menu-escalonado .item-menu li.active{
+    background-color: var(--yellow-color);
+    border: 1px solid var(--yellow-color);
+    & a{
+        color: var(--dark-blue-color);
+    }
+}
+

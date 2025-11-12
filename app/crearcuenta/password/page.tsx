@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import styles from './password.module.css'
 
 interface PasswordValidation {
   hasMinLength: boolean
@@ -13,6 +14,7 @@ interface PasswordValidation {
 
 function CrearPasswordForm() {
   const [identificacion, setIdentificacion] = useState('')
+  const [tipoUsuario, setTipoUsuario] = useState<'cliente' | 'empresa'>('cliente')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
@@ -26,16 +28,20 @@ function CrearPasswordForm() {
   })
   
   const router = useRouter()
-  const searchParams = useSearchParams()
 
   useEffect(() => {
-    const id = searchParams.get('id')
-    if (!id) {
+    // Obtener la identificación y tipo de sessionStorage
+    const tempId = sessionStorage.getItem('tempIdentificacion')
+    const tempTipo = sessionStorage.getItem('tempTipoUsuario') as 'cliente' | 'empresa'
+    
+    if (!tempId || !tempTipo) {
+      // Si no hay identificación guardada, redirigir al inicio
       router.push('/crearcuenta')
       return
     }
-    setIdentificacion(id)
-  }, [searchParams, router])
+    setIdentificacion(tempId)
+    setTipoUsuario(tempTipo)
+  }, [router])
 
   const validatePassword = (pwd: string): PasswordValidation => {
     return {
@@ -80,7 +86,12 @@ function CrearPasswordForm() {
     setError('')
 
     try {
-      const response = await fetch('/api/crear-password', {
+      // Usar la API correspondiente según el tipo de usuario
+      const endpoint = tipoUsuario === 'cliente' 
+        ? '/api/crear-password' 
+        : '/api/crear-password-empresa'
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,9 +108,13 @@ function CrearPasswordForm() {
         throw new Error(data.error || 'Error al crear contraseña')
       }
 
+      // Limpiar sessionStorage
+      sessionStorage.removeItem('tempIdentificacion')
+      sessionStorage.removeItem('tempTipoUsuario')
+      
       // Mostrar mensaje de éxito y redirigir
       alert('Contraseña creada exitosamente. Su cuenta ha sido activada.')
-      router.push('/')
+      router.push('/login')
       
     } catch (error) {
       console.error('Error:', error)
@@ -110,85 +125,79 @@ function CrearPasswordForm() {
   }
 
   const ValidationItem = ({ isValid, text }: { isValid: boolean; text: string }) => (
-    <div className={`flex items-center text-sm ${isValid ? 'text-green-600' : 'text-red-600'}`}>
-      <span className="mr-2">{isValid ? '✓' : '✗'}</span>
-      {text}
+    <div className={`${styles.validationItem} ${isValid ? styles.valid : styles.invalid}`}>
+      <span>{isValid ? '✓' : '✗'}</span>
+      <span>{text}</span>
     </div>
   )
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Crear Contraseña
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Configure una contraseña segura para su cuenta
-          </p>
+    <div className={styles.container}>
+      <div className={styles.card}>
+        <div className={styles.logoSection}>
+          <div className={styles.logoCircle}>
+            <span className={styles.logoText}>FL</span>
+          </div>
+          <h1 className={styles.title}>Crear Contraseña</h1>
+          <p className={styles.subtitle}>Configure una contraseña segura para su cuenta de {tipoUsuario}</p>
         </div>
         
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            {/* Campo de identificación (solo lectura) */}
-            <div>
-              <label htmlFor="identificacion-readonly" className="block text-sm font-medium text-gray-700">
-                Identificación
-              </label>
-              <input
-                id="identificacion-readonly"
-                type="text"
-                value={identificacion}
-                readOnly
-                className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 bg-gray-100 text-gray-900 sm:text-sm"
-              />
-            </div>
-
-            {/* Campo de contraseña */}
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Contraseña
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Ingrese su contraseña"
-                value={password}
-                onChange={handlePasswordChange}
-                disabled={loading}
-              />
-            </div>
-
-            {/* Campo de confirmar contraseña */}
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                Confirmar Contraseña
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                required
-                className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                placeholder="Confirme su contraseña"
-                value={confirmPassword}
-                onChange={(e) => {
-                  setConfirmPassword(e.target.value)
-                  setError('')
-                }}
-                disabled={loading}
-              />
-            </div>
+        <form onSubmit={handleSubmit} className={styles.form}>
+          <div className={styles.formGroup}>
+            <label htmlFor="identificacion-readonly" className={styles.label}>
+              Identificación
+            </label>
+            <input
+              id="identificacion-readonly"
+              type="text"
+              value={identificacion}
+              readOnly
+              className={styles.input}
+              disabled
+            />
           </div>
 
-          {/* Validaciones de contraseña */}
+          <div className={styles.formGroup}>
+            <label htmlFor="password" className={styles.label}>
+              Contraseña
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              className={styles.input}
+              placeholder="Ingrese su contraseña"
+              value={password}
+              onChange={handlePasswordChange}
+              disabled={loading}
+            />
+          </div>
+
+          <div className={styles.formGroup}>
+            <label htmlFor="confirmPassword" className={styles.label}>
+              Confirmar Contraseña
+            </label>
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              required
+              className={styles.input}
+              placeholder="Confirme su contraseña"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value)
+                setError('')
+              }}
+              disabled={loading}
+            />
+          </div>
+
           {password && (
-            <div className="bg-gray-50 p-4 rounded-md">
-              <h4 className="text-sm font-medium text-gray-900 mb-2">Requisitos de contraseña:</h4>
-              <div className="space-y-1">
+            <div className={styles.validationBox}>
+              <h4 className={styles.validationTitle}>Requisitos de contraseña:</h4>
+              <div className={styles.validationList}>
                 <ValidationItem isValid={validation.hasMinLength} text="Mínimo 8 caracteres" />
                 <ValidationItem isValid={validation.hasUpperCase} text="Una letra mayúscula" />
                 <ValidationItem isValid={validation.hasLowerCase} text="Una letra minúscula" />
@@ -199,20 +208,18 @@ function CrearPasswordForm() {
           )}
 
           {error && (
-            <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
+            <div className={styles.error}>
+              {error}
             </div>
           )}
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading || !isPasswordValid() || !password || !confirmPassword}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Creando contraseña...' : 'Crear Contraseña'}
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={loading || !isPasswordValid() || !password || !confirmPassword}
+            className={styles.submitButton}
+          >
+            {loading ? 'Creando contraseña...' : 'Crear Contraseña'}
+          </button>
         </form>
       </div>
     </div>
@@ -220,16 +227,5 @@ function CrearPasswordForm() {
 }
 
 export default function CrearPassword() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Cargando...</p>
-        </div>
-      </div>
-    }>
-      <CrearPasswordForm />
-    </Suspense>
-  )
+  return <CrearPasswordForm />
 }

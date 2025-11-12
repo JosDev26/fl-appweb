@@ -1,0 +1,119 @@
+:root{
+  --yellow-color: #FAD02C;
+  --dark-blue-color: #19304B;
+}
+
+/* Clase para elementos inicialmente ocultos */
+.hidden-initial {
+  opacity: 0;
+}
+
+/* #region Parte de enfrente*/
+.hero{
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center; 
+  justify-content: center;
+  width: 85vw;
+  justify-self: center;
+  align-content: center;
+  min-height: 100dvh;
+  margin-top: -1vw;
+}
+.hero .logo-hero{
+  width: calc(7em + 5%);
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  margin-bottom: 1.5em;
+}
+.hero h1{
+  font-size: calc(1.3rem + 3.5vw);
+  font-weight: 800;
+  text-align: center;
+  color: var(--yellow-color);
+  margin: 0;
+  word-spacing: -0.2ch;
+}
+.hero p{
+  color: white;
+  font-size: calc(0.7rem + 0.5vw);
+  width: 60%;
+  text-align: center;
+  justify-self: center;
+  text-wrap: wrap;
+  text-wrap-style: balance;
+}
+.hero button{
+  background-color: transparent;
+  border: 4px solid var(--yellow-color);
+  padding: 0.7em 12%;
+  font-size: calc(0.7rem + 0.5vw);
+  font-weight: 700;
+  color: var(--yellow-color);
+  cursor: pointer;
+  font-family: 'Nunito Sans Variable', sans-serif;
+  display: block;
+  margin: 1.5em auto 0 auto;
+  transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  transform-origin: center;
+}
+.hero button:hover{
+  background-color: var(--yellow-color);
+  color: var(--dark-blue-color);
+  box-shadow: 0 8px 25px rgba(250, 208, 44, 0.4);
+  border-color: #f5d957;
+}
+/*#endregion*/
+.hero .circle-hero{
+  position: absolute;
+  border-radius: 50%;
+  width: clamp(43vh, 40vw, 600px);
+  height: clamp(43vh, 40vw, 600px);
+  z-index: -1;
+  background-color: rgba(255, 255, 255, 0.034);
+}
+.hero .rectangle-border{
+  display: flex;
+  position: absolute;
+  box-sizing: border-box;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: clamp(50%, 73%, 85%);
+  height: clamp(40%, 63%, 75%);
+  z-index: -1;
+  pointer-events: none;
+  /* variables para controlar el tamaño de los bordes de forma responsiva */
+  --border-thickness: clamp(8px, 1.5vw, 25px);
+  --corner-w: clamp(6%, 7vw, 9%);
+  --corner-h: clamp(12%, 15vh, 20%);
+}
+
+.hero .rectangle-border .border1-hero{
+  position: absolute;
+  border-top: var(--border-thickness) solid var(--yellow-color);
+  border-left: var(--border-thickness) solid var(--yellow-color);
+  width: var(--corner-w);
+  height: var(--corner-h);
+  top: calc(var(--border-thickness) * -0.5);
+  left: calc(var(--border-thickness) * -0.5);
+  box-sizing: border-box;
+}
+
+.hero .rectangle-border .border2-hero{
+  position: absolute;
+  border-bottom: var(--border-thickness) solid var(--yellow-color);
+  border-right: var(--border-thickness) solid var(--yellow-color);
+  width: var(--corner-w);
+  height: var(--corner-h);
+  bottom: calc(var(--border-thickness) * -0.5);
+  right: calc(var(--border-thickness) * -0.5);
+  box-sizing: border-box;
+}
+
+/* ocultar completamente en pantallas pequeñas/medianas (mobile/tablet) */
+@media (max-width: 900px) {
+  .hero .rectangle-border { display: none; }
+}

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { SyncService } from '../../../../lib/syncService';
 
 // Esta ruta puede ser llamada por un cron job externo (ej. Vercel Cron, GitHub Actions)
 export async function POST(request: NextRequest) {
@@ -8,6 +7,7 @@ export async function POST(request: NextRequest) {
     const authHeader = request.headers.get('authorization');
     const expectedToken = process.env.CRON_SECRET_TOKEN;
     
+    // Si hay token configurado, verificarlo. Si no hay token, permitir acceso (desarrollo)
     if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized' },
@@ -17,17 +17,70 @@ export async function POST(request: NextRequest) {
 
     console.log('🕐 Ejecutando sincronización automática programada');
     
-    // Ejecutar sincronización bidireccional
-    const result = await SyncService.syncBidirectional();
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+    const results: any = {
+      timestamp: new Date().toISOString(),
+      syncs: []
+    }
+
+    // Lista de endpoints a sincronizar en orden
+    const syncEndpoints = [
+      { name: 'Clientes', url: `${baseUrl}/api/sync-clientes` },
+      { name: 'Empresas', url: `${baseUrl}/api/sync-empresas` },
+      { name: 'Contactos', url: `${baseUrl}/api/sync-contactos` },
+      { name: 'Funcionarios', url: `${baseUrl}/api/sync-funcionarios` },
+      { name: 'Casos', url: `${baseUrl}/api/sync-casos` },
+      { name: 'Control_Horas', url: `${baseUrl}/api/sync-control-horas` }
+    ]
+
+    // Ejecutar sincronizaciones secuencialmente
+    for (const endpoint of syncEndpoints) {
+      try {
+        console.log(`📊 Sincronizando ${endpoint.name}...`)
+        const response = await fetch(endpoint.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+
+        const data = await response.json()
+        
+        results.syncs.push({
+          table: endpoint.name,
+          success: response.ok,
+          status: response.status,
+          stats: data.stats || {},
+          message: data.message || ''
+        })
+
+        if (response.ok) {
+          console.log(`✅ ${endpoint.name} sincronizado exitosamente`)
+        } else {
+          console.error(`❌ Error sincronizando ${endpoint.name}:`, data)
+        }
+      } catch (error) {
+        console.error(`❌ Error en ${endpoint.name}:`, error)
+        results.syncs.push({
+          table: endpoint.name,
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        })
+      }
+    }
+
+    const successCount = results.syncs.filter((s: any) => s.success).length
+    const totalCount = results.syncs.length
     
     // Log del resultado
-    console.log(`📊 Resultado sincronización automática: ${result.message}`);
+    console.log(`📊 Resultado sincronización automática: ${successCount}/${totalCount} exitosas`);
     
     return NextResponse.json({
-      success: result.success,
-      message: result.message,
+      success: successCount === totalCount,
+      message: `Sincronización completada: ${successCount}/${totalCount} tablas sincronizadas`,
       timestamp: new Date().toISOString(),
-      type: 'scheduled-sync'
+      type: 'scheduled-sync',
+      results
     });
 
   } catch (error) {

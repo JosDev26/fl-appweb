@@ -42,114 +42,167 @@ export interface Database {
       }
       casos: {
         Row: {
-          id: number
-          id_usuario: number | null
+          id: string
           nombre: string
           estado: string | null
           expediente: string | null
+          id_cliente: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          id?: never
-          id_usuario?: number | null
-          nombre?: string
+          id: string
+          nombre: string
           estado?: string | null
           expediente?: string | null
+          id_cliente?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          id?: never
-          id_usuario?: number | null
+          id?: string
           nombre?: string
           estado?: string | null
           expediente?: string | null
+          id_cliente?: string | null
+          created_at?: string
+          updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "casos_id_usuario_fkey"
-            columns: ["id_usuario"]
-            referencedRelation: "usuarios"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       contactos: {
         Row: {
-          id: number
+          id: string
           nombre: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          id?: never
+          id: string
           nombre?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          id?: never
+          id?: string
           nombre?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      empresas: {
+        Row: {
+          id: string
+          nombre: string
+          cedula: number | null
+          esDolar: boolean | null
+          iva_perc: number | null
+          estaRegistrado: boolean | null
+          password: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          nombre: string
+          cedula?: number | null
+          esDolar?: boolean | null
+          iva_perc?: number | null
+          estaRegistrado?: boolean | null
+          password?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          nombre?: string
+          cedula?: number | null
+          esDolar?: boolean | null
+          iva_perc?: number | null
+          estaRegistrado?: boolean | null
+          password?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
       funcionarios: {
         Row: {
-          id: number
+          id: string
           nombre: string | null
-          cargo: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          id?: never
+          id: string
           nombre?: string | null
-          cargo?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          id?: never
+          id?: string
           nombre?: string | null
-          cargo?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
       trabajos_por_hora: {
         Row: {
-          id: number
-          caso_asignado: number | null
-          responsable: number | null
-          solicitante: number | null
+          id: string
+          caso_asignado: string | null
+          responsable: string | null
+          solicitante: string | null
+          id_cliente: string | null
           titulo: string | null
           descripcion: string | null
           fecha: string | null
-          duracion: number | null
+          duracion: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          id?: never
-          caso_asignado?: number | null
-          responsable?: number | null
-          solicitante?: number | null
+          id: string
+          caso_asignado?: string | null
+          responsable?: string | null
+          solicitante?: string | null
+          id_cliente?: string | null
           titulo?: string | null
           descripcion?: string | null
           fecha?: string | null
-          duracion?: number | null
+          duracion?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          id?: never
-          caso_asignado?: number | null
-          responsable?: number | null
-          solicitante?: number | null
+          id?: string
+          caso_asignado?: string | null
+          responsable?: string | null
+          solicitante?: string | null
+          id_cliente?: string | null
           titulo?: string | null
           descripcion?: string | null
           fecha?: string | null
-          duracion?: number | null
+          duracion?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "trabajos_por_hora_caso_asignado_fkey"
+            foreignKeyName: "fk_caso"
             columns: ["caso_asignado"]
             referencedRelation: "casos"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "trabajos_por_hora_responsable_fkey"
+            foreignKeyName: "fk_responsable"
             columns: ["responsable"]
             referencedRelation: "funcionarios"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "trabajos_por_hora_solicitante_fkey"
+            foreignKeyName: "fk_solicitante"
             columns: ["solicitante"]
             referencedRelation: "contactos"
             referencedColumns: ["id"]

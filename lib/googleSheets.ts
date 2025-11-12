@@ -19,19 +19,36 @@ export interface SheetRow {
 
 export class GoogleSheetsService {
   
-  // 📖 Leer datos de la hoja Clientes (ignorando columnas G e I que son específicas de AppSheet)
-  static async readClientes(): Promise<any[]> {
+  // 📖 Método genérico para leer un rango específico de una hoja
+  static async getSheetData(sheetName: string, range: string): Promise<any[][]> {
     try {
-      const config = SYNC_CONFIG.find(c => c.sheetsName === "Clientes");
-      if (!config) {
-        throw new Error("No configuration found for Clientes sheet");
-      }
-
-      console.log('📖 Leyendo datos de la hoja Clientes (ignorando columnas G e I de AppSheet)...');
+      console.log(`📖 Leyendo rango ${range} de la hoja ${sheetName}...`);
       
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: 'Clientes!A:J', // Columnas A a J según tu mapeo
+        range: `${sheetName}!${range}`,
+      });
+
+      return response.data.values || [];
+    } catch (error) {
+      console.error(`❌ Error leyendo rango ${range} de ${sheetName}:`, error);
+      throw error;
+    }
+  }
+  
+  // 📖 Método genérico para leer cualquier hoja configurada
+  static async readSheet(sheetName: string): Promise<any[]> {
+    try {
+      const config = SYNC_CONFIG.find(c => c.sheetsName === sheetName);
+      if (!config) {
+        throw new Error(`No configuration found for sheet: ${sheetName}`);
+      }
+
+      console.log(`📖 Leyendo datos de la hoja ${sheetName}...`);
+      
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetName}!A:Z`, // Leer todas las columnas
       });
 
       const rows = response.data.values || [];
@@ -40,15 +57,13 @@ export class GoogleSheetsService {
       const headers = rows[0];
       const dataRows = rows.slice(1);
 
-      console.log('📋 Headers encontrados:', headers);
-      console.log('📋 Columnas G e I (específicas de AppSheet) serán ignoradas en la sincronización');
+      console.log(`📋 Headers encontrados en ${sheetName}:`, headers);
 
       // Transformar datos usando la configuración
       const transformedData = dataRows.map((row, index) => {
         const item: any = {};
         
         config.columns.forEach(colConfig => {
-          // Buscar la columna por nombre exacto
           const sheetsIndex = headers.indexOf(colConfig.sheetsColumn);
           if (sheetsIndex !== -1) {
             let value = row[sheetsIndex];
@@ -66,7 +81,7 @@ export class GoogleSheetsService {
             item[colConfig.supabaseColumn] = value;
           } else {
             if (colConfig.required) {
-              console.warn(`⚠️ Columna requerida '${colConfig.sheetsColumn}' no encontrada en hoja Clientes`);
+              console.warn(`⚠️ Columna requerida '${colConfig.sheetsColumn}' no encontrada en hoja ${sheetName}`);
             }
             item[colConfig.supabaseColumn] = null;
           }
@@ -74,17 +89,32 @@ export class GoogleSheetsService {
 
         return item;
       }).filter(item => {
-        // Filtrar filas que no tienen id_sheets (requerido)
-        return item.id_sheets != null && item.id_sheets !== '';
+        // Filtrar filas que no tienen el id (requerido) - puede ser id o id_sheets
+        const idValue = item.id || item.id_sheets;
+        const isValid = idValue != null && idValue !== '';
+        if (!isValid) {
+          console.warn(`⚠️ Fila filtrada por falta de ID:`, item);
+        }
+        return isValid;
       });
 
-      console.log(`✅ Leídos ${transformedData.length} registros de Clientes (columnas G e I preservadas para AppSheet)`);
+      console.log(`✅ Leídos ${transformedData.length} registros de ${sheetName}`);
       return transformedData;
 
     } catch (error) {
-      console.error('❌ Error leyendo hoja Clientes:', error);
+      console.error(`❌ Error leyendo hoja ${sheetName}:`, error);
       throw error;
     }
+  }
+  
+  // 📖 Leer datos de la hoja Clientes (ignorando columnas G e I que son específicas de AppSheet)
+  static async readClientes(): Promise<any[]> {
+    return this.readSheet('Clientes');
+  }
+  
+  // 📖 Leer datos de la hoja Empresas
+  static async readEmpresas(): Promise<any[]> {
+    return this.readSheet('Empresas');
   }
 
   // 📝 Escribir datos a la hoja Clientes (preservando columnas G e I de AppSheet)

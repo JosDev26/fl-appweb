@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import styles from './login.module.css'
 
 export default function Login() {
   const [identificacion, setIdentificacion] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [tipoUsuario, setTipoUsuario] = useState<'cliente' | 'empresa'>('cliente')
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -23,7 +25,10 @@ export default function Login() {
     setError('')
 
     try {
-      const response = await fetch('/api/login', {
+      // Usar la API correspondiente según el tipo de usuario
+      const endpoint = tipoUsuario === 'cliente' ? '/api/login' : '/api/login-empresa'
+      
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -41,8 +46,9 @@ export default function Login() {
       }
 
       if (data.success) {
-        // Guardar información del usuario en localStorage
-        localStorage.setItem('user', JSON.stringify(data.user))
+        // Guardar información del usuario/empresa en localStorage
+        const userData = tipoUsuario === 'cliente' ? data.user : data.empresa
+        localStorage.setItem('user', JSON.stringify({ ...userData, tipo: tipoUsuario }))
         
         // Redirigir al home
         router.push('/home')
@@ -56,79 +62,107 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Iniciar Sesión
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Ingrese sus credenciales para acceder
-          </p>
+    <div className={styles.container}>
+      <div className={styles.card}>
+        <div className={styles.logoSection}>
+          <div className={styles.logoCircle}>
+            <span className={styles.logoText}>FL</span>
+          </div>
+          <h1 className={styles.title}>Bienvenido</h1>
+          <p className={styles.subtitle}>Ingresa tus credenciales para continuar</p>
         </div>
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="identificacion" className="block text-sm font-medium text-gray-700">
-                Identificación
-              </label>
-              <input
-                id="identificacion"
-                name="identificacion"
-                type="text"
-                required
-                className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Número de identificación"
-                value={identificacion}
-                onChange={(e) => setIdentificacion(e.target.value)}
-                disabled={loading}
-              />
-            </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Contraseña
+        <form onSubmit={handleSubmit} className={styles.form}>
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Tipo de Usuario</label>
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  value="cliente"
+                  checked={tipoUsuario === 'cliente'}
+                  onChange={(e) => setTipoUsuario(e.target.value as 'cliente')}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Cliente</span>
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="mt-1 appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                placeholder="Contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading}
-              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  value="empresa"
+                  checked={tipoUsuario === 'empresa'}
+                  onChange={(e) => setTipoUsuario(e.target.value as 'empresa')}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Empresa</span>
+              </label>
             </div>
+          </div>
+
+          <div className={styles.formGroup}>
+            <label htmlFor="identificacion" className={styles.label}>
+              Identificación
+            </label>
+            <input
+              id="identificacion"
+              name="identificacion"
+              type="text"
+              required
+              className={styles.input}
+              placeholder="Ingresa tu número de identificación"
+              value={identificacion}
+              onChange={(e) => setIdentificacion(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className={styles.formGroup}>
+            <label htmlFor="password" className={styles.label}>
+              Contraseña
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              className={styles.input}
+              placeholder="Ingresa tu contraseña"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+            />
           </div>
 
           {error && (
-            <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
+            <div className={styles.error}>
+              {error}
             </div>
           )}
 
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-            </button>
-          </div>
-
-          <div className="text-center">
-            <Link 
-              href="/crearcuenta" 
-              className="font-medium text-indigo-600 hover:text-indigo-500"
-            >
-              ¿No tienes cuenta? Crear una cuenta
-            </Link>
-          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className={styles.submitButton}
+          >
+            {loading ? (
+              <div className={styles.loadingSpinner}>
+                <div className={styles.spinner}></div>
+                Iniciando sesión...
+              </div>
+            ) : (
+              'Iniciar Sesión'
+            )}
+          </button>
         </form>
+        
+        <div className={styles.footer}>
+          <p className={styles.footerText}>
+            ¿No tienes una cuenta?{' '}
+            <Link href="/crearcuenta" className={styles.link}>
+              Crear cuenta
+            </Link>
+          </p>
+        </div>
       </div>
     </div>
   )

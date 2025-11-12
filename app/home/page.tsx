@@ -2,16 +2,28 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import styles from './home.module.css'
 
 interface User {
   id: number
+  id_sheets?: string
   nombre: string
   cedula: number
+  tipo?: 'cliente' | 'empresa'
+}
+
+interface Caso {
+  id: string
+  nombre: string
+  estado: string
+  expediente: string | null
 }
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null)
+  const [casos, setCasos] = useState<Caso[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingCasos, setLoadingCasos] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -19,7 +31,6 @@ export default function Home() {
     const userData = localStorage.getItem('user')
     
     if (!userData) {
-      // Si no hay usuario, redirigir al login
       router.push('/login')
       return
     }
@@ -27,77 +38,132 @@ export default function Home() {
     try {
       const parsedUser = JSON.parse(userData)
       setUser(parsedUser)
+      setLoading(false)
+      
+      // Cargar casos del usuario
+      loadCasos(parsedUser)
     } catch (error) {
       console.error('Error al parsear datos del usuario:', error)
       localStorage.removeItem('user')
       router.push('/login')
-    } finally {
-      setLoading(false)
     }
   }, [router])
+
+  const loadCasos = async (userData: User) => {
+    setLoadingCasos(true)
+    try {
+      // Obtener el id_cliente correcto
+      const idCliente = userData.id_sheets || userData.id?.toString()
+      
+      // Buscar casos donde id_cliente coincida
+      const response = await fetch(`/api/casos?id_cliente=${idCliente}`)
+      const data = await response.json()
+      
+      if (data.casos) {
+        setCasos(data.casos)
+      }
+    } catch (error) {
+      console.error('Error al cargar casos:', error)
+    } finally {
+      setLoadingCasos(false)
+    }
+  }
 
   const handleLogout = () => {
     localStorage.removeItem('user')
     router.push('/login')
   }
 
+  const handleCasoClick = (casoId: string) => {
+    router.push(`/caso/${casoId}`)
+  }
+
+  const getEstadoColor = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'en proceso':
+        return '#FAD02C'
+      case 'finalizado':
+        return '#4ade80'
+      case 'abandonado':
+        return '#f87171'
+      default:
+        return '#94a3b8'
+    }
+  }
+
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-indigo-600"></div>
-          <p className="mt-4 text-gray-600">Cargando...</p>
-        </div>
-      </div>
-    )
+    return null
   }
 
   if (!user) {
-    return null // El useEffect se encargará de redirigir
+    return null
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header con botón de logout */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <h1 className="text-xl font-semibold text-gray-900">Panel de Usuario</h1>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
-            >
-              Cerrar Sesión
-            </button>
+    <div className={styles.container}>
+      {/* Header */}
+      <header className={styles.header}>
+        <div className={styles.headerContent}>
+          <div>
+            <h1 className={styles.headerTitle}>
+              Panel de {user.tipo === 'empresa' ? 'Empresa' : 'Cliente'}
+            </h1>
+            <p className={styles.headerSubtitle}>{user.nombre}</p>
           </div>
+          <button onClick={handleLogout} className={styles.logoutButton}>
+            Cerrar Sesión
+          </button>
         </div>
-      </div>
+      </header>
 
       {/* Contenido principal */}
-      <div className="flex items-center justify-center" style={{ minHeight: 'calc(100vh - 80px)' }}>
-        <div className="text-center">
-          <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
-            <div className="mb-4">
-              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100">
-              </div>
-            </div>
-            
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              Bienvenido
-            </h1>
-            
-            <p className="text-2xl text-indigo-600 font-semibold">
-              {user.nombre}
-            </p>
-            
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <p className="text-sm text-gray-500">
-                Identificación: {user.cedula}
-              </p>
-            </div>
+      <main className={styles.main}>
+        <div className={styles.casosSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Mis Casos</h2>
+            <span className={styles.casosCount}>{casos.length} {casos.length === 1 ? 'caso' : 'casos'}</span>
           </div>
+
+          {loadingCasos ? (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>Cargando casos...</p>
+            </div>
+          ) : casos.length === 0 ? (
+            <div className={styles.emptyState}>
+              <p className={styles.emptyText}>No tienes casos asignados</p>
+            </div>
+          ) : (
+            <div className={styles.casosGrid}>
+              {casos.map((caso) => (
+                <div
+                  key={caso.id}
+                  className={styles.casoCard}
+                  onClick={() => handleCasoClick(caso.id)}
+                >
+                  <div className={styles.casoHeader}>
+                    <h3 className={styles.casoNombre}>{caso.nombre}</h3>
+                    <span
+                      className={styles.casoEstado}
+                      style={{ backgroundColor: getEstadoColor(caso.estado) }}
+                    >
+                      {caso.estado || 'Sin estado'}
+                    </span>
+                  </div>
+                  {caso.expediente && (
+                    <p className={styles.casoExpediente}>
+                      Expediente: {caso.expediente}
+                    </p>
+                  )}
+                  <div className={styles.casoFooter}>
+                    <span className={styles.verDetalle}>Ver detalles →</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </div>
+      </main>
     </div>
   )
 }

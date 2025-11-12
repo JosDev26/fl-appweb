@@ -1,0 +1,42 @@
+/* Sobre nosotros */
+h2{
+    font-size: 3vw;
+}
+h2 span {
+  color: #FAD02C;
+  text-decoration: underline;
+}
+h3{
+    color: #FAD02C;
+}
+
+#sobre-nosotros{
+    padding-left: 17vw;
+    padding-right: 17vw;
+}
+.main-info{
+    display: flex;
+    flex-direction: row;
+}
+
+.main-info .right-side{
+    display: flex;
+    flex-direction: column; 
+    position: relative;   
+    top: 4vw;
+}
+
+.main-info .right-side p{
+    text-align: right;
+    width: 40vw;
+    margin-bottom: 2vw;
+    font-weight: 600;
+}
+
+.main-info .right-side .knowImage{
+    display: block;
+    width: 35vw;
+    height: 15vh;
+    object-fit: cover;
+    align-self: flex-end; 
+}
