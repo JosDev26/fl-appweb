@@ -93,7 +93,7 @@
 .estadistica {
   text-align: center;
   padding: clamp(1rem, 2vw, 1.5rem);
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  background: #f8fafc;
   border-radius: 12px;
   border: 1px solid rgba(250, 208, 44, 0.2);
 }
@@ -139,7 +139,7 @@
 }
 
 .table thead {
-  background: linear-gradient(135deg, #19304B 0%, #2c4d6b 100%);
+  background: #19304B;
 }
 
 .table th {

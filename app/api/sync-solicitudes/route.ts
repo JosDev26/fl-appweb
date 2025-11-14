@@ -1,0 +1,206 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
+import { GoogleSheetsService } from '@/lib/googleSheets'
+
+export async function POST(request: NextRequest) {
+  try {
+    console.log('� Iniciando sincronización de Solicitudes...')
+    
+    // Leer TODAS las columnas manualmente (A hasta S)
+    const allColumnsData = await GoogleSheetsService.getSheetData('Solicitudes', 'A:S')
+    
+    if (!allColumnsData || allColumnsData.length < 2) {
+      return NextResponse.json({ 
+        success: true, 
+        message: 'No hay datos para sincronizar',
+        stats: { inserted: 0, updated: 0, deleted: 0, errors: 0 }
+      })
+    }
+
+    // Primera fila son los headers
+    const headers = allColumnsData[0]
+    const rows = allColumnsData.slice(1)
+
+    console.log(`📊 Headers encontrados:`, headers)
+    console.log(`📊 Número de filas:`, rows.length)
+
+    // Encontrar índices de columnas relevantes (búsqueda insensible a mayúsculas/minúsculas)
+    const findHeader = (headerName: string) => {
+      const index = headers.findIndex((h: string) => 
+        String(h).toLowerCase().trim() === headerName.toLowerCase().trim()
+      )
+      if (index === -1) {
+        console.warn(`⚠️ No se encontró el header: ${headerName}`)
+      } else {
+        console.log(`✅ Header '${headerName}' encontrado en índice ${index}: ${headers[index]}`)
+      }
+      return index
+    }
+
+    const idSolicitudIndex = findHeader('ID_Solicitud') // A
+    const idClienteIndex = findHeader('ID_Cliente') // D
+    const tituloIndex = findHeader('Titulo') // F
+    const descripcionIndex = findHeader('Descripcion') // G
+    const materiaIndex = findHeader('Materia') // H
+    const etapaActualIndex = findHeader('Etapa_Actual') // I
+    const modalidadPagoIndex = findHeader('Modalidad_Pago') // J
+    const costoNetoIndex = findHeader('Costo_Neto') // K
+    const cantidadCuotasIndex = findHeader('Cantidad_Cuotas') // M
+    const montoPorCuotaIndex = findHeader('MontoxCuota') // N
+    const totalAPagarIndex = findHeader('Total_a_Pagar') // O
+    const estadoPagoIndex = findHeader('Estado_Pago') // P
+    const montoPagadoIndex = findHeader('Monto_Pagado') // Q
+    const saldoPendienteIndex = findHeader('Saldo_Pendiente') // R
+    const expedienteIndex = findHeader('Expediente') // S
+
+    if (idSolicitudIndex === -1) {
+      throw new Error('No se encontró la columna requerida: ID_Solicitud')
+    }
+
+    // Función para convertir montos (remueve ₡, $, comas)
+    const parseMontoToNumber = (value: any): number | null => {
+      if (!value || value === '') return null
+      const numStr = String(value).replace(/[₡$,]/g, '').trim()
+      const num = parseFloat(numStr)
+      return isNaN(num) ? null : num
+    }
+
+    // Transformar los datos
+    const transformedData = rows
+      .filter((row: any[]) => row[idSolicitudIndex] && String(row[idSolicitudIndex]).trim() !== '')
+      .map((row: any[]) => {
+        return {
+          id: String(row[idSolicitudIndex]).trim(),
+          id_cliente: idClienteIndex !== -1 ? (String(row[idClienteIndex] || '').trim() || null) : null,
+          titulo: tituloIndex !== -1 ? (String(row[tituloIndex] || '').trim() || null) : null,
+          descripcion: descripcionIndex !== -1 ? (String(row[descripcionIndex] || '').trim() || null) : null,
+          materia: materiaIndex !== -1 ? (String(row[materiaIndex] || '').trim() || null) : null,
+          etapa_actual: etapaActualIndex !== -1 ? (String(row[etapaActualIndex] || '').trim() || null) : null,
+          modalidad_pago: modalidadPagoIndex !== -1 ? (String(row[modalidadPagoIndex] || '').trim() || null) : null,
+          costo_neto: costoNetoIndex !== -1 ? parseMontoToNumber(row[costoNetoIndex]) : null,
+          cantidad_cuotas: cantidadCuotasIndex !== -1 ? (parseInt(String(row[cantidadCuotasIndex] || '')) || null) : null,
+          monto_por_cuota: montoPorCuotaIndex !== -1 ? parseMontoToNumber(row[montoPorCuotaIndex]) : null,
+          total_a_pagar: totalAPagarIndex !== -1 ? parseMontoToNumber(row[totalAPagarIndex]) : null,
+          estado_pago: estadoPagoIndex !== -1 ? (String(row[estadoPagoIndex] || '').trim() || null) : null,
+          monto_pagado: montoPagadoIndex !== -1 ? parseMontoToNumber(row[montoPagadoIndex]) : null,
+          saldo_pendiente: saldoPendienteIndex !== -1 ? parseMontoToNumber(row[saldoPendienteIndex]) : null,
+          expediente: expedienteIndex !== -1 ? (String(row[expedienteIndex] || '').trim() || null) : null
+        }
+      })
+
+    console.log(`� Primer registro transformado:`, transformedData[0])
+    console.log(`📊 Total registros transformados:`, transformedData.length)
+
+    // Obtener solicitudes existentes
+    const { data: existingSolicitudes, error: fetchError } = await supabase
+      .from('solicitudes')
+      .select('*')
+
+    if (fetchError) throw fetchError
+
+    // Crear mapas para comparación
+    const existingMap = new Map((existingSolicitudes || []).map((solicitud: any) => [solicitud.id, solicitud]))
+    const newIdSet = new Set(transformedData.map((solicitud: any) => solicitud.id))
+    
+    let inserted = 0, updated = 0, deleted = 0, errors = 0
+    const errorDetails: any[] = []
+
+    // Eliminar registros que ya no están en Sheets
+    for (const existing of existingSolicitudes || []) {
+      if (existing.id && !newIdSet.has(existing.id)) {
+        const { error } = await supabase
+          .from('solicitudes')
+          .delete()
+          .eq('id', existing.id)
+        
+        if (error) {
+          errors++
+          errorDetails.push({ action: 'delete', id: existing.id, error: error.message })
+        } else {
+          deleted++
+        }
+      }
+    }
+
+    // Insertar o actualizar registros
+    for (const solicitud of transformedData) {
+      const existing = existingMap.get(solicitud.id)
+      
+      if (existing) {
+        // Actualizar si existe
+        const updateData: any = {
+          id_cliente: solicitud.id_cliente,
+          titulo: solicitud.titulo,
+          descripcion: solicitud.descripcion,
+          materia: solicitud.materia,
+          etapa_actual: solicitud.etapa_actual,
+          modalidad_pago: solicitud.modalidad_pago,
+          costo_neto: solicitud.costo_neto,
+          cantidad_cuotas: solicitud.cantidad_cuotas,
+          monto_por_cuota: solicitud.monto_por_cuota,
+          total_a_pagar: solicitud.total_a_pagar,
+          estado_pago: solicitud.estado_pago,
+          monto_pagado: solicitud.monto_pagado,
+          saldo_pendiente: solicitud.saldo_pendiente,
+          expediente: solicitud.expediente,
+          updated_at: new Date().toISOString()
+        }
+        
+        const { error } = await supabase
+          .from('solicitudes')
+          .update(updateData)
+          .eq('id', solicitud.id)
+        
+        if (error) {
+          errors++
+          errorDetails.push({ action: 'update', id: solicitud.id, error: error.message })
+        } else {
+          updated++
+        }
+      } else {
+        // Insertar si no existe
+        const { error } = await supabase
+          .from('solicitudes')
+          .insert({
+            ...solicitud,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+        
+        if (error) {
+          errors++
+          errorDetails.push({ action: 'insert', id: solicitud.id, error: error.message })
+        } else {
+          inserted++
+        }
+      }
+    }
+
+    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${errors} errores`)
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Sincronización de Solicitudes exitosa',
+      stats: { inserted, updated, deleted, errors },
+      details: errorDetails.length > 0 ? errorDetails : undefined
+    })
+  } catch (error) {
+    console.error('❌ Error al sincronizar Solicitudes:', error)
+    return NextResponse.json(
+      { 
+        error: 'Error al sincronizar Solicitudes',
+        details: error instanceof Error ? error.message : String(error)
+      },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET() {
+  return NextResponse.json({
+    endpoint: '/api/sync-solicitudes',
+    method: 'POST',
+    description: 'Sincroniza la hoja "Solicitudes" de Google Sheets con la tabla solicitudes en Supabase',
+    usage: 'POST /api/sync-solicitudes'
+  })
+}

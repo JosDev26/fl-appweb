@@ -19,11 +19,30 @@ interface Caso {
   expediente: string | null
 }
 
+interface Solicitud {
+  id: string
+  titulo: string | null
+  descripcion: string | null
+  materia: string | null
+  etapa_actual: string | null
+  modalidad_pago: string | null
+  costo_neto: number | null
+  cantidad_cuotas: number | null
+  monto_por_cuota: number | null
+  total_a_pagar: number | null
+  estado_pago: string | null
+  monto_pagado: number | null
+  saldo_pendiente: number | null
+  expediente: string | null
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null)
   const [casos, setCasos] = useState<Caso[]>([])
+  const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingCasos, setLoadingCasos] = useState(false)
+  const [loadingSolicitudes, setLoadingSolicitudes] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -40,8 +59,9 @@ export default function Home() {
       setUser(parsedUser)
       setLoading(false)
       
-      // Cargar casos del usuario
+      // Cargar casos y solicitudes del usuario
       loadCasos(parsedUser)
+      loadSolicitudes(parsedUser)
     } catch (error) {
       console.error('Error al parsear datos del usuario:', error)
       localStorage.removeItem('user')
@@ -69,6 +89,26 @@ export default function Home() {
     }
   }
 
+  const loadSolicitudes = async (userData: User) => {
+    setLoadingSolicitudes(true)
+    try {
+      // Obtener el id_cliente correcto
+      const idCliente = userData.id_sheets || userData.id?.toString()
+      
+      // Buscar solicitudes donde id_cliente coincida
+      const response = await fetch(`/api/solicitudes?id_cliente=${idCliente}`)
+      const data = await response.json()
+      
+      if (data.solicitudes) {
+        setSolicitudes(data.solicitudes)
+      }
+    } catch (error) {
+      console.error('Error al cargar solicitudes:', error)
+    } finally {
+      setLoadingSolicitudes(false)
+    }
+  }
+
   const handleLogout = () => {
     localStorage.removeItem('user')
     router.push('/login')
@@ -76,6 +116,10 @@ export default function Home() {
 
   const handleCasoClick = (casoId: string) => {
     router.push(`/caso/${casoId}`)
+  }
+
+  const handleSolicitudClick = (solicitudId: string) => {
+    router.push(`/solicitud/${solicitudId}`)
   }
 
   const getEstadoColor = (estado: string) => {
@@ -118,6 +162,62 @@ export default function Home() {
 
       {/* Contenido principal */}
       <main className={styles.main}>
+        {/* Sección de Solicitudes */}
+        <div className={styles.casosSection}>
+          <div className={styles.sectionHeader}>
+            <h2 className={styles.sectionTitle}>Mis Solicitudes</h2>
+            <span className={styles.casosCount}>{solicitudes.length} {solicitudes.length === 1 ? 'solicitud' : 'solicitudes'}</span>
+          </div>
+
+          {loadingSolicitudes ? (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>Cargando solicitudes...</p>
+            </div>
+          ) : solicitudes.length === 0 ? (
+            <div className={styles.emptyState}>
+              <p className={styles.emptyText}>No tienes solicitudes asignadas</p>
+            </div>
+          ) : (
+            <div className={styles.casosGrid}>
+              {solicitudes.map((solicitud) => (
+                <div
+                  key={solicitud.id}
+                  className={styles.casoCard}
+                  onClick={() => handleSolicitudClick(solicitud.id)}
+                >
+                  <div className={styles.casoHeader}>
+                    <h3 className={styles.casoNombre}>{solicitud.titulo || 'Sin título'}</h3>
+                    <span
+                      className={styles.casoEstado}
+                      style={{ 
+                        backgroundColor: solicitud.estado_pago === 'Pagado' ? '#4ade80' : 
+                                        solicitud.estado_pago === 'En Proceso' ? '#FAD02C' : '#94a3b8'
+                      }}
+                    >
+                      {solicitud.estado_pago || 'Sin estado'}
+                    </span>
+                  </div>
+                  {solicitud.etapa_actual && (
+                    <p className={styles.casoExpediente}>
+                      Etapa: {solicitud.etapa_actual}
+                    </p>
+                  )}
+                  {solicitud.total_a_pagar && (
+                    <p className={styles.casoExpediente}>
+                      Total: ₡{solicitud.total_a_pagar.toLocaleString('es-CR')}
+                    </p>
+                  )}
+                  <div className={styles.casoFooter}>
+                    <span className={styles.verDetalle}>Ver detalles →</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Sección de Casos */}
         <div className={styles.casosSection}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Mis Casos</h2>

@@ -329,6 +329,147 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       }
     ]
+  },
+  {
+    sheetsName: "Solicitudes",
+    supabaseTable: "solicitudes",
+    idColumn: "id",
+    columns: [
+      {
+        sheetsColumn: "ID_Solicitud",     // Columna A
+        supabaseColumn: "id",
+        required: true,
+        transform: (value) => String(value || '').trim()
+      },
+      {
+        sheetsColumn: "ID_Cliente",       // Columna D
+        supabaseColumn: "id_cliente",
+        transform: (value) => {
+          const id = String(value || '').trim();
+          return id === '' ? null : id;
+        }
+      },
+      {
+        sheetsColumn: "Titulo",           // Columna F
+        supabaseColumn: "titulo",
+        transform: (value) => {
+          const titulo = String(value || '').trim();
+          return titulo === '' ? null : titulo;
+        }
+      },
+      {
+        sheetsColumn: "Descripcion",      // Columna G
+        supabaseColumn: "descripcion",
+        transform: (value) => {
+          const desc = String(value || '').trim();
+          return desc === '' ? null : desc;
+        }
+      },
+      {
+        sheetsColumn: "Materia",          // Columna H
+        supabaseColumn: "materia",
+        transform: (value) => {
+          const materia = String(value || '').trim();
+          return materia === '' ? null : materia;
+        }
+      },
+      {
+        sheetsColumn: "Etapa_Actual",     // Columna I
+        supabaseColumn: "etapa_actual",
+        transform: (value) => {
+          const etapa = String(value || '').trim();
+          return etapa === '' ? null : etapa;
+        }
+      },
+      {
+        sheetsColumn: "Modalidad_Pago",   // Columna J
+        supabaseColumn: "modalidad_pago",
+        transform: (value) => {
+          const modalidad = String(value || '').trim();
+          return modalidad === '' ? null : modalidad;
+        }
+      },
+      {
+        sheetsColumn: "Costo_Neto",       // Columna K
+        supabaseColumn: "costo_neto",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Cantidad_Cuotas",  // Columna M
+        supabaseColumn: "cantidad_cuotas",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          const num = parseInt(String(value));
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "MontoxCuota",      // Columna N
+        supabaseColumn: "monto_por_cuota",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Total_a_Pagar",    // Columna O
+        supabaseColumn: "total_a_pagar",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Estado_Pago",      // Columna P
+        supabaseColumn: "estado_pago",
+        transform: (value) => {
+          const estado = String(value || '').trim();
+          return estado === '' ? null : estado;
+        }
+      },
+      {
+        sheetsColumn: "Monto_Pagado",     // Columna Q
+        supabaseColumn: "monto_pagado",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Saldo_Pendiente",  // Columna R
+        supabaseColumn: "saldo_pendiente",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Expediente",       // Columna S
+        supabaseColumn: "expediente",
+        transform: (value) => {
+          const exp = String(value || '').trim();
+          return exp === '' ? null : exp;
+        }
+      }
+    ]
   }
 ];
 

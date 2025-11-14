@@ -148,6 +148,73 @@ export interface Database {
         }
         Relationships: []
       }
+      solicitudes: {
+        Row: {
+          id: string
+          id_cliente: string | null
+          titulo: string | null
+          descripcion: string | null
+          materia: string | null
+          etapa_actual: string | null
+          modalidad_pago: string | null
+          costo_neto: number | null
+          cantidad_cuotas: number | null
+          monto_por_cuota: number | null
+          total_a_pagar: number | null
+          estado_pago: string | null
+          monto_pagado: number | null
+          saldo_pendiente: number | null
+          expediente: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          id_cliente?: string | null
+          titulo?: string | null
+          descripcion?: string | null
+          materia?: string | null
+          etapa_actual?: string | null
+          modalidad_pago?: string | null
+          costo_neto?: number | null
+          cantidad_cuotas?: number | null
+          monto_por_cuota?: number | null
+          total_a_pagar?: number | null
+          estado_pago?: string | null
+          monto_pagado?: number | null
+          saldo_pendiente?: number | null
+          expediente?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          id_cliente?: string | null
+          titulo?: string | null
+          descripcion?: string | null
+          materia?: string | null
+          etapa_actual?: string | null
+          modalidad_pago?: string | null
+          costo_neto?: number | null
+          cantidad_cuotas?: number | null
+          monto_por_cuota?: number | null
+          total_a_pagar?: number | null
+          estado_pago?: string | null
+          monto_pagado?: number | null
+          saldo_pendiente?: number | null
+          expediente?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_cliente"
+            columns: ["id_cliente"]
+            referencedRelation: "usuarios"
+            referencedColumns: ["id_sheets"]
+          }
+        ]
+      }
       trabajos_por_hora: {
         Row: {
           id: string

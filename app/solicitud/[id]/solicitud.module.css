@@ -1,0 +1,307 @@
+.container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #19304B 0%, #0f1419 100%);
+}
+
+.header {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(250, 208, 44, 0.2);
+  padding: clamp(1rem, 2vw, 1.5rem) 0;
+}
+
+.headerContent {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+}
+
+.backButton {
+  background: rgba(250, 208, 44, 0.2);
+  color: #FAD02C;
+  border: 1px solid rgba(250, 208, 44, 0.3);
+  padding: clamp(0.625rem, 1.5vw, 0.875rem) clamp(1rem, 2.5vw, 1.5rem);
+  border-radius: 12px;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.backButton:hover {
+  background: #FAD02C;
+  color: #19304B;
+  transform: translateX(-5px);
+}
+
+.main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: clamp(2rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem);
+}
+
+.solicitudInfo {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  margin-bottom: clamp(2rem, 3vw, 3rem);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 0.6s ease-out;
+}
+
+.solicitudHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: clamp(1rem, 2vw, 2rem);
+  margin-bottom: clamp(1.5rem, 3vw, 2rem);
+  flex-wrap: wrap;
+}
+
+.solicitudTitulo {
+  color: #19304B;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  margin: 0 0 clamp(0.5rem, 1vw, 0.75rem) 0;
+  line-height: 1.2;
+}
+
+.solicitudExpediente {
+  color: #64748b;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  margin: 0;
+  font-weight: 500;
+}
+
+.estadoPago {
+  padding: clamp(0.5rem, 1.5vw, 0.75rem) clamp(1rem, 2vw, 1.5rem);
+  border-radius: 20px;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  font-weight: 600;
+  color: #19304B;
+  white-space: nowrap;
+}
+
+.descripcion {
+  padding: clamp(1rem, 2vw, 1.5rem);
+  background: #f8fafc;
+  border-radius: 12px;
+  border-left: 4px solid #FAD02C;
+  margin-bottom: clamp(1.5rem, 3vw, 2rem);
+}
+
+.descripcion h3 {
+  color: #19304B;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 700;
+  margin: 0 0 0.75rem 0;
+}
+
+.descripcion p {
+  color: #475569;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.detallesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(200px, 30vw, 250px), 1fr));
+  gap: clamp(1rem, 2vw, 1.5rem);
+  padding-top: clamp(1.5rem, 3vw, 2rem);
+  border-top: 2px solid rgba(25, 48, 75, 0.1);
+}
+
+.detalleItem {
+  padding: clamp(1rem, 2vw, 1.25rem);
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid rgba(250, 208, 44, 0.2);
+}
+
+.detalleLabel {
+  display: block;
+  color: #64748b;
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.detalleValor {
+  display: block;
+  color: #19304B;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 700;
+}
+
+.pagoSection {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 0.8s ease-out;
+}
+
+.sectionTitle {
+  color: #19304B;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+  margin: 0 0 clamp(1.5rem, 3vw, 2rem) 0;
+}
+
+.montosGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(clamp(200px, 30vw, 250px), 1fr));
+  gap: clamp(1rem, 2vw, 1.5rem);
+  margin-bottom: clamp(2rem, 3vw, 3rem);
+}
+
+.montoCard {
+  padding: clamp(1.5rem, 3vw, 2rem);
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 2px solid rgba(250, 208, 44, 0.3);
+  text-align: center;
+  transition: transform 0.3s ease;
+}
+
+.montoCard:hover {
+  transform: translateY(-5px);
+  border-color: #FAD02C;
+}
+
+.montoLabel {
+  display: block;
+  color: #64748b;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.montoValor {
+  display: block;
+  color: #19304B;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 700;
+}
+
+.progresoSection {
+  background: #f8fafc;
+  border-radius: 16px;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  border: 2px solid rgba(250, 208, 44, 0.2);
+}
+
+.progresoHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.progresoLabel {
+  color: #19304B;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 700;
+}
+
+.progresoPercentaje {
+  color: #FAD02C;
+  font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+  font-weight: 700;
+}
+
+.progresoBar {
+  height: clamp(20px, 3vw, 30px);
+  background: rgba(25, 48, 75, 0.1);
+  border-radius: 15px;
+  overflow: hidden;
+  margin-bottom: clamp(1rem, 2vw, 1.5rem);
+}
+
+.progresoFill {
+  height: 100%;
+  background: #FAD02C;
+  transition: width 1s ease;
+  border-radius: 15px;
+}
+
+.progresoMontosRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: clamp(1rem, 2vw, 2rem);
+}
+
+.progresoMonto {
+  text-align: center;
+}
+
+.progresoMontoLabel {
+  display: block;
+  color: #64748b;
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.progresoMontoValor {
+  display: block;
+  font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+  font-weight: 700;
+}
+
+.loadingState,
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: clamp(2rem, 4vw, 3rem);
+  color: white;
+  text-align: center;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(250, 208, 44, 0.2);
+  border-top-color: #FAD02C;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .solicitudHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .estadoPago {
+    align-self: flex-start;
+  }
+}

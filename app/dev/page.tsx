@@ -168,6 +168,31 @@ export default function DevPage() {
     }
   }
 
+  const syncSolicitudes = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/sync-solicitudes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      
+      addResult({
+        success: response.ok,
+        message: response.ok ? 'Sincronización de Solicitudes completada' : 'Error en sincronización',
+        details: data
+      })
+    } catch (error) {
+      addResult({
+        success: false,
+        message: 'Error al sincronizar Solicitudes',
+        details: error
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const syncAll = async () => {
     setLoading(true)
     try {
@@ -305,6 +330,14 @@ export default function DevPage() {
                   className={styles.actionButton}
                 >
                   {loading ? '⏳ Procesando...' : '⏰ Sincronizar Control Horas'}
+                </button>
+
+                <button
+                  onClick={syncSolicitudes}
+                  disabled={loading}
+                  className={styles.actionButton}
+                >
+                  {loading ? '⏳ Procesando...' : '📋 Sincronizar Solicitudes'}
                 </button>
 
                 <button
