@@ -13,6 +13,8 @@ interface Solicitud {
   etapa_actual: string | null
   modalidad_pago: string | null
   costo_neto: number | null
+  se_cobra_iva: boolean | null
+  monto_iva: number | null
   cantidad_cuotas: number | null
   monto_por_cuota: number | null
   total_a_pagar: number | null
@@ -22,11 +24,24 @@ interface Solicitud {
   expediente: string | null
   created_at: string
   updated_at: string
+  materias?: {
+    nombre: string | null
+  } | null
+}
+
+interface Actualizacion {
+  id: string
+  tipo_cliente: string | null
+  id_cliente: string | null
+  id_solicitud: string | null
+  comentario: string | null
+  tiempo: string | null
+  created_at: string
+  updated_at: string
 }
 
 interface User {
   id: number
-  id_sheets?: string
   nombre: string
   cedula?: number
   tipo: 'cliente' | 'empresa'
@@ -34,7 +49,9 @@ interface User {
 
 export default function SolicitudDetalle() {
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
+  const [actualizaciones, setActualizaciones] = useState<Actualizacion[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingActualizaciones, setLoadingActualizaciones] = useState(false)
   const router = useRouter()
   const params = useParams()
   const solicitudId = params.id as string
@@ -60,7 +77,7 @@ export default function SolicitudDetalle() {
       }
 
       const user: User = JSON.parse(userData)
-      const userIdCliente = user.id_sheets || String(user.id)
+      const userIdCliente = String(user.id)
 
       console.log('👤 Usuario actual:', user)
       console.log('🔑 ID Cliente del usuario:', userIdCliente)
@@ -86,6 +103,9 @@ export default function SolicitudDetalle() {
 
         console.log('✅ Acceso permitido')
         setSolicitud(data.solicitud)
+        
+        // Cargar actualizaciones de la solicitud
+        loadActualizaciones()
       } else {
         router.push('/home')
         return
@@ -99,9 +119,41 @@ export default function SolicitudDetalle() {
     }
   }
 
+  const loadActualizaciones = async () => {
+    setLoadingActualizaciones(true)
+    try {
+      const response = await fetch(`/api/solicitudes/${solicitudId}/actualizaciones`)
+      const data = await response.json()
+      
+      if (data.actualizaciones) {
+        setActualizaciones(data.actualizaciones)
+      }
+    } catch (error) {
+      console.error('Error al cargar actualizaciones:', error)
+    } finally {
+      setLoadingActualizaciones(false)
+    }
+  }
+
   const formatMonto = (monto: number | null) => {
     if (monto === null || monto === undefined) return '-'
     return `₡${monto.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
+  const formatFecha = (fecha: string | null) => {
+    if (!fecha) return '-'
+    try {
+      const date = new Date(fecha)
+      return date.toLocaleDateString('es-ES', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch {
+      return fecha
+    }
   }
 
   const getEstadoPagoColor = (estado: string | null) => {
@@ -185,7 +237,7 @@ export default function SolicitudDetalle() {
           <div className={styles.detallesGrid}>
             <div className={styles.detalleItem}>
               <span className={styles.detalleLabel}>Materia</span>
-              <span className={styles.detalleValor}>{solicitud.materia || '-'}</span>
+              <span className={styles.detalleValor}>{solicitud.materias?.nombre || '-'}</span>
             </div>
             <div className={styles.detalleItem}>
               <span className={styles.detalleLabel}>Etapa Actual</span>
@@ -211,14 +263,22 @@ export default function SolicitudDetalle() {
               <span className={styles.montoLabel}>Costo Neto</span>
               <span className={styles.montoValor}>{formatMonto(solicitud.costo_neto)}</span>
             </div>
+            {solicitud.se_cobra_iva && solicitud.monto_iva && (
+              <div className={styles.montoCard}>
+                <span className={styles.montoLabel}>IVA</span>
+                <span className={styles.montoValor}>{formatMonto(solicitud.monto_iva)}</span>
+              </div>
+            )}
             <div className={styles.montoCard}>
               <span className={styles.montoLabel}>Total a Pagar</span>
               <span className={styles.montoValor}>{formatMonto(solicitud.total_a_pagar)}</span>
             </div>
-            <div className={styles.montoCard}>
-              <span className={styles.montoLabel}>Monto por Cuota</span>
-              <span className={styles.montoValor}>{formatMonto(solicitud.monto_por_cuota)}</span>
-            </div>
+            {solicitud.cantidad_cuotas && solicitud.cantidad_cuotas > 1 && (
+              <div className={styles.montoCard}>
+                <span className={styles.montoLabel}>Monto por Cuota</span>
+                <span className={styles.montoValor}>{formatMonto(solicitud.monto_por_cuota)}</span>
+              </div>
+            )}
           </div>
 
           <div className={styles.progresoSection}>
@@ -247,6 +307,37 @@ export default function SolicitudDetalle() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Sección de Actualizaciones */}
+        <div className={styles.actualizacionesSection}>
+          <h2 className={styles.sectionTitle}>Actualizaciones del Caso</h2>
+          
+          {loadingActualizaciones ? (
+            <div className={styles.loadingState}>
+              <div className={styles.spinner}></div>
+              <p>Cargando actualizaciones...</p>
+            </div>
+          ) : actualizaciones.length === 0 ? (
+            <div className={styles.emptyActualizaciones}>
+              <p>No hay actualizaciones registradas para esta solicitud</p>
+            </div>
+          ) : (
+            <div className={styles.actualizacionesList}>
+              {actualizaciones.map((actualizacion) => (
+                <div key={actualizacion.id} className={styles.actualizacionCard}>
+                  <div className={styles.actualizacionHeader}>
+                    <span className={styles.actualizacionFecha}>
+                      {formatFecha(actualizacion.tiempo)}
+                    </span>
+                  </div>
+                  <p className={styles.actualizacionComentario}>
+                    {actualizacion.comentario || 'Sin comentario'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>

@@ -11,31 +11,40 @@ export interface Database {
     Tables: {
       actualizaciones: {
         Row: {
-          id: number
-          caso_asociado: number | null
-          comenario: string
-          fecha: string | null
-          hora: string | null
+          id: string
+          tipo_cliente: string | null
+          id_cliente: string | null
+          id_solicitud: string | null
+          comentario: string | null
+          tiempo: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          id?: never
-          caso_asociado?: number | null
-          comenario?: string
-          fecha?: string | null
-          hora?: string | null
+          id: string
+          tipo_cliente?: string | null
+          id_cliente?: string | null
+          id_solicitud?: string | null
+          comentario?: string | null
+          tiempo?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          id?: never
-          caso_asociado?: number | null
-          comenario?: string
-          fecha?: string | null
-          hora?: string | null
+          id?: string
+          tipo_cliente?: string | null
+          id_cliente?: string | null
+          id_solicitud?: string | null
+          comentario?: string | null
+          tiempo?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "actualizaciones_caso_asociado_fkey"
-            columns: ["caso_asociado"]
-            referencedRelation: "casos"
+            foreignKeyName: "fk_solicitud"
+            columns: ["id_solicitud"]
+            referencedRelation: "solicitudes"
             referencedColumns: ["id"]
           }
         ]
@@ -45,6 +54,7 @@ export interface Database {
           id: string
           nombre: string
           estado: string | null
+          materia: string | null
           expediente: string | null
           id_cliente: string | null
           created_at: string
@@ -54,6 +64,7 @@ export interface Database {
           id: string
           nombre: string
           estado?: string | null
+          materia?: string | null
           expediente?: string | null
           id_cliente?: string | null
           created_at?: string
@@ -63,12 +74,20 @@ export interface Database {
           id?: string
           nombre?: string
           estado?: string | null
+          materia?: string | null
           expediente?: string | null
           id_cliente?: string | null
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_materia"
+            columns: ["materia"]
+            referencedRelation: "materias"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       contactos: {
         Row: {
@@ -127,6 +146,49 @@ export interface Database {
         }
         Relationships: []
       }
+      gastos: {
+        Row: {
+          id: string
+          id_asociacion: string | null
+          id_caso: string | null
+          id_responsable: string | null
+          fecha: string | null
+          producto: string | null
+          total_cobro: number | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          id_asociacion?: string | null
+          id_caso?: string | null
+          id_responsable?: string | null
+          fecha?: string | null
+          producto?: string | null
+          total_cobro?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          id_asociacion?: string | null
+          id_caso?: string | null
+          id_responsable?: string | null
+          fecha?: string | null
+          producto?: string | null
+          total_cobro?: number | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_responsable"
+            columns: ["id_responsable"]
+            referencedRelation: "funcionarios"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       funcionarios: {
         Row: {
           id: string
@@ -148,6 +210,21 @@ export interface Database {
         }
         Relationships: []
       }
+      materias: {
+        Row: {
+          id: string
+          nombre: string | null
+        }
+        Insert: {
+          id: string
+          nombre?: string | null
+        }
+        Update: {
+          id?: string
+          nombre?: string | null
+        }
+        Relationships: []
+      }
       solicitudes: {
         Row: {
           id: string
@@ -158,6 +235,8 @@ export interface Database {
           etapa_actual: string | null
           modalidad_pago: string | null
           costo_neto: number | null
+          se_cobra_iva: boolean | null
+          monto_iva: number | null
           cantidad_cuotas: number | null
           monto_por_cuota: number | null
           total_a_pagar: number | null
@@ -177,6 +256,8 @@ export interface Database {
           etapa_actual?: string | null
           modalidad_pago?: string | null
           costo_neto?: number | null
+          se_cobra_iva?: boolean | null
+          monto_iva?: number | null
           cantidad_cuotas?: number | null
           monto_por_cuota?: number | null
           total_a_pagar?: number | null
@@ -196,6 +277,8 @@ export interface Database {
           etapa_actual?: string | null
           modalidad_pago?: string | null
           costo_neto?: number | null
+          se_cobra_iva?: boolean | null
+          monto_iva?: number | null
           cantidad_cuotas?: number | null
           monto_por_cuota?: number | null
           total_a_pagar?: number | null
@@ -278,38 +361,38 @@ export interface Database {
       }
       usuarios: {
         Row: {
-          id: number
-          id_sheets: string | null
+          id: string
           nombre: string
           tipo_cedula: string | null
           cedula: number | null
           telefono: string | null
           correo: string | null
           esDolar: boolean | null
+          iva_perc: number | null
           estaRegistrado: boolean | null
           password: string | null
         }
         Insert: {
-          id?: never
-          id_sheets?: string | null
-          nombre?: string
+          id: string
+          nombre: string
           tipo_cedula?: string | null
           cedula?: number | null
           telefono?: string | null
           correo?: string | null
           esDolar?: boolean | null
+          iva_perc?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
         }
         Update: {
-          id?: never
-          id_sheets?: string | null
+          id?: string
           nombre?: string
           tipo_cedula?: string | null
           cedula?: number | null
           telefono?: string | null
           correo?: string | null
           esDolar?: boolean | null
+          iva_perc?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
         }

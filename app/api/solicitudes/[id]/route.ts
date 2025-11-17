@@ -12,7 +12,12 @@ export async function GET(
 
     const { data: solicitud, error } = await supabase
       .from('solicitudes')
-      .select('*')
+      .select(`
+        *,
+        materias:materia (
+          nombre
+        )
+      `)
       .eq('id', solicitudId)
       .single()
 

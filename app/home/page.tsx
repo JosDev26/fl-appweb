@@ -6,7 +6,6 @@ import styles from './home.module.css'
 
 interface User {
   id: number
-  id_sheets?: string
   nombre: string
   cedula: number
   tipo?: 'cliente' | 'empresa'
@@ -36,13 +35,23 @@ interface Solicitud {
   expediente: string | null
 }
 
+// Tipo unificado para mostrar en la UI
+interface CasoUnificado {
+  id: string
+  tipo: 'caso' | 'solicitud'
+  titulo: string
+  estado: string
+  expediente: string | null
+  subtitulo?: string
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null)
   const [casos, setCasos] = useState<Caso[]>([])
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
+  const [casosUnificados, setCasosUnificados] = useState<CasoUnificado[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadingCasos, setLoadingCasos] = useState(false)
-  const [loadingSolicitudes, setLoadingSolicitudes] = useState(false)
+  const [loadingData, setLoadingData] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -60,8 +69,7 @@ export default function Home() {
       setLoading(false)
       
       // Cargar casos y solicitudes del usuario
-      loadCasos(parsedUser)
-      loadSolicitudes(parsedUser)
+      loadData(parsedUser)
     } catch (error) {
       console.error('Error al parsear datos del usuario:', error)
       localStorage.removeItem('user')
@@ -69,43 +77,53 @@ export default function Home() {
     }
   }, [router])
 
-  const loadCasos = async (userData: User) => {
-    setLoadingCasos(true)
+  const loadData = async (userData: User) => {
+    setLoadingData(true)
     try {
-      // Obtener el id_cliente correcto
-      const idCliente = userData.id_sheets || userData.id?.toString()
+      // Obtener el id_cliente correcto (ahora solo id)
+      const idCliente = String(userData.id)
       
-      // Buscar casos donde id_cliente coincida
-      const response = await fetch(`/api/casos?id_cliente=${idCliente}`)
-      const data = await response.json()
+      // Cargar casos y solicitudes en paralelo
+      const [casosResponse, solicitudesResponse] = await Promise.all([
+        fetch(`/api/casos?id_cliente=${idCliente}`),
+        fetch(`/api/solicitudes?id_cliente=${idCliente}`)
+      ])
       
-      if (data.casos) {
-        setCasos(data.casos)
-      }
+      const casosData = await casosResponse.json()
+      const solicitudesData = await solicitudesResponse.json()
+      
+      const casosArray = casosData.casos || []
+      const solicitudesArray = solicitudesData.solicitudes || []
+      
+      setCasos(casosArray)
+      setSolicitudes(solicitudesArray)
+      
+      // Unificar casos y solicitudes
+      const unificados: CasoUnificado[] = [
+        ...casosArray.map((caso: Caso) => ({
+          id: caso.id,
+          tipo: 'caso' as const,
+          titulo: caso.nombre,
+          estado: caso.estado || 'Sin estado',
+          expediente: caso.expediente,
+          subtitulo: caso.expediente ? `Expediente: ${caso.expediente}` : undefined
+        })),
+        ...solicitudesArray.map((solicitud: Solicitud) => ({
+          id: solicitud.id,
+          tipo: 'solicitud' as const,
+          titulo: solicitud.titulo || 'Sin título',
+          estado: solicitud.estado_pago || 'Sin estado',
+          expediente: solicitud.expediente,
+          subtitulo: solicitud.etapa_actual ? `Etapa: ${solicitud.etapa_actual}` : 
+                     (solicitud.total_a_pagar ? `Total: ₡${solicitud.total_a_pagar.toLocaleString('es-CR')}` : undefined)
+        }))
+      ]
+      
+      setCasosUnificados(unificados)
     } catch (error) {
-      console.error('Error al cargar casos:', error)
+      console.error('Error al cargar datos:', error)
     } finally {
-      setLoadingCasos(false)
-    }
-  }
-
-  const loadSolicitudes = async (userData: User) => {
-    setLoadingSolicitudes(true)
-    try {
-      // Obtener el id_cliente correcto
-      const idCliente = userData.id_sheets || userData.id?.toString()
-      
-      // Buscar solicitudes donde id_cliente coincida
-      const response = await fetch(`/api/solicitudes?id_cliente=${idCliente}`)
-      const data = await response.json()
-      
-      if (data.solicitudes) {
-        setSolicitudes(data.solicitudes)
-      }
-    } catch (error) {
-      console.error('Error al cargar solicitudes:', error)
-    } finally {
-      setLoadingSolicitudes(false)
+      setLoadingData(false)
     }
   }
 
@@ -114,12 +132,12 @@ export default function Home() {
     router.push('/login')
   }
 
-  const handleCasoClick = (casoId: string) => {
-    router.push(`/caso/${casoId}`)
-  }
-
-  const handleSolicitudClick = (solicitudId: string) => {
-    router.push(`/solicitud/${solicitudId}`)
+  const handleCasoClick = (caso: CasoUnificado) => {
+    if (caso.tipo === 'caso') {
+      router.push(`/caso/${caso.id}`)
+    } else {
+      router.push(`/solicitud/${caso.id}`)
+    }
   }
 
   const getEstadoColor = (estado: string) => {
@@ -127,6 +145,7 @@ export default function Home() {
       case 'en proceso':
         return '#FAD02C'
       case 'finalizado':
+      case 'pagado':
         return '#4ade80'
       case 'abandonado':
         return '#f87171'
@@ -162,98 +181,43 @@ export default function Home() {
 
       {/* Contenido principal */}
       <main className={styles.main}>
-        {/* Sección de Solicitudes */}
-        <div className={styles.casosSection}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Mis Solicitudes</h2>
-            <span className={styles.casosCount}>{solicitudes.length} {solicitudes.length === 1 ? 'solicitud' : 'solicitudes'}</span>
-          </div>
-
-          {loadingSolicitudes ? (
-            <div className={styles.loadingState}>
-              <div className={styles.spinner}></div>
-              <p>Cargando solicitudes...</p>
-            </div>
-          ) : solicitudes.length === 0 ? (
-            <div className={styles.emptyState}>
-              <p className={styles.emptyText}>No tienes solicitudes asignadas</p>
-            </div>
-          ) : (
-            <div className={styles.casosGrid}>
-              {solicitudes.map((solicitud) => (
-                <div
-                  key={solicitud.id}
-                  className={styles.casoCard}
-                  onClick={() => handleSolicitudClick(solicitud.id)}
-                >
-                  <div className={styles.casoHeader}>
-                    <h3 className={styles.casoNombre}>{solicitud.titulo || 'Sin título'}</h3>
-                    <span
-                      className={styles.casoEstado}
-                      style={{ 
-                        backgroundColor: solicitud.estado_pago === 'Pagado' ? '#4ade80' : 
-                                        solicitud.estado_pago === 'En Proceso' ? '#FAD02C' : '#94a3b8'
-                      }}
-                    >
-                      {solicitud.estado_pago || 'Sin estado'}
-                    </span>
-                  </div>
-                  {solicitud.etapa_actual && (
-                    <p className={styles.casoExpediente}>
-                      Etapa: {solicitud.etapa_actual}
-                    </p>
-                  )}
-                  {solicitud.total_a_pagar && (
-                    <p className={styles.casoExpediente}>
-                      Total: ₡{solicitud.total_a_pagar.toLocaleString('es-CR')}
-                    </p>
-                  )}
-                  <div className={styles.casoFooter}>
-                    <span className={styles.verDetalle}>Ver detalles →</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Sección de Casos */}
+        {/* Sección Unificada de Casos */}
         <div className={styles.casosSection}>
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>Mis Casos</h2>
-            <span className={styles.casosCount}>{casos.length} {casos.length === 1 ? 'caso' : 'casos'}</span>
+            <span className={styles.casosCount}>
+              {casosUnificados.length} {casosUnificados.length === 1 ? 'caso' : 'casos'}
+            </span>
           </div>
 
-          {loadingCasos ? (
+          {loadingData ? (
             <div className={styles.loadingState}>
               <div className={styles.spinner}></div>
               <p>Cargando casos...</p>
             </div>
-          ) : casos.length === 0 ? (
+          ) : casosUnificados.length === 0 ? (
             <div className={styles.emptyState}>
               <p className={styles.emptyText}>No tienes casos asignados</p>
             </div>
           ) : (
             <div className={styles.casosGrid}>
-              {casos.map((caso) => (
+              {casosUnificados.map((caso) => (
                 <div
-                  key={caso.id}
+                  key={`${caso.tipo}-${caso.id}`}
                   className={styles.casoCard}
-                  onClick={() => handleCasoClick(caso.id)}
+                  onClick={() => handleCasoClick(caso)}
                 >
                   <div className={styles.casoHeader}>
-                    <h3 className={styles.casoNombre}>{caso.nombre}</h3>
+                    <h3 className={styles.casoNombre}>{caso.titulo}</h3>
                     <span
                       className={styles.casoEstado}
                       style={{ backgroundColor: getEstadoColor(caso.estado) }}
                     >
-                      {caso.estado || 'Sin estado'}
+                      {caso.estado}
                     </span>
                   </div>
-                  {caso.expediente && (
-                    <p className={styles.casoExpediente}>
-                      Expediente: {caso.expediente}
-                    </p>
+                  {caso.subtitulo && (
+                    <p className={styles.casoExpediente}>{caso.subtitulo}</p>
                   )}
                   <div className={styles.casoFooter}>
                     <span className={styles.verDetalle}>Ver detalles →</span>

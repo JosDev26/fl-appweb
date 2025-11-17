@@ -21,33 +21,33 @@ export class SyncService {
 
       if (fetchError) throw fetchError;
 
-      // Crear mapas para comparación
-      const existingUsuariosMap = new Map((existingUsuarios || []).map(user => [user.id_sheets, user]));
-      const clientesIdSheetsSet = new Set(clientesData.map(cliente => cliente.id_sheets));
+      // Crear mapas para comparación - ahora usando id numérico
+      const existingUsuariosMap = new Map((existingUsuarios || []).map(user => [user.id, user]));
+      const clientesIdSet = new Set(clientesData.map(cliente => cliente.id).filter(id => id));
       
       let inserted = 0, updated = 0, deleted = 0, errors = 0;
       const errorDetails: any[] = [];
 
       // 🗑️ PASO 1: Detectar y eliminar registros que ya no están en Google Sheets
       console.log('🗑️ Detectando eliminaciones...');
-      for (const [idSheets, usuario] of existingUsuariosMap) {
-        if (idSheets && !clientesIdSheetsSet.has(idSheets)) {
+      for (const [id, usuario] of existingUsuariosMap) {
+        if (id && !clientesIdSet.has(id)) {
           try {
-            console.log(`🗑️ Eliminando usuario ${idSheets} (${usuario.nombre}) - ya no está en Sheets`);
+            console.log(`🗑️ Eliminando usuario ${id} (${usuario.nombre}) - ya no está en Sheets`);
             
             const { error } = await supabase
               .from('usuarios')
               .delete()
-              .eq('id_sheets', idSheets);
+              .eq('id', id);
             
             if (error) throw error;
             deleted++;
-            console.log(`✅ Usuario ${idSheets} eliminado de Supabase`);
+            console.log(`✅ Usuario ${id} eliminado de Supabase`);
           } catch (deleteError: any) {
-            console.error(`❌ Error eliminando usuario ${idSheets}:`, deleteError);
+            console.error(`❌ Error eliminando usuario ${id}:`, deleteError);
             errors++;
             errorDetails.push({
-              id_sheets: idSheets,
+              id: id,
               nombre: usuario.nombre,
               operation: 'delete',
               error: deleteError.message
@@ -60,16 +60,16 @@ export class SyncService {
       console.log('📝 Procesando inserciones y actualizaciones...');
       for (const cliente of clientesData) {
         try {
-          if (existingUsuariosMap.has(cliente.id_sheets)) {
+          if (existingUsuariosMap.has(cliente.id)) {
             // Actualizar usuario existente
             const { error } = await supabase
               .from('usuarios')
               .update(cliente)
-              .eq('id_sheets', cliente.id_sheets);
+              .eq('id', cliente.id);
             
             if (error) throw error;
             updated++;
-            console.log(`✅ Usuario ${cliente.id_sheets} actualizado: ${cliente.nombre}`);
+            console.log(`✅ Usuario ${cliente.id} actualizado: ${cliente.nombre}`);
           } else {
             // Insertar nuevo usuario
             const { error } = await supabase
@@ -78,15 +78,15 @@ export class SyncService {
             
             if (error) throw error;
             inserted++;
-            console.log(`✅ Usuario ${cliente.id_sheets} insertado: ${cliente.nombre}`);
+            console.log(`✅ Usuario ${cliente.id} insertado: ${cliente.nombre}`);
           }
         } catch (recordError: any) {
-          console.error(`❌ Error procesando cliente ${cliente.id_sheets}:`, recordError);
+          console.error(`❌ Error procesando cliente ${cliente.id}:`, recordError);
           errors++;
           errorDetails.push({
-            id_sheets: cliente.id_sheets,
+            id: cliente.id,
             nombre: cliente.nombre,
-            operation: cliente.id_sheets && existingUsuariosMap.has(cliente.id_sheets) ? 'update' : 'insert',
+            operation: cliente.id && existingUsuariosMap.has(cliente.id) ? 'update' : 'insert',
             error: recordError.message
           });
         }
@@ -136,9 +136,9 @@ export class SyncService {
       // Leer datos actuales de Google Sheets para detectar eliminaciones
       const currentClientes = await GoogleSheetsService.readClientes();
       
-      // Crear sets para comparación
-      const usuariosIdSheetsSet = new Set((usuarios || []).map(u => u.id_sheets).filter(id => id));
-      const clientesIdSheetsSet = new Set(currentClientes.map(c => c.id_sheets));
+      // Crear sets para comparación - ahora usando id numérico
+      const usuariosIdSet = new Set((usuarios || []).map(u => u.id).filter(id => id));
+      const clientesIdSet = new Set(currentClientes.map(c => c.id).filter(id => id));
       
       let syncedRecords = 0;
       let deletedFromSheets = 0;
@@ -146,10 +146,10 @@ export class SyncService {
       // 🗑️ PASO 1: Detectar registros en Sheets que ya no están en Supabase
       console.log('🗑️ Detectando registros para eliminar de Google Sheets...');
       const clientesToKeep = currentClientes.filter(cliente => {
-        if (usuariosIdSheetsSet.has(cliente.id_sheets)) {
+        if (usuariosIdSet.has(cliente.id)) {
           return true; // Mantener este registro
         } else {
-          console.log(`🗑️ Registro ${cliente.id_sheets} (${cliente.nombre}) será eliminado de Sheets`);
+          console.log(`🗑️ Registro ${cliente.id} (${cliente.nombre}) será eliminado de Sheets`);
           deletedFromSheets++;
           return false; // Eliminar este registro
         }

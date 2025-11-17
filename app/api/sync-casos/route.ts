@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
     const idClienteIndex = headers.findIndex((h: string) => h === 'ID_Cliente')
     const idEmpresaIndex = headers.findIndex((h: string) => h === 'ID_Empresa')
     const estadoIndex = headers.findIndex((h: string) => h === 'Estado')
+    const materiaIndex = headers.findIndex((h: string) => h === 'Materia')
     const expedienteIndex = headers.findIndex((h: string) => h === 'Expediente')
 
     if (idCasoIndex === -1 || tituloIndex === -1) {
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
           nombre: String(row[tituloIndex]).trim(),
           id_cliente: finalIdCliente,
           estado: estadoIndex !== -1 ? (String(row[estadoIndex] || '').trim() || null) : null,
+          materia: materiaIndex !== -1 ? (String(row[materiaIndex] || '').trim() || null) : null,
           expediente: expedienteIndex !== -1 ? (String(row[expedienteIndex] || '').trim() || null) : null
         }
       })
@@ -98,6 +100,7 @@ export async function POST(request: NextRequest) {
         const updateData: any = {
           nombre: caso.nombre,
           estado: caso.estado,
+          materia: caso.materia,
           expediente: caso.expediente,
           id_cliente: caso.id_cliente
         }
@@ -126,6 +129,7 @@ export async function POST(request: NextRequest) {
             id: caso.id,
             nombre: caso.nombre,
             estado: caso.estado,
+            materia: caso.materia,
             expediente: caso.expediente,
             id_cliente: caso.id_cliente
           })

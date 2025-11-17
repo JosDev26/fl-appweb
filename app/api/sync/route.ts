@@ -3,8 +3,16 @@ import { SyncService } from '../../../lib/syncService';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { direction } = body; // 'usuarios-to-clientes' | 'clientes-to-usuarios' | 'bidirectional'
+    // Intentar parsear el body, si está vacío usar valores por defecto
+    let direction = 'bidirectional';
+    
+    try {
+      const body = await request.json();
+      direction = body.direction || 'bidirectional';
+    } catch (parseError) {
+      // Si no hay body o está vacío, usar bidirectional por defecto
+      console.log('No body provided, using bidirectional sync');
+    }
 
     let result;
 

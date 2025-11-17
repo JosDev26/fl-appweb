@@ -25,13 +25,13 @@ export const SYNC_CONFIG: TableMapping[] = [
   {
     sheetsName: "Clientes",
     supabaseTable: "usuarios",
-    idColumn: "id_sheets", // 👈 Cambio: ahora usa id_sheets como identificador
+    idColumn: "id",
     columns: [
       {
         sheetsColumn: "ID_Cliente",        // Columna A
-        supabaseColumn: "id_sheets",       // 👈 Cambio: mapea a id_sheets en lugar de id
+        supabaseColumn: "id",
         required: true,
-        transform: (value) => String(value || '').trim() // Mantener como texto
+        transform: (value) => String(value || '').trim() // Mantener como texto alfanumérico
       },
       {
         sheetsColumn: "Nombre",            // Columna B
@@ -85,7 +85,23 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Cuenta",            // Columna J
+        sheetsColumn: "IVA_Perc",          // Columna I
+        supabaseColumn: "iva_perc",
+        transform: (value) => {
+          // Si está vacío, null o undefined, retornar 0.13 por defecto
+          if (!value || value === '' || value === null || value === undefined) {
+            return 0.13;
+          }
+          // Si viene como "13%" o "13"
+          const str = String(value).replace(/%/g, '').trim();
+          const num = parseFloat(str);
+          if (isNaN(num)) return 0.13; // Valor por defecto si no se puede parsear
+          // Si es mayor o igual a 1, asumir que es porcentaje (ej: 13) y convertir a decimal
+          return num >= 1 ? num / 100 : num;
+        }
+      },
+      {
+        sheetsColumn: "Cuenta",            // Columna K
         supabaseColumn: "estaRegistrado",
         transform: (value) => {
           if (typeof value === 'boolean') return value;
@@ -182,6 +198,27 @@ export const SYNC_CONFIG: TableMapping[] = [
     ]
   },
   {
+    sheetsName: "Materias",
+    supabaseTable: "materias",
+    idColumn: "id",
+    columns: [
+      {
+        sheetsColumn: "ID_Materia",        // Columna A
+        supabaseColumn: "id",
+        required: true,
+        transform: (value) => String(value || '').trim()
+      },
+      {
+        sheetsColumn: "Materia",           // Columna B
+        supabaseColumn: "nombre",
+        transform: (value) => {
+          const nombre = String(value || '').trim();
+          return nombre === '' ? null : nombre;
+        }
+      }
+    ]
+  },
+  {
     sheetsName: "Caso",
     supabaseTable: "casos",
     idColumn: "id",
@@ -204,6 +241,14 @@ export const SYNC_CONFIG: TableMapping[] = [
         transform: (value) => {
           const estado = String(value || '').trim();
           return estado === '' ? null : estado;
+        }
+      },
+      {
+        sheetsColumn: "Materia",          // Columna G
+        supabaseColumn: "materia",
+        transform: (value) => {
+          const materia = String(value || '').trim();
+          return materia === '' ? null : materia;
         }
       },
       {
@@ -401,7 +446,27 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Cantidad_Cuotas",  // Columna M
+        sheetsColumn: "SeCobra_IVA",      // Columna L
+        supabaseColumn: "se_cobra_iva",
+        transform: (value) => {
+          if (typeof value === 'boolean') return value;
+          const str = String(value || '').toLowerCase().trim();
+          return str === 'true' || str === 'yes' || str === 'sí' || str === 'si' || str === '1';
+        }
+      },
+      {
+        sheetsColumn: "Monto_IVA",        // Columna M
+        supabaseColumn: "monto_iva",
+        transform: (value) => {
+          if (!value || value === '' || value === 'NULL' || value === 'null') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Cantidad_Cuotas",  // Columna N
         supabaseColumn: "cantidad_cuotas",
         transform: (value) => {
           if (!value || value === '') return null;
@@ -410,7 +475,7 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "MontoxCuota",      // Columna N
+        sheetsColumn: "MontoxCuota",      // Columna O
         supabaseColumn: "monto_por_cuota",
         transform: (value) => {
           if (!value || value === '') return null;
@@ -421,7 +486,7 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Total_a_Pagar",    // Columna O
+        sheetsColumn: "Total_a_Pagar",    // Columna P
         supabaseColumn: "total_a_pagar",
         transform: (value) => {
           if (!value || value === '') return null;
@@ -432,7 +497,7 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Estado_Pago",      // Columna P
+        sheetsColumn: "Estado_Pago",      // Columna Q
         supabaseColumn: "estado_pago",
         transform: (value) => {
           const estado = String(value || '').trim();
@@ -440,7 +505,7 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Monto_Pagado",     // Columna Q
+        sheetsColumn: "Monto_Pagado",     // Columna R
         supabaseColumn: "monto_pagado",
         transform: (value) => {
           if (!value || value === '') return null;
@@ -451,7 +516,7 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Saldo_Pendiente",  // Columna R
+        sheetsColumn: "Saldo_Pendiente",  // Columna S
         supabaseColumn: "saldo_pendiente",
         transform: (value) => {
           if (!value || value === '') return null;
@@ -462,7 +527,7 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "Expediente",       // Columna S
+        sheetsColumn: "Expediente",       // Columna T
         supabaseColumn: "expediente",
         transform: (value) => {
           const exp = String(value || '').trim();

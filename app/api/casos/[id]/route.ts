@@ -12,10 +12,15 @@ export async function GET(
     const searchParams = request.nextUrl.searchParams
     const requestIdCliente = searchParams.get('id_cliente')
 
-    // Obtener información del caso
+    // Obtener información del caso con el nombre de la materia
     const { data: caso, error } = await supabase
       .from('casos')
-      .select('*')
+      .select(`
+        *,
+        materias:materia (
+          nombre
+        )
+      `)
       .eq('id', casoId)
       .single()
 

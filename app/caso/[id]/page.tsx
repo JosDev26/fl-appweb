@@ -12,6 +12,9 @@ interface Caso {
   id_cliente: string | null
   created_at: string
   updated_at: string
+  materias?: {
+    nombre: string | null
+  } | null
 }
 
 interface Trabajo {
@@ -24,9 +27,19 @@ interface Trabajo {
   solicitante: string | null
 }
 
+interface Gasto {
+  id: string
+  fecha: string | null
+  producto: string | null
+  total_cobro: number | null
+  id_responsable: string | null
+  funcionarios?: {
+    nombre: string | null
+  } | null
+}
+
 interface User {
   id: number
-  id_sheets?: string
   nombre: string
   cedula?: number
   tipo: 'cliente' | 'empresa'
@@ -35,6 +48,7 @@ interface User {
 export default function CasoDetalle() {
   const [caso, setCaso] = useState<Caso | null>(null)
   const [trabajos, setTrabajos] = useState<Trabajo[]>([])
+  const [gastos, setGastos] = useState<Gasto[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const params = useParams()
@@ -61,7 +75,7 @@ export default function CasoDetalle() {
       }
 
       const user: User = JSON.parse(userData)
-      const userIdCliente = user.id_sheets || String(user.id)
+      const userIdCliente = String(user.id)
 
       // Obtener información del caso
       const casoResponse = await fetch(`/api/casos/${casoId}`)
@@ -83,6 +97,14 @@ export default function CasoDetalle() {
         
         if (trabajosData.trabajos) {
           setTrabajos(trabajosData.trabajos)
+        }
+
+        // Obtener gastos del caso
+        const gastosResponse = await fetch(`/api/casos/${casoId}/gastos`)
+        const gastosData = await gastosResponse.json()
+        
+        if (gastosData.gastos) {
+          setGastos(gastosData.gastos)
         }
       } else {
         router.push('/home')
@@ -145,6 +167,15 @@ export default function CasoDetalle() {
     return `${hours}h ${minutes}m`
   }
 
+  const calcularTotalGastos = () => {
+    return gastos.reduce((total, gasto) => total + (gasto.total_cobro || 0), 0)
+  }
+
+  const formatMonto = (monto: number | null) => {
+    if (monto === null || monto === undefined) return '₡0.00'
+    return `₡${monto.toLocaleString('es-CR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
+
   if (loading) {
     return (
       <div className={styles.container}>
@@ -190,6 +221,9 @@ export default function CasoDetalle() {
               {caso.expediente && (
                 <p className={styles.casoExpediente}>Expediente: {caso.expediente}</p>
               )}
+              {caso.materias?.nombre && (
+                <p className={styles.casoExpediente}>Materia: {caso.materias.nombre}</p>
+              )}
             </div>
             <span
               className={styles.casoEstado}
@@ -207,6 +241,10 @@ export default function CasoDetalle() {
             <div className={styles.estadistica}>
               <span className={styles.estadisticaLabel}>Horas trabajadas</span>
               <span className={styles.estadisticaValor}>{calcularTotalHoras()}</span>
+            </div>
+            <div className={styles.estadistica}>
+              <span className={styles.estadisticaLabel}>Total Gastos</span>
+              <span className={styles.estadisticaValor}>{formatMonto(calcularTotalGastos())}</span>
             </div>
           </div>
         </div>
@@ -244,6 +282,48 @@ export default function CasoDetalle() {
                       </td>
                       <td className={styles.cellDuracion}>
                         {formatDuracion(trabajo.duracion)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Tabla de gastos */}
+        <div className={styles.trabajosSection}>
+          <h2 className={styles.sectionTitle}>Gastos del Caso</h2>
+          
+          {gastos.length === 0 ? (
+            <div className={styles.emptyTrabajos}>
+              <p>No hay gastos registrados para este caso</p>
+            </div>
+          ) : (
+            <div className={styles.tableContainer}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Producto/Servicio</th>
+                    <th>Responsable</th>
+                    <th>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gastos.map((gasto) => (
+                    <tr key={gasto.id}>
+                      <td className={styles.cellFecha}>
+                        {formatFecha(gasto.fecha)}
+                      </td>
+                      <td className={styles.cellDescripcion}>
+                        {gasto.producto || '-'}
+                      </td>
+                      <td className={styles.cellTitulo}>
+                        {gasto.funcionarios?.nombre || '-'}
+                      </td>
+                      <td className={styles.cellDuracion}>
+                        {formatMonto(gasto.total_cobro)}
                       </td>
                     </tr>
                   ))}

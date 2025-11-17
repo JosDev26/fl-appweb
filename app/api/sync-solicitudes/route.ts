@@ -6,8 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     console.log('� Iniciando sincronización de Solicitudes...')
     
-    // Leer TODAS las columnas manualmente (A hasta S)
-    const allColumnsData = await GoogleSheetsService.getSheetData('Solicitudes', 'A:S')
+    // Leer TODAS las columnas manualmente (A hasta T)
+    const allColumnsData = await GoogleSheetsService.getSheetData('Solicitudes', 'A:T')
     
     if (!allColumnsData || allColumnsData.length < 2) {
       return NextResponse.json({ 
@@ -38,20 +38,24 @@ export async function POST(request: NextRequest) {
     }
 
     const idSolicitudIndex = findHeader('ID_Solicitud') // A
-    const idClienteIndex = findHeader('ID_Cliente') // D
+    const idClienteFisicoIndex = findHeader('ID_Cliente') // D (para físicos) 
+    // Nota: Columna E también se llama ID_Cliente pero para jurídicos
+    // Necesitamos buscar ambas columnas D y E
     const tituloIndex = findHeader('Titulo') // F
     const descripcionIndex = findHeader('Descripcion') // G
     const materiaIndex = findHeader('Materia') // H
     const etapaActualIndex = findHeader('Etapa_Actual') // I
     const modalidadPagoIndex = findHeader('Modalidad_Pago') // J
     const costoNetoIndex = findHeader('Costo_Neto') // K
-    const cantidadCuotasIndex = findHeader('Cantidad_Cuotas') // M
-    const montoPorCuotaIndex = findHeader('MontoxCuota') // N
-    const totalAPagarIndex = findHeader('Total_a_Pagar') // O
-    const estadoPagoIndex = findHeader('Estado_Pago') // P
-    const montoPagadoIndex = findHeader('Monto_Pagado') // Q
-    const saldoPendienteIndex = findHeader('Saldo_Pendiente') // R
-    const expedienteIndex = findHeader('Expediente') // S
+    const seCobraIVAIndex = findHeader('SeCobra_IVA') // L
+    const montoIVAIndex = findHeader('Monto_IVA') // M
+    const cantidadCuotasIndex = findHeader('Cantidad_Cuotas') // N
+    const montoPorCuotaIndex = findHeader('MontoxCuota') // O
+    const totalAPagarIndex = findHeader('Total_a_Pagar') // P
+    const estadoPagoIndex = findHeader('Estado_Pago') // Q
+    const montoPagadoIndex = findHeader('Monto_Pagado') // R
+    const saldoPendienteIndex = findHeader('Saldo_Pendiente') // S
+    const expedienteIndex = findHeader('Expediente') // T
 
     if (idSolicitudIndex === -1) {
       throw new Error('No se encontró la columna requerida: ID_Solicitud')
@@ -59,25 +63,42 @@ export async function POST(request: NextRequest) {
 
     // Función para convertir montos (remueve ₡, $, comas)
     const parseMontoToNumber = (value: any): number | null => {
-      if (!value || value === '') return null
+      if (!value || value === '' || value === 'NULL' || value === 'null') return null
       const numStr = String(value).replace(/[₡$,]/g, '').trim()
       const num = parseFloat(numStr)
       return isNaN(num) ? null : num
+    }
+
+    // Función para convertir booleanos
+    const parseBoolean = (value: any): boolean => {
+      if (typeof value === 'boolean') return value
+      const str = String(value || '').toLowerCase().trim()
+      return str === 'true' || str === 'yes' || str === 'sí' || str === 'si' || str === '1'
     }
 
     // Transformar los datos
     const transformedData = rows
       .filter((row: any[]) => row[idSolicitudIndex] && String(row[idSolicitudIndex]).trim() !== '')
       .map((row: any[]) => {
+        // Tomar ID_Cliente de columna D o E (la que tenga dato)
+        let idCliente = null
+        if (idClienteFisicoIndex !== -1) {
+          const idD = String(row[idClienteFisicoIndex] || '').trim()
+          const idE = String(row[idClienteFisicoIndex + 1] || '').trim() // E es D+1
+          idCliente = idD || idE || null
+        }
+        
         return {
           id: String(row[idSolicitudIndex]).trim(),
-          id_cliente: idClienteIndex !== -1 ? (String(row[idClienteIndex] || '').trim() || null) : null,
+          id_cliente: idCliente,
           titulo: tituloIndex !== -1 ? (String(row[tituloIndex] || '').trim() || null) : null,
           descripcion: descripcionIndex !== -1 ? (String(row[descripcionIndex] || '').trim() || null) : null,
           materia: materiaIndex !== -1 ? (String(row[materiaIndex] || '').trim() || null) : null,
           etapa_actual: etapaActualIndex !== -1 ? (String(row[etapaActualIndex] || '').trim() || null) : null,
           modalidad_pago: modalidadPagoIndex !== -1 ? (String(row[modalidadPagoIndex] || '').trim() || null) : null,
           costo_neto: costoNetoIndex !== -1 ? parseMontoToNumber(row[costoNetoIndex]) : null,
+          se_cobra_iva: seCobraIVAIndex !== -1 ? parseBoolean(row[seCobraIVAIndex]) : false,
+          monto_iva: montoIVAIndex !== -1 ? parseMontoToNumber(row[montoIVAIndex]) : null,
           cantidad_cuotas: cantidadCuotasIndex !== -1 ? (parseInt(String(row[cantidadCuotasIndex] || '')) || null) : null,
           monto_por_cuota: montoPorCuotaIndex !== -1 ? parseMontoToNumber(row[montoPorCuotaIndex]) : null,
           total_a_pagar: totalAPagarIndex !== -1 ? parseMontoToNumber(row[totalAPagarIndex]) : null,
@@ -136,6 +157,8 @@ export async function POST(request: NextRequest) {
           etapa_actual: solicitud.etapa_actual,
           modalidad_pago: solicitud.modalidad_pago,
           costo_neto: solicitud.costo_neto,
+          se_cobra_iva: solicitud.se_cobra_iva,
+          monto_iva: solicitud.monto_iva,
           cantidad_cuotas: solicitud.cantidad_cuotas,
           monto_por_cuota: solicitud.monto_por_cuota,
           total_a_pagar: solicitud.total_a_pagar,

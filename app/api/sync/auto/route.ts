@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
       { name: 'Clientes', url: `${baseUrl}/api/sync-clientes` },
       { name: 'Empresas', url: `${baseUrl}/api/sync-empresas` },
       { name: 'Contactos', url: `${baseUrl}/api/sync-contactos` },
+      { name: 'Materias', url: `${baseUrl}/api/sync-materias` },
       { name: 'Funcionarios', url: `${baseUrl}/api/sync-funcionarios` },
       { name: 'Casos', url: `${baseUrl}/api/sync-casos` },
       { name: 'Control_Horas', url: `${baseUrl}/api/sync-control-horas` }

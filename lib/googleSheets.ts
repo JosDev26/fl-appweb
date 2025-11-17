@@ -89,8 +89,8 @@ export class GoogleSheetsService {
 
         return item;
       }).filter(item => {
-        // Filtrar filas que no tienen el id (requerido) - puede ser id o id_sheets
-        const idValue = item.id || item.id_sheets;
+        // Filtrar filas que no tienen el id (requerido)
+        const idValue = item.id;
         const isValid = idValue != null && idValue !== '';
         if (!isValid) {
           console.warn(`⚠️ Fila filtrada por falta de ID:`, item);
@@ -117,7 +117,12 @@ export class GoogleSheetsService {
     return this.readSheet('Empresas');
   }
 
-  // 📝 Escribir datos a la hoja Clientes (preservando columnas G e I de AppSheet)
+  // 📖 Leer datos de la hoja Materias
+  static async readMaterias(): Promise<any[]> {
+    return this.readSheet('Materias');
+  }
+
+  // 📝 Escribir datos a la hoja Clientes PRESERVANDO columnas G e I
   static async writeClientes(usuarios: any[]): Promise<void> {
     try {
       const config = SYNC_CONFIG.find(c => c.sheetsName === "Clientes");
@@ -125,87 +130,94 @@ export class GoogleSheetsService {
         throw new Error("No configuration found for Clientes sheet");
       }
 
-      console.log(`📝 Escribiendo ${usuarios.length} registros a hoja Clientes (preservando columnas G e I)...`);
+      console.log(`📝 Escribiendo ${usuarios.length} registros a hoja Clientes...`);
 
-      // Primero, leer los datos actuales para preservar las columnas G e I
+      // 1. Leer datos actuales para preservar columnas G, I y E
       const currentResponse = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: 'Clientes!A:J',
+        range: 'Clientes!A:K',
       });
 
       const currentRows = currentResponse.data.values || [];
-      const currentHeaders = currentRows.length > 0 ? currentRows[0] : [];
       
-      console.log(`📋 Headers actuales en la hoja:`, currentHeaders);
-      console.log(`📋 Preservando datos de columnas G e I para AppSheet`);
-
-      // Crear un mapa de datos existentes por ID_Cliente para preservar columnas G e I
-      const existingDataMap = new Map();
+      // 2. Guardar headers originales
+      const originalHeaders = currentRows.length > 0 ? currentRows[0] : [];
+      
+      // 3. Crear mapa de datos preservados por ID_Cliente
+      const preservedDataMap = new Map<string, { 
+        columnE: string;  // Tipo_Identificación
+        columnG: string;  // AppSheet
+        columnI: string;  // IVA_Perc
+      }>();
+      
       if (currentRows.length > 1) {
-        const idColumnIndex = currentHeaders.indexOf('ID_Cliente');
-        if (idColumnIndex !== -1) {
-          for (let i = 1; i < currentRows.length; i++) {
-            const row = currentRows[i];
-            const id = row[idColumnIndex];
-            if (id) {
-              existingDataMap.set(id, {
-                columnG: row[6] || '', // Columna G (índice 6)
-                columnI: row[8] || ''  // Columna I (índice 8)
-              });
-            }
+        for (let i = 1; i < currentRows.length; i++) {
+          const row = currentRows[i];
+          const idCliente = row[0]; // Columna A (ID_Cliente)
+          if (idCliente) {
+            preservedDataMap.set(String(idCliente), {
+              columnE: row[4] || '',  // Columna E (índice 4) - Tipo_Identificación
+              columnG: row[6] || '',  // Columna G (índice 6) - AppSheet
+              columnI: row[8] || ''   // Columna I (índice 8) - IVA_Perc
+            });
           }
         }
       }
 
-      // Crear headers en el orden correcto (A, B, C, D, E, F, G, H, I, J)
-      const orderedHeaders = [
+      console.log(`📋 Preservando columnas E, G e I para ${preservedDataMap.size} registros existentes`);
+
+      // 4. Construir las filas con datos de Supabase + columnas preservadas
+      const rows = usuarios.map(usuario => {
+        const preserved = preservedDataMap.get(String(usuario.id));
+        
+        return [
+          usuario.id || '',                              // A: ID_Cliente
+          usuario.nombre || '',                          // B: Nombre
+          usuario.correo || '',                          // C: Correo
+          usuario.telefono || '',                        // D: Telefono
+          preserved?.columnE || usuario.tipo_cedula || '',  // E: Tipo_Identificación (PRESERVADA)
+          usuario.cedula ? String(usuario.cedula) : '',  // F: Identificacion
+          preserved?.columnG || '',                      // G: AppSheet (PRESERVADA)
+          usuario.esDolar ? 'Dolares' : 'Colones',      // H: Moneda
+          preserved?.columnI || (usuario.iva_perc ? String(usuario.iva_perc) : ''), // I: IVA_Perc (PRESERVADA)
+          '',                                            // J: (vacía)
+          usuario.estaRegistrado ? 'Y' : 'N'            // K: Cuenta
+        ];
+      });
+
+      // 5. Headers - Usar los originales de Sheets si existen, sino usar valores por defecto
+      const headers = originalHeaders.length >= 11 ? originalHeaders : [
         'ID_Cliente',           // A
         'Nombre',               // B
         'Correo',               // C
         'Telefono',             // D
         'Tipo_Identificación',  // E
         'Identificacion',       // F
-        currentHeaders[6] || 'AppSheet_G', // G (preservada)
+        'AppSheet',             // G (preservar header original)
         'Moneda',               // H
-        currentHeaders[8] || 'AppSheet_I', // I (preservada)
-        'Cuenta'                // J
+        'IVA_Perc',             // I (preservar header original)
+        'J_Column',             // J (preservar header original)
+        'Cuenta'                // K
       ];
-      
-      // Transformar datos de Supabase a formato de Sheets con columnas preservadas
-      const rows = usuarios.map(usuario => {
-        const preservedData = existingDataMap.get(usuario.id_sheets);
-        
-        return [
-          usuario.id_sheets || '',                                                    // A
-          usuario.nombre || '',                                                       // B
-          usuario.correo || '',                                                       // C
-          usuario.telefono || '',                                                     // D
-          usuario.tipo_cedula || '',                                                  // E
-          usuario.cedula || '',                                                       // F
-          preservedData?.columnG || '',                                               // G (preservada)
-          usuario.esDolar ? 'Dolares' : 'Colones',                                  // H
-          preservedData?.columnI || '',                                               // I (preservada)
-          usuario.estaRegistrado ? 'Y' : 'N'                                         // J
-        ];
-      });
 
-      // Limpiar la hoja y escribir nuevos datos con estructura completa
+      // 6. Limpiar solo las filas de datos (no headers)
       await sheets.spreadsheets.values.clear({
         spreadsheetId,
-        range: 'Clientes!A:J',
+        range: 'Clientes!A2:K',
       });
 
+      // 7. Escribir headers + datos
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: 'Clientes!A1',
         valueInputOption: 'RAW',
         requestBody: {
-          values: [orderedHeaders, ...rows],
+          values: [headers, ...rows],
         },
       });
 
       console.log(`✅ Datos escritos exitosamente a hoja Clientes`);
-      console.log(`📋 Estructura: A=ID_Cliente, B=Nombre, C=Correo, D=Telefono, E=Tipo_ID, F=Identificacion, G=AppSheet(preservada), H=Moneda, I=AppSheet(preservada), J=Cuenta`);
+      console.log(`✅ Preservadas: Columna E (Tipo_Identificación), Columna G (AppSheet) y Columna I (IVA_Perc)`);
 
     } catch (error) {
       console.error('❌ Error escribiendo a hoja Clientes:', error);
@@ -213,33 +225,53 @@ export class GoogleSheetsService {
     }
   }
 
-  // 🔄 Actualizar filas individuales sin afectar columnas G e I
+  // 🔄 DESHABILITADO: Actualización individual también deshabilitada
+  // 🔄 Actualizar fila individual preservando columnas E, G e I
   static async updateClienteRow(usuario: any, rowIndex: number): Promise<void> {
     try {
-      console.log(`📝 Actualizando fila ${rowIndex} para usuario ${usuario.id_sheets} sin afectar columnas G e I...`);
+      console.log(`📝 Actualizando fila ${rowIndex} para usuario ${usuario.id}...`);
 
-      // Actualizar solo las columnas específicas, excluyendo G (7) e I (9)
-      const updates = [
-        { range: `Clientes!A${rowIndex}`, values: [[usuario.id_sheets || '']] },
-        { range: `Clientes!B${rowIndex}`, values: [[usuario.nombre || '']] },
-        { range: `Clientes!C${rowIndex}`, values: [[usuario.correo || '']] },
-        { range: `Clientes!D${rowIndex}`, values: [[usuario.telefono || '']] },
-        { range: `Clientes!E${rowIndex}`, values: [[usuario.tipo_cedula || '']] },
-        { range: `Clientes!F${rowIndex}`, values: [[usuario.cedula || '']] },
-        { range: `Clientes!H${rowIndex}`, values: [[usuario.esDolar ? 'Dolares' : 'Colones']] },
-        { range: `Clientes!J${rowIndex}`, values: [[usuario.estaRegistrado ? 'Y' : 'N']] }
-      ];
-
-      // Ejecutar actualizaciones en lote
-      await sheets.spreadsheets.values.batchUpdate({
+      // Leer valores actuales de columnas E, G e I
+      const eResponse = await sheets.spreadsheets.values.get({
         spreadsheetId,
+        range: `Clientes!E${rowIndex}`,
+      });
+      const gResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `Clientes!G${rowIndex}`,
+      });
+      const iResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `Clientes!I${rowIndex}`,
+      });
+
+      const columnE = eResponse.data.values?.[0]?.[0] || usuario.tipo_cedula || '';
+      const columnG = gResponse.data.values?.[0]?.[0] || '';
+      const columnI = iResponse.data.values?.[0]?.[0] || (usuario.iva_perc ? String(usuario.iva_perc) : '');
+
+      // Actualizar toda la fila preservando E, G e I
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `Clientes!A${rowIndex}:K${rowIndex}`,
+        valueInputOption: 'RAW',
         requestBody: {
-          valueInputOption: 'RAW',
-          data: updates
+          values: [[
+            usuario.id || '',                              // A: ID_Cliente
+            usuario.nombre || '',                          // B: Nombre
+            usuario.correo || '',                          // C: Correo
+            usuario.telefono || '',                        // D: Telefono
+            columnE,                                       // E: Tipo_Identificación (PRESERVADA)
+            usuario.cedula ? String(usuario.cedula) : '',  // F: Identificacion
+            columnG,                                       // G: AppSheet (PRESERVADA)
+            usuario.esDolar ? 'Dolares' : 'Colones',      // H: Moneda
+            columnI,                                       // I: IVA_Perc (PRESERVADA)
+            '',                                            // J: (vacía)
+            usuario.estaRegistrado ? 'Y' : 'N'            // K: Cuenta
+          ]]
         }
       });
 
-      console.log(`✅ Fila ${rowIndex} actualizada preservando columnas G e I`);
+      console.log(`✅ Fila ${rowIndex} actualizada preservando columnas E, G e I`);
 
     } catch (error) {
       console.error(`❌ Error actualizando fila ${rowIndex}:`, error);

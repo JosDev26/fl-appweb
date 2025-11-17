@@ -193,6 +193,81 @@ export default function DevPage() {
     }
   }
 
+  const syncMaterias = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/sync-materias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      
+      addResult({
+        success: response.ok,
+        message: response.ok ? 'Sincronización de Materias completada' : 'Error en sincronización',
+        details: data
+      })
+    } catch (error) {
+      addResult({
+        success: false,
+        message: 'Error al sincronizar Materias',
+        details: error
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const syncActualizaciones = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/sync-actualizaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      
+      addResult({
+        success: response.ok,
+        message: response.ok ? 'Sincronización de Actualizaciones completada' : 'Error en sincronización',
+        details: data
+      })
+    } catch (error) {
+      addResult({
+        success: false,
+        message: 'Error al sincronizar Actualizaciones',
+        details: error
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const syncGastos = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/sync-gastos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      
+      addResult({
+        success: response.ok,
+        message: response.ok ? 'Sincronización de Gastos completada' : 'Error en sincronización',
+        details: data
+      })
+    } catch (error) {
+      addResult({
+        success: false,
+        message: 'Error al sincronizar Gastos',
+        details: error
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const syncAll = async () => {
     setLoading(true)
     try {
@@ -309,6 +384,14 @@ export default function DevPage() {
                 </button>
 
                 <button
+                  onClick={syncMaterias}
+                  disabled={loading}
+                  className={styles.actionButton}
+                >
+                  {loading ? '⏳ Procesando...' : '⚖️ Sincronizar Materias'}
+                </button>
+
+                <button
                   onClick={syncCasos}
                   disabled={loading}
                   className={styles.actionButton}
@@ -338,6 +421,22 @@ export default function DevPage() {
                   className={styles.actionButton}
                 >
                   {loading ? '⏳ Procesando...' : '📋 Sincronizar Solicitudes'}
+                </button>
+
+                <button
+                  onClick={syncActualizaciones}
+                  disabled={loading}
+                  className={styles.actionButton}
+                >
+                  {loading ? '⏳ Procesando...' : '📝 Sincronizar Actualizaciones'}
+                </button>
+
+                <button
+                  onClick={syncGastos}
+                  disabled={loading}
+                  className={styles.actionButton}
+                >
+                  {loading ? '⏳ Procesando...' : '💰 Sincronizar Gastos'}
                 </button>
 
                 <button
