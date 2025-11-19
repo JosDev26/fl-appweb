@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const inicioMesStr = inicioMes.toISOString().split('T')[0];
 
     // Obtener trabajos por hora del mes actual
-    let trabajosPorHora = [];
+    let trabajosPorHora: any[] = [];
     if (tipoCliente === 'usuario') {
       // Para usuarios, buscar directamente por id_cliente
       const { data, error } = await supabase
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
     
     if (gastosError) throw gastosError;
     
-    const totalGastos = (gastos || []).reduce((sum, g) => sum + (g.total_cobro || 0), 0);
+    const totalGastos = (gastos || []).reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
     // Obtener solicitudes con modalidad mensual
     const { data: solicitudes, error: solicitudesError } = await supabase

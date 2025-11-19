@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     // Obtener IDs actuales en Supabase
     const { data: existingRecords, error: fetchError } = await supabase
-      .from(mapping.supabaseTable)
+      .from(mapping.supabaseTable as any)
       .select(mapping.idColumn);
 
     if (fetchError) {
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     // Insertar nuevos registros
     if (toInsert.length > 0) {
       const { error: insertError } = await supabase
-        .from(mapping.supabaseTable)
+        .from(mapping.supabaseTable as any)
         .insert(toInsert);
 
       if (insertError) {
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
     if (toUpdate.length > 0) {
       for (const record of toUpdate) {
         const { error: updateError } = await supabase
-          .from(mapping.supabaseTable)
+          .from(mapping.supabaseTable as any)
           .update(record)
           .eq(mapping.idColumn, record[mapping.idColumn]);
 
@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
     // Eliminar registros que ya no están en Sheets
     if (toDelete.length > 0) {
       const { error: deleteError } = await supabase
-        .from(mapping.supabaseTable)
+        .from(mapping.supabaseTable as any)
         .delete()
         .in(mapping.idColumn, toDelete);
 
