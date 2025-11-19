@@ -119,6 +119,7 @@ export interface Database {
           iva_perc: number | null
           estaRegistrado: boolean | null
           password: string | null
+          modoPago: boolean | null
           created_at: string
           updated_at: string
         }
@@ -130,6 +131,7 @@ export interface Database {
           iva_perc?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
+          modoPago?: boolean | null
           created_at?: string
           updated_at?: string
         }
@@ -141,6 +143,7 @@ export interface Database {
           iva_perc?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
+          modoPago?: boolean | null
           created_at?: string
           updated_at?: string
         }
@@ -152,6 +155,7 @@ export interface Database {
           id_asociacion: string | null
           id_caso: string | null
           id_responsable: string | null
+          id_cliente: string | null
           fecha: string | null
           producto: string | null
           total_cobro: number | null
@@ -163,6 +167,7 @@ export interface Database {
           id_asociacion?: string | null
           id_caso?: string | null
           id_responsable?: string | null
+          id_cliente?: string | null
           fecha?: string | null
           producto?: string | null
           total_cobro?: number | null
@@ -174,6 +179,7 @@ export interface Database {
           id_asociacion?: string | null
           id_caso?: string | null
           id_responsable?: string | null
+          id_cliente?: string | null
           fecha?: string | null
           producto?: string | null
           total_cobro?: number | null
@@ -205,6 +211,30 @@ export interface Database {
         Update: {
           id?: string
           nombre?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      historial_reportes: {
+        Row: {
+          id: string
+          fecha: string | null
+          hora: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          fecha?: string | null
+          hora?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          fecha?: string | null
+          hora?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -371,6 +401,7 @@ export interface Database {
           iva_perc: number | null
           estaRegistrado: boolean | null
           password: string | null
+          modoPago: boolean | null
         }
         Insert: {
           id: string
@@ -383,6 +414,7 @@ export interface Database {
           iva_perc?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
+          modoPago?: boolean | null
         }
         Update: {
           id?: string
@@ -395,6 +427,7 @@ export interface Database {
           iva_perc?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
+          modoPago?: boolean | null
         }
         Relationships: []
       }

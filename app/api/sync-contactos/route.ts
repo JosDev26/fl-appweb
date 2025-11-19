@@ -59,12 +59,11 @@ export async function POST(request: NextRequest) {
       const existing = existingMap.get(contacto.id)
       
       if (existing) {
-        // Actualizar si existe
+        // Actualizar si existe - remover updated_at ya que contactos no tiene esa columna
         const { error } = await supabase
           .from('contactos')
           .update({
-            ...contacto,
-            updated_at: new Date().toISOString()
+            nombre: contacto.nombre
           })
           .eq('id', contacto.id)
         

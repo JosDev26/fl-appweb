@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     // Buscar empresa por cédula
     const { data: empresa, error } = await supabase
       .from('empresas')
-      .select('id, nombre, cedula, password, estaRegistrado')
+      .select('id, nombre, cedula, password, estaRegistrado, modoPago')
       .eq('cedula', identificacion)
       .single()
 
@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
         id: empresa.id,
         nombre: empresa.nombre,
         cedula: empresa.cedula,
-        tipo: 'empresa'
+        tipo: 'empresa',
+        modoPago: empresa.modoPago || false
       }
     })
   } catch (error) {

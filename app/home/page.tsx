@@ -9,6 +9,7 @@ interface User {
   nombre: string
   cedula: number
   tipo?: 'cliente' | 'empresa'
+  modoPago?: boolean
 }
 
 interface Caso {
@@ -173,9 +174,16 @@ export default function Home() {
             </h1>
             <p className={styles.headerSubtitle}>{user.nombre}</p>
           </div>
-          <button onClick={handleLogout} className={styles.logoutButton}>
-            Cerrar Sesión
-          </button>
+          <div className={styles.headerActions}>
+            {user.modoPago && (
+              <button onClick={() => router.push('/pago')} className={styles.pagoButton}>
+                💳 Ir a pagar
+              </button>
+            )}
+            <button onClick={handleLogout} className={styles.logoutButton}>
+              Cerrar Sesión
+            </button>
+          </div>
         </div>
       </header>
 

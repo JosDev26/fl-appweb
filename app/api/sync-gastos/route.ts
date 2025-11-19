@@ -33,7 +33,9 @@ export async function POST() {
         const idAsociacion = row[1]?.toString().trim()           // B: ID_Asociacion
         const idSolicitud = row[2]?.toString().trim()            // C: ID_Solicitud
         const idCasoCol = row[3]?.toString().trim()              // D: ID_Caso
+        const idClienteCol = row[5]?.toString().trim()           // F: ID_Cliente
         const idResponsable = row[6]?.toString().trim()          // G: ID_Responsable
+        const idEmpresaCol = row[7]?.toString().trim()           // H: ID_Empresa
         const fechaStr = row[8]?.toString().trim()               // I: Fecha
         const producto = row[10]?.toString().trim()              // K: Producto
         const totalCobroStr = row[15]?.toString().trim()         // P: Total_Cobro
@@ -46,6 +48,9 @@ export async function POST() {
 
         // Determinar ID_Caso (columna C o D, la que tenga dato)
         const idCaso = idSolicitud || idCasoCol || null
+        
+        // Determinar ID_Cliente (columna F o H, la que tenga dato)
+        const idCliente = idClienteCol || idEmpresaCol || null
 
         // Parsear la fecha (detectar formato automáticamente)
         let fecha = null
@@ -97,6 +102,7 @@ export async function POST() {
           id_asociacion: idAsociacion || null,
           id_caso: idCaso,
           id_responsable: idResponsable || null,
+          id_cliente: idCliente,
           fecha: fecha,
           producto: producto || null,
           total_cobro: totalCobro,

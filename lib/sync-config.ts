@@ -535,6 +535,67 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       }
     ]
+  },
+  {
+    sheetsName: "Historial de reportes",
+    supabaseTable: "historial_reportes",
+    idColumn: "id",
+    columns: [
+      {
+        sheetsColumn: "ID_Click",       // Columna A
+        supabaseColumn: "id",
+        transform: (value) => {
+          const id = String(value || '').trim();
+          return id === '' ? null : id;
+        }
+      },
+      {
+        sheetsColumn: "Fecha",          // Columna B
+        supabaseColumn: "fecha",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          const dateStr = String(value).trim();
+          // Formato esperado: 17/11/2025 (DD/MM/YYYY)
+          const parts = dateStr.split('/');
+          if (parts.length !== 3) return null;
+          const [day, month, year] = parts;
+          // Convertir a formato ISO: YYYY-MM-DD
+          const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          return isoDate;
+        }
+      },
+      {
+        sheetsColumn: "Hora",           // Columna C
+        supabaseColumn: "hora",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          let timeStr = String(value).trim();
+          // Formato esperado: "4:28:01 p.m." o "4:28:01 a.m."
+          // Remover "a.m." o "p.m." y convertir a formato 24h
+          const isPM = /p\.?m\.?/i.test(timeStr);
+          const isAM = /a\.?m\.?/i.test(timeStr);
+          
+          // Limpiar el string
+          timeStr = timeStr.replace(/[ap]\.?m\.?/gi, '').trim();
+          
+          const parts = timeStr.split(':');
+          if (parts.length < 2) return null;
+          
+          let hours = parseInt(parts[0]);
+          const minutes = parts[1];
+          const seconds = parts[2] || '00';
+          
+          // Convertir a formato 24h
+          if (isPM && hours !== 12) {
+            hours += 12;
+          } else if (isAM && hours === 12) {
+            hours = 0;
+          }
+          
+          return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`;
+        }
+      }
+    ]
   }
 ];
 

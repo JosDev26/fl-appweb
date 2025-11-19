@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     // Buscar el usuario por cédula en la base de datos
     const { data: user, error } = await supabase
       .from('usuarios')
-      .select('id, cedula, nombre, estaRegistrado, password')
+      .select('id, cedula, nombre, estaRegistrado, password, modoPago')
       .eq('cedula', parseInt(identificacion))
       .single()
 
@@ -52,7 +52,8 @@ export async function POST(request: NextRequest) {
       user: {
         id: user.id,
         nombre: user.nombre,
-        cedula: user.cedula
+        cedula: user.cedula,
+        modoPago: user.modoPago || false
       }
     })
 

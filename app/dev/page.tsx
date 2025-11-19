@@ -268,6 +268,31 @@ export default function DevPage() {
     }
   }
 
+  const syncHistorialReportes = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/sync-historial-reportes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      
+      addResult({
+        success: response.ok,
+        message: response.ok ? 'Sincronización de Historial de Reportes completada' : 'Error en sincronización',
+        details: data
+      })
+    } catch (error) {
+      addResult({
+        success: false,
+        message: 'Error al sincronizar Historial de Reportes',
+        details: error
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const syncAll = async () => {
     setLoading(true)
     try {
@@ -310,6 +335,31 @@ export default function DevPage() {
       addResult({
         success: false,
         message: 'Error al validar configuración',
+        details: error
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const resetModoPago = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/reset-modo-pago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await response.json()
+      
+      addResult({
+        success: response.ok,
+        message: response.ok ? 'Modo pago reiniciado para todos los clientes' : 'Error al reiniciar',
+        details: data
+      })
+    } catch (error) {
+      addResult({
+        success: false,
+        message: 'Error al reiniciar modo pago',
         details: error
       })
     } finally {
@@ -440,6 +490,14 @@ export default function DevPage() {
                 </button>
 
                 <button
+                  onClick={syncHistorialReportes}
+                  disabled={loading}
+                  className={styles.actionButton}
+                >
+                  {loading ? '⏳ Procesando...' : '📊 Sincronizar Historial Reportes'}
+                </button>
+
+                <button
                   onClick={syncAll}
                   disabled={loading}
                   className={`${styles.actionButton} ${styles.primary}`}
@@ -464,6 +522,21 @@ export default function DevPage() {
                   className={styles.actionButton}
                 >
                   {loading ? '⏳ Validando...' : '✅ Validar Configuración'}
+                </button>
+              </div>
+
+              <h2 className={styles.sectionTitle} style={{marginTop: '2rem'}}>Control de Modo Pago</h2>
+              <p className={styles.description}>
+                Reiniciar el modo pago para todos los usuarios y empresas
+              </p>
+
+              <div className={styles.buttonGrid}>
+                <button
+                  onClick={resetModoPago}
+                  disabled={loading}
+                  className={`${styles.actionButton} ${styles.danger}`}
+                >
+                  {loading ? '⏳ Procesando...' : '🔄 Reiniciar Modo Pago (Todos a False)'}
                 </button>
               </div>
 
