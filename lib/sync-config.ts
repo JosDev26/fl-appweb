@@ -141,6 +141,18 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
+        sheetsColumn: "IVA_Perc",          // Columna G
+        supabaseColumn: "iva_perc",
+        transform: (value) => {
+          if (!value) return 0.13; // Valor por defecto
+          // Si viene como "13%" o "13"
+          const str = String(value).replace(/%/g, '').trim();
+          const num = parseFloat(str);
+          // Si es mayor a 1, asumir que es porcentaje (ej: 13) y convertir a decimal
+          return num > 1 ? num / 100 : num;
+        }
+      },
+      {
         sheetsColumn: "Moneda",            // Columna H
         supabaseColumn: "esDolar",
         transform: (value) => {
@@ -151,15 +163,14 @@ export const SYNC_CONFIG: TableMapping[] = [
         }
       },
       {
-        sheetsColumn: "IVA_Perc",          // Columna G
-        supabaseColumn: "iva_perc",
+        sheetsColumn: "TarifaxHora",       // Columna I
+        supabaseColumn: "tarifa_hora",
         transform: (value) => {
-          if (!value) return 0.13; // Valor por defecto
-          // Si viene como "13%" o "13"
-          const str = String(value).replace(/%/g, '').trim();
-          const num = parseFloat(str);
-          // Si es mayor a 1, asumir que es porcentaje (ej: 13) y convertir a decimal
-          return num > 1 ? num / 100 : num;
+          if (!value || value === '') return null;
+          // Remover símbolos de moneda (₡, $) y comas
+          const numStr = String(value).replace(/[₡$,]/g, '').trim();
+          const num = parseFloat(numStr);
+          return isNaN(num) ? null : num;
         }
       },
       {

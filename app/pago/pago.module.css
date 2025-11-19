@@ -316,6 +316,149 @@
   margin: 0;
 }
 
+/* Resumen de Costos */
+.resumenCostos {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.costoItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(0.75rem, 2vw, 1rem) 0;
+  color: #64748b;
+  font-size: clamp(0.9375rem, 2vw, 1.0625rem);
+}
+
+.costoItem span {
+  font-weight: 500;
+}
+
+.costoItem strong {
+  color: #19304B;
+  font-weight: 700;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+}
+
+.costoItem.destacado {
+  color: #19304B;
+  font-weight: 600;
+}
+
+.costoItem.destacado strong {
+  font-size: clamp(1.125rem, 2.5vw, 1.375rem);
+}
+
+.costoItem.total {
+  color: #19304B;
+  font-size: clamp(1.125rem, 2.5vw, 1.375rem);
+  font-weight: 700;
+  padding: clamp(1rem, 2vw, 1.25rem) 0;
+}
+
+.costoItem.total strong {
+  color: #19304B;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  text-shadow: none;
+}
+
+.divider {
+  height: 1px;
+  background: rgba(25, 48, 75, 0.1);
+  margin: clamp(0.5rem, 1.5vw, 0.75rem) 0;
+}
+
+.dividerBold {
+  height: 2px;
+  background: linear-gradient(to right, #FAD02C 0%, #f9c74f 100%);
+  margin: clamp(0.75rem, 2vw, 1rem) 0;
+}
+
+.comparacionTarifa {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: clamp(0.75rem, 2vw, 1rem);
+  background: rgba(250, 208, 44, 0.1);
+  border-left: 3px solid #FAD02C;
+  border-radius: 8px;
+  margin: 0.5rem 0;
+}
+
+.labelSecundario {
+  color: #64748b;
+  font-size: clamp(0.8125rem, 1.5vw, 0.9375rem);
+  font-weight: 500;
+}
+
+.ahorro {
+  color: #22c55e;
+  font-weight: 700;
+  font-size: clamp(0.9375rem, 2vw, 1.0625rem);
+}
+
+.diferencia {
+  color: #f97316;
+  font-weight: 700;
+  font-size: clamp(0.9375rem, 2vw, 1.0625rem);
+}
+
+/* Detalle de Gastos */
+.detalleGastos {
+  margin: clamp(0.75rem, 2vw, 1rem) 0;
+  padding: clamp(0.75rem, 2vw, 1rem);
+  background: rgba(25, 48, 75, 0.05);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gastoItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: clamp(0.5rem, 1.5vw, 0.75rem);
+  background: white;
+  border-radius: 8px;
+  border-left: 3px solid #FAD02C;
+  transition: all 0.2s ease;
+}
+
+.gastoItem:hover {
+  transform: translateX(3px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.gastoInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.gastoProducto {
+  color: #19304B;
+  font-weight: 600;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+}
+
+.gastoMeta {
+  color: #64748b;
+  font-size: clamp(0.75rem, 1.25vw, 0.875rem);
+}
+
+.gastoMonto {
+  color: #19304B;
+  font-weight: 700;
+  font-size: clamp(0.9375rem, 2vw, 1.0625rem);
+  white-space: nowrap;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

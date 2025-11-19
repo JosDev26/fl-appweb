@@ -117,6 +117,7 @@ export interface Database {
           cedula: number | null
           esDolar: boolean | null
           iva_perc: number | null
+          tarifa_hora: number | null
           estaRegistrado: boolean | null
           password: string | null
           modoPago: boolean | null
@@ -129,6 +130,7 @@ export interface Database {
           cedula?: number | null
           esDolar?: boolean | null
           iva_perc?: number | null
+          tarifa_hora?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
           modoPago?: boolean | null
@@ -141,6 +143,7 @@ export interface Database {
           cedula?: number | null
           esDolar?: boolean | null
           iva_perc?: number | null
+          tarifa_hora?: number | null
           estaRegistrado?: boolean | null
           password?: string | null
           modoPago?: boolean | null

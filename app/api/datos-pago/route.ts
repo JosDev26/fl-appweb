@@ -58,6 +58,42 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Obtener datos de empresa (tarifa_hora, iva_perc) si es empresa
+    let tarifaHora = 90000; // Tarifa estándar por defecto
+    let ivaPerc = 0.13; // IVA por defecto
+    if (tipoCliente === 'empresa') {
+      const { data: empresa, error: empresaError } = await supabase
+        .from('empresas')
+        .select('tarifa_hora, iva_perc')
+        .eq('id', userId)
+        .single();
+      
+      if (!empresaError && empresa) {
+        tarifaHora = empresa.tarifa_hora || 90000;
+        ivaPerc = empresa.iva_perc || 0.13;
+      }
+    }
+
+    // Obtener gastos del mes actual del cliente con detalles
+    const { data: gastos, error: gastosError } = await supabase
+      .from('gastos' as any)
+      .select(`
+        id,
+        producto,
+        fecha,
+        total_cobro,
+        funcionarios:id_responsable (
+          nombre
+        )
+      `)
+      .eq('id_cliente', userId)
+      .gte('fecha', inicioMesStr)
+      .order('fecha', { ascending: false });
+    
+    if (gastosError) throw gastosError;
+    
+    const totalGastos = (gastos || []).reduce((sum, g) => sum + (g.total_cobro || 0), 0);
+
     // Obtener solicitudes con modalidad mensual
     const { data: solicitudes, error: solicitudesError } = await supabase
       .from('solicitudes')
@@ -103,12 +139,27 @@ export async function GET(request: NextRequest) {
       }
     });
     
-    // Convertir totalMinutos a formato HH:MM
+    // Convertir totalMinutos a formato HH:MM y calcular totales
+    let totalMinutosGlobal = 0;
     Object.values(trabajosPorCaso).forEach((caso: any) => {
       const horas = Math.floor(caso.totalMinutos / 60);
       const minutos = caso.totalMinutos % 60;
       caso.totalHoras = `${horas}:${minutos.toString().padStart(2, '0')}`;
+      totalMinutosGlobal += caso.totalMinutos;
     });
+
+    // Calcular totales de servicios profesionales
+    // Cálculo correcto: minutos / 60 para obtener horas decimales
+    const totalHorasDecimal = totalMinutosGlobal / 60;
+    
+    const costoServiciosTarifa = totalHorasDecimal * tarifaHora;
+    const costoServiciosEstandar = totalHorasDecimal * 90000;
+    const ahorroComparativo = costoServiciosEstandar - costoServiciosTarifa;
+
+    // Calcular total antes de IVA
+    const subtotal = costoServiciosTarifa + totalMensualidades + totalGastos;
+    const montoIVA = subtotal * ivaPerc;
+    const totalAPagar = subtotal + montoIVA;
 
     return NextResponse.json({
       success: true,
@@ -116,6 +167,19 @@ export async function GET(request: NextRequest) {
       trabajosPorHora: Object.values(trabajosPorCaso),
       solicitudesMensuales: solicitudes || [],
       totalMensualidades,
+      gastos: gastos || [],
+      totalGastos,
+      totalMinutosGlobal,
+      totalHorasDecimal: parseFloat(totalHorasDecimal.toFixed(2)),
+      tarifaHora,
+      tarifaEstandar: 90000,
+      costoServiciosTarifa,
+      costoServiciosEstandar,
+      ahorroComparativo,
+      subtotal,
+      ivaPerc,
+      montoIVA,
+      totalAPagar,
       mesActual: inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' })
     });
 
