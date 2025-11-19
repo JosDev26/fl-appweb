@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,51 +16,83 @@ export async function POST(request: NextRequest) {
     // Buscar empresa por cédula
     const { data: empresa, error } = await supabase
       .from('empresas')
-      .select('id, nombre, cedula, password, estaRegistrado, modoPago')
+      .select('id, nombre, cedula, estaRegistrado, modoPago')
       .eq('cedula', identificacion)
       .single()
 
     if (error || !empresa) {
       return NextResponse.json(
-        { error: 'Empresa no encontrada' },
-        { status: 404 }
+        { error: 'Identificación o contraseña incorrectas' },
+        { status: 401 }
       )
     }
 
     // Verificar si la empresa está registrada
     if (!empresa.estaRegistrado) {
       return NextResponse.json(
-        { error: 'Esta empresa no tiene una cuenta activa' },
-        { status: 403 }
-      )
-    }
-
-    // Verificar contraseña
-    if (!empresa.password) {
-      return NextResponse.json(
-        { error: 'Esta empresa no tiene contraseña configurada' },
-        { status: 403 }
-      )
-    }
-
-    if (empresa.password !== password) {
-      return NextResponse.json(
-        { error: 'Contraseña incorrecta' },
+        { error: 'Empresa no registrada. Debe crear una cuenta primero.' },
         { status: 401 }
       )
     }
 
-    // Login exitoso
-    return NextResponse.json({
+    // Crear email interno
+    const emailInterno = `${identificacion}@clientes.interno`
+
+    // Hacer login con Supabase Auth
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true
+        }
+      }
+    )
+
+    const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+      email: emailInterno,
+      password: password
+    })
+
+    if (authError || !authData.session) {
+      return NextResponse.json(
+        { error: 'Identificación o contraseña incorrectas' },
+        { status: 401 }
+      )
+    }
+
+    // Login exitoso - Crear respuesta con cookies
+    const response = NextResponse.json({
       success: true,
       empresa: {
         id: empresa.id,
         nombre: empresa.nombre,
         cedula: empresa.cedula,
-        tipo: 'empresa',
-        modoPago: empresa.modoPago || false
+        modoPago: empresa.modoPago || false,
+        tipo: 'empresa'
       }
     })
+
+    // Establecer cookies de sesión
+    response.cookies.set('sb-access-token', authData.session.access_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7,
+      path: '/'
+    })
+
+    response.cookies.set('sb-refresh-token', authData.session.refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7,
+      path: '/'
+    })
+
+    return response
+
   } catch (error) {
     console.error('Error en login de empresa:', error)
     return NextResponse.json(

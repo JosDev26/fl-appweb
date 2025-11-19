@@ -46,10 +46,7 @@ export default function Login() {
       }
 
       if (data.success) {
-        // Guardar información del usuario/empresa en localStorage
-        const userData = tipoUsuario === 'cliente' ? data.user : data.empresa
-        localStorage.setItem('user', JSON.stringify({ ...userData, tipo: tipoUsuario }))
-        
+        // Ya no guardamos en localStorage - las cookies HTTP-Only se manejan automáticamente
         // Redirigir al home
         router.push('/home')
       }

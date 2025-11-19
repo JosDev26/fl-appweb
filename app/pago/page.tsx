@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/useAuth'
 import styles from './pago.module.css'
 
 interface User {
-  id: number
+  id: string
   nombre: string
   cedula: number
   tipo?: 'cliente' | 'empresa'
@@ -72,39 +73,24 @@ interface DatosPago {
 }
 
 export default function PagoPage() {
-  const [user, setUser] = useState<User | null>(null)
+  const { user, loading: authLoading } = useAuth()
   const [datosPago, setDatosPago] = useState<DatosPago | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
-    // Verificar si hay un usuario logueado
-    const userData = localStorage.getItem('user')
-    
-    if (!userData) {
-      router.push('/login')
-      return
-    }
-
-    try {
-      const parsedUser = JSON.parse(userData)
-      
+    if (!authLoading && user) {
       // Verificar que tenga modoPago activado
-      if (!parsedUser.modoPago) {
+      if (!user.modoPago) {
         router.push('/home')
         return
       }
 
-      setUser(parsedUser)
-      loadDatosPago(parsedUser)
-    } catch (error) {
-      console.error('Error al parsear datos del usuario:', error)
-      localStorage.removeItem('user')
-      router.push('/login')
+      loadDatosPago(user)
     }
-  }, [router])
+  }, [authLoading, user, router])
 
-  const loadDatosPago = async (userData: User) => {
+  const loadDatosPago = async (userData: any) => {
     setLoading(true)
     try {
       const response = await fetch('/api/datos-pago', {

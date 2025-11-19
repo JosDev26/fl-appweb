@@ -265,6 +265,112 @@
   animation: fadeIn 1s ease-out;
 }
 
+.timelineContainer {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2rem, 3vw, 3rem);
+}
+
+.etapaGroup {
+  position: relative;
+}
+
+.etapaHeader {
+  margin-bottom: clamp(1rem, 2vw, 1.5rem);
+}
+
+.etapaBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, #FAD02C 0%, #f4c430 100%);
+  color: #19304B;
+  padding: clamp(0.75rem, 1.5vw, 1rem) clamp(1.25rem, 2vw, 1.75rem);
+  border-radius: 12px;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(250, 208, 44, 0.3);
+  transition: transform 0.2s ease;
+}
+
+.etapaBadge:hover {
+  transform: translateX(5px);
+}
+
+.etapaIcon {
+  font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+}
+
+.etapaTitulo {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.etapaComentarios {
+  position: relative;
+  padding-left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1rem, 2vw, 1.5rem);
+}
+
+.comentarioItem {
+  position: relative;
+  display: flex;
+  gap: clamp(1rem, 2vw, 1.5rem);
+  animation: slideIn 0.4s ease-out;
+}
+
+.comentarioBullet {
+  display: none;
+}
+
+.comentarioContent {
+  flex: 1;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 1px solid rgba(250, 208, 44, 0.2);
+  transition: all 0.3s ease;
+}
+
+.comentarioContent:hover {
+  transform: translateX(5px);
+  box-shadow: 0 4px 12px rgba(250, 208, 44, 0.2);
+  border-color: #FAD02C;
+}
+
+.comentarioHeader {
+  margin-bottom: 0.75rem;
+}
+
+.comentarioFecha {
+  color: #64748b;
+  font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.comentarioTexto {
+  color: #19304B;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .actualizacionesList {
   display: flex;
   flex-direction: column;

@@ -40,6 +40,7 @@ export async function POST() {
         const idSolicitud = row[4]?.toString().trim()           // E: ID_Solicitud (CORREGIDO)
         const comentario = row[5]?.toString().trim()            // F: Comentario
         const tiempoStr = row[6]?.toString().trim()             // G: Tiempo
+        const etapaActual = row[7]?.toString().trim()           // H: Etapa_Actual
 
         // Debug: mostrar lo que se está leyendo
         console.log(`📝 Procesando: ID=${id}, ID_Solicitud=${idSolicitud}, Tipo=${tipoCliente}`)
@@ -97,6 +98,7 @@ export async function POST() {
           id_solicitud: idSolicitud || null,
           comentario: comentario || null,
           tiempo: tiempo,
+          etapa_actual: etapaActual || null,
           updated_at: new Date().toISOString()
         }
 

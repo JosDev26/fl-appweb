@@ -99,18 +99,8 @@ export const SYNC_CONFIG: TableMapping[] = [
           // Si es mayor o igual a 1, asumir que es porcentaje (ej: 13) y convertir a decimal
           return num >= 1 ? num / 100 : num;
         }
-      },
-      {
-        sheetsColumn: "Cuenta",            // Columna K
-        supabaseColumn: "estaRegistrado",
-        transform: (value) => {
-          if (typeof value === 'boolean') return value;
-          const str = String(value || '').toLowerCase().trim();
-          // Acepta: "y", "yes", "sí", "si", "1", "registrado", "activo"
-          return str === 'y' || str === 'yes' || str === 'sí' || str === 'si' || 
-                 str === '1' || str === 'registrado' || str === 'activo';
-        }
       }
+      // Nota: estaRegistrado ya no se sincroniza con Google Sheets
     ]
   },
   {
@@ -172,19 +162,8 @@ export const SYNC_CONFIG: TableMapping[] = [
           const num = parseFloat(numStr);
           return isNaN(num) ? null : num;
         }
-      },
-      {
-        sheetsColumn: "Cuenta",            // Columna J
-        supabaseColumn: "estaRegistrado",
-        transform: (value) => {
-          if (typeof value === 'boolean') return value;
-          const str = String(value || '').toLowerCase().trim();
-          // Acepta: "true", "y", "yes", "sí", "si", "1", "registrado", "activo"
-          return str === 'true' || str === 'y' || str === 'yes' || 
-                 str === 'sí' || str === 'si' || str === '1' || 
-                 str === 'registrado' || str === 'activo';
-        }
       }
+      // Nota: estaRegistrado ya no se sincroniza con Google Sheets
     ]
   },
   {
@@ -604,6 +583,78 @@ export const SYNC_CONFIG: TableMapping[] = [
           }
           
           return `${String(hours).padStart(2, '0')}:${minutes}:${seconds}`;
+        }
+      }
+    ]
+  },
+  {
+    sheetsName: "Actualizaciones",
+    supabaseTable: "actualizaciones",
+    idColumn: "id",
+    columns: [
+      {
+        sheetsColumn: "ID_Actualizacion",  // Columna A
+        supabaseColumn: "id",
+        required: true,
+        transform: (value) => String(value || '').trim()
+      },
+      {
+        sheetsColumn: "Tipo_Cliente",      // Columna B
+        supabaseColumn: "tipo_cliente",
+        transform: (value) => {
+          const tipo = String(value || '').trim();
+          return tipo === '' ? null : tipo;
+        }
+      },
+      {
+        sheetsColumn: "ID_Cliente",        // Columna C
+        supabaseColumn: "id_cliente",
+        transform: (value) => {
+          const id = String(value || '').trim();
+          return id === '' ? null : id;
+        }
+      },
+      {
+        sheetsColumn: "ID_Solicitud",      // Columna E
+        supabaseColumn: "id_solicitud",
+        transform: (value) => {
+          const id = String(value || '').trim();
+          return id === '' ? null : id;
+        }
+      },
+      {
+        sheetsColumn: "Comentario",        // Columna F
+        supabaseColumn: "comentario",
+        transform: (value) => {
+          const comentario = String(value || '').trim();
+          return comentario === '' ? null : comentario;
+        }
+      },
+      {
+        sheetsColumn: "Tiempo",            // Columna G
+        supabaseColumn: "tiempo",
+        transform: (value) => {
+          if (!value || value === '') return null;
+          try {
+            const dateStr = String(value);
+            // Si ya viene en formato ISO, retornar directo
+            if (dateStr.includes('T') || dateStr.includes('-')) return dateStr;
+            
+            // Intentar parsear otros formatos
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? null : date.toISOString();
+          } catch (error) {
+            console.warn('Error transformando tiempo:', value, error);
+            return null;
+          }
+        }
+      },
+      {
+        sheetsColumn: "Etapa_Actual",      // Columna H
+        supabaseColumn: "etapa_actual",
+        transform: (value) => {
+          const etapa = String(value || '').trim();
+          return etapa === '' ? null : etapa;
         }
       }
     ]

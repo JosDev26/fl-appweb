@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useAuth } from '@/lib/useAuth'
 import styles from './caso.module.css'
 
 interface Caso {
@@ -39,13 +40,14 @@ interface Gasto {
 }
 
 interface User {
-  id: number
+  id: string
   nombre: string
   cedula?: number
   tipo: 'cliente' | 'empresa'
 }
 
 export default function CasoDetalle() {
+  const { user, loading: authLoading } = useAuth()
   const [caso, setCaso] = useState<Caso | null>(null)
   const [trabajos, setTrabajos] = useState<Trabajo[]>([])
   const [gastos, setGastos] = useState<Gasto[]>([])
@@ -55,26 +57,15 @@ export default function CasoDetalle() {
   const casoId = params.id as string
 
   useEffect(() => {
-    // Verificar autenticación
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
+    if (!authLoading && user) {
+      loadCasoDetalle()
     }
-
-    loadCasoDetalle()
-  }, [casoId, router])
+  }, [authLoading, user, casoId])
 
   const loadCasoDetalle = async () => {
-    try {
-      // Obtener usuario actual
-      const userData = localStorage.getItem('user')
-      if (!userData) {
-        router.push('/login')
-        return
-      }
+    if (!user) return
 
-      const user: User = JSON.parse(userData)
+    try {
       const userIdCliente = String(user.id)
 
       // Obtener información del caso

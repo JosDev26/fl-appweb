@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { useAuth } from '@/lib/useAuth'
 import styles from './solicitud.module.css'
 
 interface Solicitud {
@@ -27,6 +28,9 @@ interface Solicitud {
   materias?: {
     nombre: string | null
   } | null
+  cliente?: {
+    iva_perc: number | null
+  } | null
 }
 
 interface Actualizacion {
@@ -36,18 +40,21 @@ interface Actualizacion {
   id_solicitud: string | null
   comentario: string | null
   tiempo: string | null
+  etapa_actual: string | null
   created_at: string
   updated_at: string
 }
 
 interface User {
-  id: number
+  id: string
   nombre: string
   cedula?: number
   tipo: 'cliente' | 'empresa'
+  iva_perc?: number
 }
 
 export default function SolicitudDetalle() {
+  const { user, loading: authLoading } = useAuth()
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [actualizaciones, setActualizaciones] = useState<Actualizacion[]>([])
   const [loading, setLoading] = useState(true)
@@ -57,46 +64,25 @@ export default function SolicitudDetalle() {
   const solicitudId = params.id as string
 
   useEffect(() => {
-    // Verificar autenticación
-    const userData = localStorage.getItem('user')
-    if (!userData) {
-      router.push('/login')
-      return
+    if (!authLoading && user) {
+      loadSolicitudDetalle()
     }
-
-    loadSolicitudDetalle()
-  }, [solicitudId, router])
+  }, [authLoading, user, solicitudId])
 
   const loadSolicitudDetalle = async () => {
+    if (!user) return
+
     try {
-      // Obtener usuario actual
-      const userData = localStorage.getItem('user')
-      if (!userData) {
-        router.push('/login')
-        return
-      }
-
-      const user: User = JSON.parse(userData)
       const userIdCliente = String(user.id)
-
-      console.log('👤 Usuario actual:', user)
-      console.log('🔑 ID Cliente del usuario:', userIdCliente)
 
       // Obtener información de la solicitud
       const response = await fetch(`/api/solicitudes/${solicitudId}`)
       const data = await response.json()
       
-      console.log('📋 Datos de la solicitud:', data)
-      
       if (data.solicitud) {
-        console.log('🔍 ID Cliente de la solicitud:', data.solicitud.id_cliente)
-        console.log('🔍 Comparación:', data.solicitud.id_cliente, '===', userIdCliente)
-        
         // Verificar que el usuario tenga acceso a esta solicitud
         if (data.solicitud.id_cliente !== userIdCliente) {
-          console.warn('❌ Acceso denegado: IDs no coinciden')
-          console.warn('   Solicitud ID Cliente:', data.solicitud.id_cliente)
-          console.warn('   Usuario ID Cliente:', userIdCliente)
+          console.warn('Acceso denegado: Redirigiendo al home')
           router.push('/home')
           return
         }
@@ -168,12 +154,63 @@ export default function SolicitudDetalle() {
   }
 
   const calcularProgresoPago = () => {
-    if (!solicitud?.total_a_pagar || solicitud.total_a_pagar === 0) return 0
-    const pagado = solicitud.monto_pagado || 0
-    return Math.min((pagado / solicitud.total_a_pagar) * 100, 100)
+    const total = calcularTotal()
+    if (!total || total === 0) return 0
+    const pagado = solicitud?.monto_pagado || 0
+    return Math.min((pagado / total) * 100, 100)
   }
 
-  if (loading) {
+  const agruparPorEtapa = () => {
+    // Agrupar actualizaciones por etapa_actual
+    const grupos: { [key: string]: Actualizacion[] } = {}
+    const sinEtapa: Actualizacion[] = []
+
+    actualizaciones.forEach(act => {
+      const etapa = act.etapa_actual
+      if (!etapa) {
+        sinEtapa.push(act)
+      } else {
+        if (!grupos[etapa]) {
+          grupos[etapa] = []
+        }
+        grupos[etapa].push(act)
+      }
+    })
+
+    // Convertir a array y ordenar por fecha más reciente de cada grupo
+    const gruposArray = Object.entries(grupos).map(([etapa, acts]) => ({
+      etapa,
+      actualizaciones: acts.sort((a, b) => 
+        new Date(b.tiempo || '').getTime() - new Date(a.tiempo || '').getTime()
+      ),
+      fechaMasReciente: acts.reduce((max, act) => {
+        const fecha = new Date(act.tiempo || '').getTime()
+        return fecha > max ? fecha : max
+      }, 0)
+    }))
+
+    // Ordenar grupos por fecha más reciente (más reciente primero)
+    gruposArray.sort((a, b) => b.fechaMasReciente - a.fechaMasReciente)
+
+    return { grupos: gruposArray, sinEtapa }
+  }
+
+  const calcularIVA = () => {
+    if (!solicitud?.costo_neto) return 0
+    // Si la solicitud tiene monto_iva, usarlo
+    if (solicitud.monto_iva) return solicitud.monto_iva
+    // Si no, calcular basado en el iva_perc del cliente
+    const ivaPerc = solicitud.cliente?.iva_perc || 0.13
+    return solicitud.costo_neto * ivaPerc
+  }
+
+  const calcularTotal = () => {
+    const costoNeto = solicitud?.costo_neto || 0
+    const iva = calcularIVA()
+    return costoNeto + iva
+  }
+
+  if (authLoading || loading) {
     return (
       <div className={styles.container}>
         <div className={styles.loadingState}>
@@ -184,7 +221,7 @@ export default function SolicitudDetalle() {
     )
   }
 
-  if (!solicitud) {
+  if (!user || !solicitud) {
     return (
       <div className={styles.container}>
         <div className={styles.emptyState}>
@@ -263,20 +300,22 @@ export default function SolicitudDetalle() {
               <span className={styles.montoLabel}>Costo Neto</span>
               <span className={styles.montoValor}>{formatMonto(solicitud.costo_neto)}</span>
             </div>
-            {solicitud.se_cobra_iva && solicitud.monto_iva && (
+            {calcularIVA() > 0 && (
               <div className={styles.montoCard}>
-                <span className={styles.montoLabel}>IVA</span>
-                <span className={styles.montoValor}>{formatMonto(solicitud.monto_iva)}</span>
+                <span className={styles.montoLabel}>IVA ({((solicitud.cliente?.iva_perc || 0.13) * 100).toFixed(0)}%)</span>
+                <span className={styles.montoValor}>{formatMonto(calcularIVA())}</span>
               </div>
             )}
-            <div className={styles.montoCard}>
-              <span className={styles.montoLabel}>Total a Pagar</span>
-              <span className={styles.montoValor}>{formatMonto(solicitud.total_a_pagar)}</span>
+            <div className={styles.montoCard} style={{ backgroundColor: '#19304B' }}>
+              <span className={styles.montoLabel} style={{ color: '#fff' }}>Total a Pagar</span>
+              <span className={styles.montoValor} style={{ color: '#FAD02C', fontSize: '1.5rem', fontWeight: '700' }}>
+                {formatMonto(calcularTotal())}
+              </span>
             </div>
             {solicitud.cantidad_cuotas && solicitud.cantidad_cuotas > 1 && (
               <div className={styles.montoCard}>
-                <span className={styles.montoLabel}>Monto por Cuota</span>
-                <span className={styles.montoValor}>{formatMonto(solicitud.monto_por_cuota)}</span>
+                <span className={styles.montoLabel}>Monto por Cuota ({solicitud.cantidad_cuotas} cuotas)</span>
+                <span className={styles.montoValor}>{formatMonto(calcularTotal() / solicitud.cantidad_cuotas)}</span>
               </div>
             )}
           </div>
@@ -302,7 +341,7 @@ export default function SolicitudDetalle() {
               <div className={styles.progresoMonto}>
                 <span className={styles.progresoMontoLabel}>Saldo Pendiente</span>
                 <span className={styles.progresoMontoValor} style={{ color: '#f87171' }}>
-                  {formatMonto(solicitud.saldo_pendiente)}
+                  {formatMonto(calcularTotal() - (solicitud.monto_pagado || 0))}
                 </span>
               </div>
             </div>
@@ -323,19 +362,69 @@ export default function SolicitudDetalle() {
               <p>No hay actualizaciones registradas para esta solicitud</p>
             </div>
           ) : (
-            <div className={styles.actualizacionesList}>
-              {actualizaciones.map((actualizacion) => (
-                <div key={actualizacion.id} className={styles.actualizacionCard}>
-                  <div className={styles.actualizacionHeader}>
-                    <span className={styles.actualizacionFecha}>
-                      {formatFecha(actualizacion.tiempo)}
-                    </span>
-                  </div>
-                  <p className={styles.actualizacionComentario}>
-                    {actualizacion.comentario || 'Sin comentario'}
-                  </p>
-                </div>
-              ))}
+            <div className={styles.timelineContainer}>
+              {(() => {
+                const { grupos, sinEtapa } = agruparPorEtapa()
+                return (
+                  <>
+                    {/* Grupos por etapa */}
+                    {grupos.map((grupo, index) => (
+                      <div key={grupo.etapa} className={styles.etapaGroup}>
+                        <div className={styles.etapaHeader}>
+                          <div className={styles.etapaBadge}>
+                            <span className={styles.etapaTitulo}>{grupo.etapa}</span>
+                          </div>
+                        </div>
+                        <div className={styles.etapaComentarios}>
+                          {grupo.actualizaciones.map((actualizacion) => (
+                            <div key={actualizacion.id} className={styles.comentarioItem}>
+                              <div className={styles.comentarioBullet}></div>
+                              <div className={styles.comentarioContent}>
+                                <div className={styles.comentarioHeader}>
+                                  <span className={styles.comentarioFecha}>
+                                    {formatFecha(actualizacion.tiempo)}
+                                  </span>
+                                </div>
+                                <p className={styles.comentarioTexto}>
+                                  {actualizacion.comentario || 'Sin comentario'}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Actualizaciones sin etapa */}
+                    {sinEtapa.length > 0 && (
+                      <div className={styles.etapaGroup}>
+                        <div className={styles.etapaHeader}>
+                          <div className={styles.etapaBadge} style={{ opacity: 0.6 }}>
+                            <span className={styles.etapaTitulo}>Sin etapa definida</span>
+                          </div>
+                        </div>
+                        <div className={styles.etapaComentarios}>
+                          {sinEtapa.map((actualizacion) => (
+                            <div key={actualizacion.id} className={styles.comentarioItem}>
+                              <div className={styles.comentarioBullet}></div>
+                              <div className={styles.comentarioContent}>
+                                <div className={styles.comentarioHeader}>
+                                  <span className={styles.comentarioFecha}>
+                                    {formatFecha(actualizacion.tiempo)}
+                                  </span>
+                                </div>
+                                <p className={styles.comentarioTexto}>
+                                  {actualizacion.comentario || 'Sin comentario'}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           )}
         </div>

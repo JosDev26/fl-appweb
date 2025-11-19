@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/useAuth'
 import styles from './home.module.css'
 
 interface User {
-  id: number
+  id: string
   nombre: string
   cedula: number
   tipo?: 'cliente' | 'empresa'
@@ -47,36 +48,18 @@ interface CasoUnificado {
 }
 
 export default function Home() {
-  const [user, setUser] = useState<User | null>(null)
+  const { user, loading, logout } = useAuth()
   const [casos, setCasos] = useState<Caso[]>([])
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [casosUnificados, setCasosUnificados] = useState<CasoUnificado[]>([])
-  const [loading, setLoading] = useState(true)
   const [loadingData, setLoadingData] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    // Verificar si hay un usuario logueado
-    const userData = localStorage.getItem('user')
-    
-    if (!userData) {
-      router.push('/login')
-      return
+    if (!loading && user) {
+      loadData(user)
     }
-
-    try {
-      const parsedUser = JSON.parse(userData)
-      setUser(parsedUser)
-      setLoading(false)
-      
-      // Cargar casos y solicitudes del usuario
-      loadData(parsedUser)
-    } catch (error) {
-      console.error('Error al parsear datos del usuario:', error)
-      localStorage.removeItem('user')
-      router.push('/login')
-    }
-  }, [router])
+  }, [loading, user])
 
   const loadData = async (userData: User) => {
     setLoadingData(true)
@@ -128,11 +111,6 @@ export default function Home() {
     }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('user')
-    router.push('/login')
-  }
-
   const handleCasoClick = (caso: CasoUnificado) => {
     if (caso.tipo === 'caso') {
       router.push(`/caso/${caso.id}`)
@@ -180,7 +158,7 @@ export default function Home() {
                 💳 Ir a pagar
               </button>
             )}
-            <button onClick={handleLogout} className={styles.logoutButton}>
+            <button onClick={logout} className={styles.logoutButton}>
               Cerrar Sesión
             </button>
           </div>

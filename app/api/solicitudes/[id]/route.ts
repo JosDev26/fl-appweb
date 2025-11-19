@@ -10,6 +10,7 @@ export async function GET(
 
     console.log(`📋 Buscando solicitud: ${solicitudId}`)
 
+    // Primero obtenemos la solicitud
     const { data: solicitud, error } = await supabase
       .from('solicitudes')
       .select(`
@@ -31,9 +32,28 @@ export async function GET(
       throw error
     }
 
+    // Luego obtenemos el iva_perc del cliente si existe
+    let ivaPerc = null
+    if (solicitud.id_cliente) {
+      const { data: cliente } = await supabase
+        .from('usuarios')
+        .select('iva_perc')
+        .eq('id', solicitud.id_cliente)
+        .single()
+      
+      if (cliente) {
+        ivaPerc = cliente.iva_perc
+      }
+    }
+
     console.log(`✅ Solicitud encontrada`)
 
-    return NextResponse.json({ solicitud })
+    return NextResponse.json({ 
+      solicitud: {
+        ...solicitud,
+        cliente: ivaPerc !== null ? { iva_perc: ivaPerc } : null
+      }
+    })
 
   } catch (error) {
     console.error('❌ Error al obtener solicitud:', error)

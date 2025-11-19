@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       .from('casos')
       .select('*')
       .eq('id_cliente', id_cliente)
-
+    
     if (error) throw error
 
     return NextResponse.json({ casos: casos || [] })
