@@ -88,13 +88,13 @@ export default function DevPage() {
       const data = await response.json()
       
       if (data.success) {
-        alert('Comprobante aprobado exitosamente')
+        alert('✅ Comprobante aprobado exitosamente')
         loadPaymentData()
       } else {
-        alert('Error: ' + (data.error || 'Error al aprobar'))
+        alert('❌ ' + (data.error || 'Error al aprobar'))
       }
     } catch (error) {
-      alert('Error al aprobar comprobante')
+      alert('❌ Error al aprobar comprobante')
       console.error(error)
     } finally {
       setReviewingReceipt(null)
@@ -120,13 +120,13 @@ export default function DevPage() {
       const data = await response.json()
       
       if (data.success) {
-        alert('Comprobante rechazado')
+        alert('✅ Comprobante rechazado')
         loadPaymentData()
       } else {
-        alert('Error: ' + (data.error || 'Error al rechazar'))
+        alert('❌ ' + (data.error || 'Error al rechazar'))
       }
     } catch (error) {
-      alert('Error al rechazar comprobante')
+      alert('❌ Error al rechazar comprobante')
       console.error(error)
     } finally {
       setReviewingReceipt(null)
@@ -539,175 +539,11 @@ export default function DevPage() {
     <div className={styles.container}>
       <div className={styles.panel}>
         <header className={styles.header}>
-          <h1 className={styles.title}>Panel de Desarrollo</h1>
-          <p className={styles.subtitle}>Gestión de Pagos y Sincronización</p>
+          <h1 className={styles.title}>🔧 Panel de Desarrollo</h1>
+          <p className={styles.subtitle}>Gestión de sincronización Google Sheets ↔ Supabase</p>
         </header>
 
-        {/* Navegación Principal/Avanzado */}
-        <div className={styles.mainNav}>
-          <button
-            className={`${styles.navButton} ${activeView === 'principal' ? styles.navButtonActive : ''}`}
-            onClick={() => setActiveView('principal')}
-          >
-            Principal
-          </button>
-          <button
-            className={`${styles.navButton} ${activeView === 'avanzado' ? styles.navButtonActive : ''}`}
-            onClick={() => setActiveView('avanzado')}
-          >
-            Avanzado
-          </button>
-        </div>
-
-        {/* VISTA PRINCIPAL - Gestión de Pagos */}
-        {activeView === 'principal' && (
-          <div className={styles.principalView}>
-            <div className={styles.principalHeader}>
-              <h2 className={styles.sectionTitle}>Gestión de Comprobantes de Pago</h2>
-              <button
-                onClick={loadPaymentData}
-                disabled={loadingReceipts}
-                className={styles.refreshButton}
-              >
-                {loadingReceipts ? 'Cargando...' : 'Actualizar'}
-              </button>
-            </div>
-
-            {loadingReceipts ? (
-              <div className={styles.loadingState}>
-                <div className={styles.spinner}></div>
-                <p>Cargando datos...</p>
-              </div>
-            ) : (
-              <>
-                {/* Comprobantes subidos */}
-                <div className={styles.receiptsSection}>
-                  <h3 className={styles.subsectionTitle}>
-                    Comprobantes Subidos ({receipts.length})
-                  </h3>
-                  
-                  {receipts.length === 0 ? (
-                    <div className={styles.emptyState}>
-                      <p>No hay comprobantes subidos</p>
-                    </div>
-                  ) : (
-                    <div className={styles.receiptsGrid}>
-                      {receipts.map((receipt) => (
-                        <div key={receipt.id} className={styles.receiptCard}>
-                          <div className={styles.receiptHeader}>
-                            <span className={`${styles.receiptStatus} ${styles[`status${receipt.estado.charAt(0).toUpperCase() + receipt.estado.slice(1)}`]}`}>
-                              {receipt.estado === 'pendiente' ? 'Pendiente' :
-                               receipt.estado === 'aprobado' ? 'Aprobado' :
-                               'Rechazado'}
-                            </span>
-                            <span className={styles.receiptType}>
-                              {receipt.tipo_cliente === 'empresa' ? 'Empresa' : 'Cliente'}
-                            </span>
-                          </div>
-
-                          <div className={styles.receiptInfo}>
-                            <p className={styles.receiptUserId}>
-                              <strong>ID Usuario:</strong> {receipt.user_id}
-                            </p>
-                            <p className={styles.receiptFile}>
-                              <strong>Archivo:</strong> {receipt.file_name} ({formatFileSize(receipt.file_size)})
-                            </p>
-                            <p className={styles.receiptMonto}>
-                              <strong>Monto:</strong> {formatMonto(receipt.monto_declarado)}
-                            </p>
-                            <p className={styles.receiptDate}>
-                              <strong>Subido:</strong> {formatDate(receipt.uploaded_at)}
-                            </p>
-                            <p className={styles.receiptMonth}>
-                              <strong>Mes:</strong> {receipt.mes_pago}
-                            </p>
-                            
-                            {receipt.nota_revision && (
-                              <p className={styles.receiptNota}>
-                                <strong>Nota:</strong> {receipt.nota_revision}
-                              </p>
-                            )}
-                          </div>
-
-                          <div className={styles.receiptActions}>
-                            <button
-                              onClick={() => downloadReceipt(receipt.file_path, receipt.file_name)}
-                              className={styles.downloadButton}
-                            >
-                              Descargar
-                            </button>
-
-                            {receipt.estado === 'pendiente' && (
-                              <>
-                                <button
-                                  onClick={() => handleApproveReceipt(receipt.id)}
-                                  disabled={reviewingReceipt === receipt.id}
-                                  className={styles.approveButton}
-                                >
-                                  Aprobar
-                                </button>
-                                <button
-                                  onClick={() => handleRejectReceipt(receipt.id)}
-                                  disabled={reviewingReceipt === receipt.id}
-                                  className={styles.rejectButton}
-                                >
-                                  Rechazar
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Clientes con modoPago activo */}
-                <div className={styles.modoPagoSection}>
-                  <h3 className={styles.subsectionTitle}>
-                    Clientes con Modo Pago Activo ({clientesModoPago.length})
-                  </h3>
-                  
-                  {clientesModoPago.length === 0 ? (
-                    <div className={styles.emptyState}>
-                      <p>No hay clientes con modo pago activo</p>
-                    </div>
-                  ) : (
-                    <div className={styles.clientesTable}>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Tipo</th>
-                            <th>Nombre</th>
-                            <th>Cédula</th>
-                            <th>Correo</th>
-                            <th>ID</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {clientesModoPago.map((cliente) => (
-                            <tr key={`${cliente.tipo}-${cliente.id}`}>
-                              <td>{cliente.tipo === 'empresa' ? 'Empresa' : 'Cliente'}</td>
-                              <td>{cliente.nombre}</td>
-                              <td>{cliente.cedula}</td>
-                              <td>{cliente.correo || 'N/A'}</td>
-                              <td className={styles.idCell}>{cliente.id}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* VISTA AVANZADO - Sincronización (contenido original) */}
-        {activeView === 'avanzado' && (
-          <>
-            <div className={styles.tabs}>
+        <div className={styles.tabs}>
           <button
             className={`${styles.tab} ${activeTab === 'sync' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('sync')}
@@ -742,7 +578,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Clientes'}
+                  {loading ? '⏳ Procesando...' : '👤 Sincronizar Clientes'}
                 </button>
 
                 <button
@@ -750,7 +586,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Empresas'}
+                  {loading ? '⏳ Procesando...' : '🏢 Sincronizar Empresas'}
                 </button>
 
                 <button
@@ -758,7 +594,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Contactos'}
+                  {loading ? '⏳ Procesando...' : '👥 Sincronizar Contactos'}
                 </button>
 
                 <button
@@ -766,7 +602,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Materias'}
+                  {loading ? '⏳ Procesando...' : '⚖️ Sincronizar Materias'}
                 </button>
 
                 <button
@@ -774,7 +610,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Casos'}
+                  {loading ? '⏳ Procesando...' : '📁 Sincronizar Casos'}
                 </button>
 
                 <button
@@ -782,7 +618,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Funcionarios'}
+                  {loading ? '⏳ Procesando...' : '👨‍💼 Sincronizar Funcionarios'}
                 </button>
 
                 <button
@@ -790,7 +626,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Control Horas'}
+                  {loading ? '⏳ Procesando...' : '⏰ Sincronizar Control Horas'}
                 </button>
 
                 <button
@@ -798,7 +634,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Solicitudes'}
+                  {loading ? '⏳ Procesando...' : '📋 Sincronizar Solicitudes'}
                 </button>
 
                 <button
@@ -806,7 +642,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Actualizaciones'}
+                  {loading ? '⏳ Procesando...' : '📝 Sincronizar Actualizaciones'}
                 </button>
 
                 <button
@@ -814,7 +650,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Gastos'}
+                  {loading ? '⏳ Procesando...' : '💰 Sincronizar Gastos'}
                 </button>
 
                 <button
@@ -822,7 +658,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Historial Reportes'}
+                  {loading ? '⏳ Procesando...' : '📊 Sincronizar Historial Reportes'}
                 </button>
 
                 <button
@@ -830,7 +666,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={`${styles.actionButton} ${styles.primary}`}
                 >
-                  {loading ? 'Procesando...' : 'Sincronizar Todo'}
+                  {loading ? '⏳ Procesando...' : '🔄 Sincronizar Todo'}
                 </button>
               </div>
             </div>
@@ -849,7 +685,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={styles.actionButton}
                 >
-                  {loading ? 'Validando...' : 'Validar Configuración'}
+                  {loading ? '⏳ Validando...' : '✅ Validar Configuración'}
                 </button>
               </div>
 
@@ -864,7 +700,7 @@ export default function DevPage() {
                   disabled={loading}
                   className={`${styles.actionButton} ${styles.danger}`}
                 >
-                  {loading ? 'Procesando...' : 'Reiniciar Modo Pago (Todos a False)'}
+                  {loading ? '⏳ Procesando...' : '🔄 Reiniciar Modo Pago (Todos a False)'}
                 </button>
               </div>
 
@@ -939,7 +775,7 @@ export default function DevPage() {
                 >
                   <div className={styles.resultHeader}>
                     <span className={styles.resultIcon}>
-                      {result.success ? '✓' : '✗'}
+                      {result.success ? '✅' : '❌'}
                     </span>
                     <span className={styles.resultMessage}>{result.message}</span>
                   </div>
@@ -952,8 +788,6 @@ export default function DevPage() {
               ))}
             </div>
           </div>
-        )}
-          </>
         )}
       </div>
     </div>

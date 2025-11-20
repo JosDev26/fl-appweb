@@ -395,7 +395,10 @@ export default function PagoPage() {
         {/* Botón de acción */}
         {(tieneTrabajosHora || tieneMensualidades) && (
           <div className={styles.actionSection}>
-            <button className={styles.pagarButton}>
+            <button 
+              className={styles.pagarButton}
+              onClick={() => router.push('/pago/comprobante')}
+            >
               Proceder al Pago
             </button>
             <p className={styles.nota}>

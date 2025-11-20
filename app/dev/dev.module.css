@@ -274,3 +274,273 @@
 .resultDetails::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Navegación Principal/Avanzado */
+.mainNav {
+  display: flex;
+  background: #FAD02C;
+  padding: 0.5rem;
+  gap: 0.5rem;
+}
+
+.navButton {
+  flex: 1;
+  padding: 1rem;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #19304B;
+  transition: all 0.3s;
+}
+
+.navButton:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.navButtonActive {
+  background: white;
+  border-color: #19304B;
+}
+
+/* Vista Principal */
+.principalView {
+  padding: 2rem;
+}
+
+.principalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.refreshButton {
+  background: linear-gradient(135deg, #FAD02C 0%, #f9c74f 100%);
+  color: #19304B;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.refreshButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.refreshButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.subsectionTitle {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0 0 1rem 0;
+  color: #19304B;
+}
+
+.receiptsSection {
+  margin-bottom: 3rem;
+}
+
+.receiptsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.receiptCard {
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all 0.3s;
+}
+
+.receiptCard:hover {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.receiptHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.receiptStatus {
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.statusPendiente {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.statusAprobado {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.statusRechazado {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.receiptType {
+  font-size: 1.5rem;
+}
+
+.receiptInfo {
+  margin-bottom: 1rem;
+}
+
+.receiptInfo p {
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.receiptInfo strong {
+  color: #1f2937;
+}
+
+.receiptNota {
+  padding: 0.75rem;
+  background: #fef3c7;
+  border-left: 3px solid #f59e0b;
+  border-radius: 4px;
+  margin-top: 0.75rem;
+}
+
+.receiptActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.receiptActions button {
+  flex: 1;
+  padding: 0.625rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.downloadButton {
+  background: #3b82f6;
+  color: white;
+}
+
+.downloadButton:hover {
+  background: #2563eb;
+}
+
+.approveButton {
+  background: #10b981;
+  color: white;
+}
+
+.approveButton:hover:not(:disabled) {
+  background: #059669;
+}
+
+.rejectButton {
+  background: #ef4444;
+  color: white;
+}
+
+.rejectButton:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.receiptActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modoPagoSection {
+  margin-top: 3rem;
+}
+
+.clientesTable {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 2px solid #e2e8f0;
+}
+
+.clientesTable table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.clientesTable thead {
+  background: #f8fafc;
+}
+
+.clientesTable th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 700;
+  color: #1f2937;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.clientesTable td {
+  padding: 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #4b5563;
+}
+
+.clientesTable tbody tr:hover {
+  background: #f8fafc;
+}
+
+.idCell {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  color: #6b7280;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e2e8f0;
+  border-top-color: #FAD02C;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.emptyState {
+  text-align: center;
+  padding: 3rem 2rem;
+  color: #9ca3af;
+  font-size: 1.1rem;
+}

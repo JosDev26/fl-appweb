@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/useAuth'
 import styles from './home.module.css'
 
@@ -47,19 +47,48 @@ interface CasoUnificado {
   subtitulo?: string
 }
 
+interface PaymentReceipt {
+  id: string
+  estado: 'pendiente' | 'aprobado' | 'rechazado'
+  nota_revision: string | null
+  monto_declarado: number | null
+  uploaded_at: string
+  reviewed_at: string | null
+}
+
 export default function Home() {
   const { user, loading, logout } = useAuth()
   const [casos, setCasos] = useState<Caso[]>([])
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [casosUnificados, setCasosUnificados] = useState<CasoUnificado[]>([])
   const [loadingData, setLoadingData] = useState(false)
+  const [lastPaymentReceipt, setLastPaymentReceipt] = useState<PaymentReceipt | null>(null)
   const router = useRouter()
 
   useEffect(() => {
     if (!loading && user) {
       loadData(user)
+      loadPaymentStatus(user)
     }
   }, [loading, user])
+
+  const loadPaymentStatus = async (userData: User) => {
+    try {
+      const response = await fetch('/api/payment-status', {
+        headers: {
+          'x-user-id': String(userData.id)
+        }
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        setLastPaymentReceipt(data.lastReceipt)
+      }
+    } catch (error) {
+      console.error('Error loading payment status:', error)
+    }
+  }
 
   const loadData = async (userData: User) => {
     setLoadingData(true)
@@ -143,6 +172,47 @@ export default function Home() {
 
   return (
     <div className={styles.container}>
+      {/* Notificación de pago pendiente */}
+      {lastPaymentReceipt?.estado === 'pendiente' && (
+        <div className={styles.notification}>
+          <div className={styles.notificationContent}>
+            <span className={styles.notificationIcon}>✓</span>
+            <span className={styles.notificationText}>
+              Su pago está pendiente de revisión
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Notificación de pago rechazado */}
+      {lastPaymentReceipt?.estado === 'rechazado' && (
+        <div className={styles.rejectedNotifications}>
+          <div className={styles.rejectedNotification}>
+            <div className={styles.rejectedContent}>
+              <span className={styles.rejectedIcon}>✕</span>
+              <div className={styles.rejectedInfo}>
+                <strong>Pago Rechazado</strong>
+                <p>{lastPaymentReceipt.nota_revision}</p>
+                {lastPaymentReceipt.monto_declarado && (
+                  <span className={styles.rejectedMonto}>
+                    Monto: ₡{lastPaymentReceipt.monto_declarado.toLocaleString('es-CR', { 
+                      minimumFractionDigits: 2, 
+                      maximumFractionDigits: 2 
+                    })}
+                  </span>
+                )}
+              </div>
+              <button 
+                onClick={() => router.push('/pago/comprobante')}
+                className={styles.rejectedRetry}
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerContent}>
