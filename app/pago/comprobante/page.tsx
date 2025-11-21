@@ -8,7 +8,7 @@ import styles from './comprobante.module.css'
 export default function ComprobantePage() {
   const { user } = useAuth()
   const router = useRouter()
-  
+
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -17,16 +17,21 @@ export default function ComprobantePage() {
   const [montoPago, setMontoPago] = useState<number | null>(null)
   const [loadingMonto, setLoadingMonto] = useState(true)
 
-  // Obtener el monto del pago desde el servidor (no desde URL)
+  // Estados para factura
+  const [invoice, setInvoice] = useState<any>(null)
+  const [loadingInvoice, setLoadingInvoice] = useState(true)
+
+  // Obtener el monto del pago y factura desde el servidor
   useEffect(() => {
     if (user) {
       fetchMontoPago()
+      fetchInvoice()
     }
   }, [user])
 
   const fetchMontoPago = async () => {
     if (!user) return
-    
+
     setLoadingMonto(true)
     try {
       const response = await fetch('/api/datos-pago', {
@@ -47,6 +52,43 @@ export default function ComprobantePage() {
       setError('No se pudo cargar el monto a pagar')
     } finally {
       setLoadingMonto(false)
+    }
+  }
+
+  const fetchInvoice = async () => {
+    if (!user) return
+
+    setLoadingInvoice(true)
+    try {
+      console.log('[Invoice] Fetching for user:', user.id, 'tipo:', user.tipo)
+
+      const response = await fetch('/api/get-client-invoice', {
+        headers: {
+          'x-user-id': String(user.id),
+          'x-tipo-cliente': user.tipo || 'cliente'
+        }
+      })
+
+      console.log('[Invoice] API response status:', response.status)
+
+      if (!response.ok) {
+        throw new Error('Error al obtener factura')
+      }
+
+      const data = await response.json()
+      console.log('[Invoice] Data received:', data)
+
+      if (data.success && data.hasInvoice) {
+        setInvoice(data.invoice)
+        console.log('[Invoice] Invoice loaded successfully')
+      } else {
+        console.log('[Invoice] No invoice found')
+      }
+    } catch (err) {
+      console.error('[Invoice] Error:', err)
+      // No mostrar error si no hay factura, es opcional
+    } finally {
+      setLoadingInvoice(false)
     }
   }
 
@@ -75,7 +117,7 @@ export default function ComprobantePage() {
 
   const handleFileSelect = (selectedFile: File) => {
     setError(null)
-    
+
     const validationError = validateFile(selectedFile)
     if (validationError) {
       setError(validationError)
@@ -171,7 +213,15 @@ export default function ComprobantePage() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   }
 
-  if (loadingMonto) {
+  const formatDate = (dateString: string): string => {
+    return new Date(dateString).toLocaleDateString('es-ES', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })
+  }
+
+  if (loadingMonto || loadingInvoice) {
     return (
       <div className={styles.container}>
         <div className={styles.loadingState}>
@@ -186,8 +236,8 @@ export default function ComprobantePage() {
     <div className={styles.container}>
       {/* Header */}
       <header className={styles.header}>
-        <button 
-          onClick={() => router.back()} 
+        <button
+          onClick={() => router.back()}
           className={styles.backButton}
           disabled={uploading}
         >
@@ -202,11 +252,37 @@ export default function ComprobantePage() {
           <div className={styles.montoInfo}>
             <span className={styles.montoLabel}>Monto a pagar:</span>
             <span className={styles.montoValue}>
-              ₡{montoPago.toLocaleString('es-CR', { 
-                minimumFractionDigits: 2, 
-                maximumFractionDigits: 2 
+              ₡{montoPago.toLocaleString('es-CR', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
               })}
             </span>
+          </div>
+        )}
+
+        {/* Sección de Factura Electrónica */}
+        {invoice && (
+          <div className={styles.invoiceSection}>
+            <h2 className={styles.invoiceTitle}>Factura Electrónica</h2>
+            <div className={styles.invoiceCard}>
+              <div className={styles.invoiceIcon}>📄</div>
+              <div className={styles.invoiceInfo}>
+                <p className={styles.invoiceFileName}>{invoice.fileName}</p>
+                <p className={styles.invoiceMeta}>
+                  {formatFileSize(invoice.fileSize)} •
+                  Subida el {formatDate(invoice.uploadedAt)}
+                </p>
+              </div>
+              <a
+                href={invoice.downloadUrl}
+                download={invoice.fileName}
+                className={styles.downloadInvoiceButton}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Descargar
+              </a>
+            </div>
           </div>
         )}
 

@@ -544,3 +544,64 @@
   color: #9ca3af;
   font-size: 1.1rem;
 }
+
+/* Invoice Upload Styles */
+.invoiceCell {
+  min-width: 300px;
+}
+
+.invoiceUpload {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fileInput {
+  display: none;
+}
+
+.fileLabel {
+  flex: 1;
+  min-width: 150px;
+  padding: 0.625rem 1rem;
+  background: #f1f5f9;
+  border: 2px dashed #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: #475569;
+  transition: all 0.2s;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fileLabel:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.uploadButton {
+  padding: 0.625rem 1rem;
+  background: linear-gradient(135deg, #FAD02C 0%, #f9c74f 100%);
+  color: #19304B;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.uploadButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(250, 208, 44, 0.3);
+}
+
+.uploadButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
