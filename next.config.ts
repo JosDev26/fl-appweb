@@ -100,5 +100,4 @@ export default withPWA({
       },
     },
   ],
-  // @ts-ignore - next-pwa types compatibility
 })(nextConfig);
