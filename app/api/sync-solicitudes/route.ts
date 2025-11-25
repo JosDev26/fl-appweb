@@ -6,8 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     console.log('� Iniciando sincronización de Solicitudes...')
     
-    // Leer TODAS las columnas manualmente (A hasta T)
-    const allColumnsData = await GoogleSheetsService.getSheetData('Solicitudes', 'A:T')
+    // Leer TODAS las columnas manualmente (A hasta S)
+    const allColumnsData = await GoogleSheetsService.getSheetData('Solicitudes', 'A:S')
     
     if (!allColumnsData || allColumnsData.length < 2) {
       return NextResponse.json({ 
@@ -24,42 +24,44 @@ export async function POST(request: NextRequest) {
     console.log(`📊 Headers encontrados:`, headers)
     console.log(`📊 Número de filas:`, rows.length)
 
-    // Encontrar índices de columnas relevantes (búsqueda insensible a mayúsculas/minúsculas)
-    const findHeader = (headerName: string) => {
-      const index = headers.findIndex((h: string) => 
-        String(h).toLowerCase().trim() === headerName.toLowerCase().trim()
-      )
-      if (index === -1) {
-        console.warn(`⚠️ No se encontró el header: ${headerName}`)
-      } else {
-        console.log(`✅ Header '${headerName}' encontrado en índice ${index}: ${headers[index]}`)
-      }
-      return index
-    }
+    // Índices de columnas según la nueva estructura:
+    // A=0: ID_Solicitud
+    // C=2: ID_Cliente (físico)
+    // D=3: ID_Cliente (jurídico)
+    // E=4: Titulo
+    // F=5: Descripcion
+    // G=6: Materia
+    // H=7: Etapa_Actual
+    // I=8: Modalidad_Pago
+    // J=9: Costo_Neto
+    // K=10: SeCobra_IVA
+    // L=11: Monto_IVA
+    // M=12: Cantidad_Cuotas
+    // N=13: MontoxCuota
+    // O=14: Total_a_Pagar
+    // P=15: Estado_Pago
+    // Q=16: Monto_Pagado
+    // R=17: Saldo_Pendiente
+    // S=18: Expediente
 
-    const idSolicitudIndex = findHeader('ID_Solicitud') // A
-    const idClienteFisicoIndex = findHeader('ID_Cliente') // D (para físicos) 
-    // Nota: Columna E también se llama ID_Cliente pero para jurídicos
-    // Necesitamos buscar ambas columnas D y E
-    const tituloIndex = findHeader('Titulo') // F
-    const descripcionIndex = findHeader('Descripcion') // G
-    const materiaIndex = findHeader('Materia') // H
-    const etapaActualIndex = findHeader('Etapa_Actual') // I
-    const modalidadPagoIndex = findHeader('Modalidad_Pago') // J
-    const costoNetoIndex = findHeader('Costo_Neto') // K
-    const seCobraIVAIndex = findHeader('SeCobra_IVA') // L
-    const montoIVAIndex = findHeader('Monto_IVA') // M
-    const cantidadCuotasIndex = findHeader('Cantidad_Cuotas') // N
-    const montoPorCuotaIndex = findHeader('MontoxCuota') // O
-    const totalAPagarIndex = findHeader('Total_a_Pagar') // P
-    const estadoPagoIndex = findHeader('Estado_Pago') // Q
-    const montoPagadoIndex = findHeader('Monto_Pagado') // R
-    const saldoPendienteIndex = findHeader('Saldo_Pendiente') // S
-    const expedienteIndex = findHeader('Expediente') // T
-
-    if (idSolicitudIndex === -1) {
-      throw new Error('No se encontró la columna requerida: ID_Solicitud')
-    }
+    const idSolicitudIndex = 0      // A: ID_Solicitud
+    const idClienteFisicoIndex = 2  // C: ID_Cliente (físico)
+    const idClienteJuridicoIndex = 3 // D: ID_Cliente (jurídico)
+    const tituloIndex = 4           // E: Titulo
+    const descripcionIndex = 5      // F: Descripcion
+    const materiaIndex = 6          // G: Materia
+    const etapaActualIndex = 7      // H: Etapa_Actual
+    const modalidadPagoIndex = 8    // I: Modalidad_Pago
+    const costoNetoIndex = 9        // J: Costo_Neto
+    const seCobraIVAIndex = 10      // K: SeCobra_IVA
+    const montoIVAIndex = 11        // L: Monto_IVA
+    const cantidadCuotasIndex = 12  // M: Cantidad_Cuotas
+    const montoPorCuotaIndex = 13   // N: MontoxCuota
+    const totalAPagarIndex = 14     // O: Total_a_Pagar
+    const estadoPagoIndex = 15      // P: Estado_Pago
+    const montoPagadoIndex = 16     // Q: Monto_Pagado
+    const saldoPendienteIndex = 17  // R: Saldo_Pendiente
+    const expedienteIndex = 18      // S: Expediente
 
     // Función para convertir montos (remueve ₡, $, comas)
     const parseMontoToNumber = (value: any): number | null => {
@@ -80,32 +82,29 @@ export async function POST(request: NextRequest) {
     const transformedData = rows
       .filter((row: any[]) => row[idSolicitudIndex] && String(row[idSolicitudIndex]).trim() !== '')
       .map((row: any[]) => {
-        // Tomar ID_Cliente de columna D o E (la que tenga dato)
-        let idCliente = null
-        if (idClienteFisicoIndex !== -1) {
-          const idD = String(row[idClienteFisicoIndex] || '').trim()
-          const idE = String(row[idClienteFisicoIndex + 1] || '').trim() // E es D+1
-          idCliente = idD || idE || null
-        }
+        // Tomar ID_Cliente de columna C (físico) o D (jurídico), la que tenga dato
+        const idFisico = String(row[idClienteFisicoIndex] || '').trim()
+        const idJuridico = String(row[idClienteJuridicoIndex] || '').trim()
+        const idCliente = idFisico || idJuridico || null
         
         return {
           id: String(row[idSolicitudIndex]).trim(),
           id_cliente: idCliente,
-          titulo: tituloIndex !== -1 ? (String(row[tituloIndex] || '').trim() || null) : null,
-          descripcion: descripcionIndex !== -1 ? (String(row[descripcionIndex] || '').trim() || null) : null,
-          materia: materiaIndex !== -1 ? (String(row[materiaIndex] || '').trim() || null) : null,
-          etapa_actual: etapaActualIndex !== -1 ? (String(row[etapaActualIndex] || '').trim() || null) : null,
-          modalidad_pago: modalidadPagoIndex !== -1 ? (String(row[modalidadPagoIndex] || '').trim() || null) : null,
-          costo_neto: costoNetoIndex !== -1 ? parseMontoToNumber(row[costoNetoIndex]) : null,
-          se_cobra_iva: seCobraIVAIndex !== -1 ? parseBoolean(row[seCobraIVAIndex]) : false,
-          monto_iva: montoIVAIndex !== -1 ? parseMontoToNumber(row[montoIVAIndex]) : null,
-          cantidad_cuotas: cantidadCuotasIndex !== -1 ? (parseInt(String(row[cantidadCuotasIndex] || '')) || null) : null,
-          monto_por_cuota: montoPorCuotaIndex !== -1 ? parseMontoToNumber(row[montoPorCuotaIndex]) : null,
-          total_a_pagar: totalAPagarIndex !== -1 ? parseMontoToNumber(row[totalAPagarIndex]) : null,
-          estado_pago: estadoPagoIndex !== -1 ? (String(row[estadoPagoIndex] || '').trim() || null) : null,
-          monto_pagado: montoPagadoIndex !== -1 ? parseMontoToNumber(row[montoPagadoIndex]) : null,
-          saldo_pendiente: saldoPendienteIndex !== -1 ? parseMontoToNumber(row[saldoPendienteIndex]) : null,
-          expediente: expedienteIndex !== -1 ? (String(row[expedienteIndex] || '').trim() || null) : null
+          titulo: String(row[tituloIndex] || '').trim() || null,
+          descripcion: String(row[descripcionIndex] || '').trim() || null,
+          materia: String(row[materiaIndex] || '').trim() || null,
+          etapa_actual: String(row[etapaActualIndex] || '').trim() || null,
+          modalidad_pago: String(row[modalidadPagoIndex] || '').trim() || null,
+          costo_neto: parseMontoToNumber(row[costoNetoIndex]),
+          se_cobra_iva: parseBoolean(row[seCobraIVAIndex]),
+          monto_iva: parseMontoToNumber(row[montoIVAIndex]),
+          cantidad_cuotas: parseInt(String(row[cantidadCuotasIndex] || '')) || null,
+          monto_por_cuota: parseMontoToNumber(row[montoPorCuotaIndex]),
+          total_a_pagar: parseMontoToNumber(row[totalAPagarIndex]),
+          estado_pago: String(row[estadoPagoIndex] || '').trim() || null,
+          monto_pagado: parseMontoToNumber(row[montoPagadoIndex]),
+          saldo_pendiente: parseMontoToNumber(row[saldoPendienteIndex]),
+          expediente: String(row[expedienteIndex] || '').trim() || null
         }
       })
 

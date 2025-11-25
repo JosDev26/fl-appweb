@@ -30,12 +30,13 @@ function CrearPasswordForm() {
   const router = useRouter()
 
   useEffect(() => {
-    // Obtener la identificación y tipo de sessionStorage
+    // Obtener la identificación, tipo y código de sessionStorage
     const tempId = sessionStorage.getItem('tempIdentificacion')
     const tempTipo = sessionStorage.getItem('tempTipoUsuario') as 'cliente' | 'empresa'
+    const tempCode = sessionStorage.getItem('tempInvitationCode')
     
-    if (!tempId || !tempTipo) {
-      // Si no hay identificación guardada, redirigir al inicio
+    if (!tempId || !tempTipo || !tempCode) {
+      // Si falta información, redirigir al inicio
       router.push('/crearcuenta')
       return
     }
@@ -108,9 +109,28 @@ function CrearPasswordForm() {
         throw new Error(data.error || 'Error al crear contraseña')
       }
 
+      // Marcar el código de invitación como usado
+      const invitationCode = sessionStorage.getItem('tempInvitationCode')
+      if (invitationCode) {
+        try {
+          await fetch('/api/invitation-codes', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              code: invitationCode,
+              usedBy: identificacion 
+            })
+          })
+        } catch (codeError) {
+          console.error('Error al marcar código como usado:', codeError)
+          // No fallar el proceso si esto falla
+        }
+      }
+
       // Limpiar sessionStorage
       sessionStorage.removeItem('tempIdentificacion')
       sessionStorage.removeItem('tempTipoUsuario')
+      sessionStorage.removeItem('tempInvitationCode')
       
       // Mostrar mensaje de éxito y redirigir
       alert('Contraseña creada exitosamente. Su cuenta ha sido activada.')

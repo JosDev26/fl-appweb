@@ -219,6 +219,51 @@ export interface Database {
         }
         Relationships: []
       }
+      invitation_codes: {
+        Row: {
+          id: string
+          code: string
+          type: 'cliente' | 'empresa'
+          created_at: string
+          expires_at: string
+          used_at: string | null
+          used_by: string | null
+          is_active: boolean
+          max_uses: number
+          current_uses: number
+          created_by: string | null
+          notes: string | null
+        }
+        Insert: {
+          id?: string
+          code: string
+          type: 'cliente' | 'empresa'
+          created_at?: string
+          expires_at: string
+          used_at?: string | null
+          used_by?: string | null
+          is_active?: boolean
+          max_uses?: number
+          current_uses?: number
+          created_by?: string | null
+          notes?: string | null
+        }
+        Update: {
+          id?: string
+          code?: string
+          type?: 'cliente' | 'empresa'
+          created_at?: string
+          expires_at?: string
+          used_at?: string | null
+          used_by?: string | null
+          is_active?: boolean
+          max_uses?: number
+          current_uses?: number
+          created_by?: string | null
+          notes?: string | null
+        }
+        Relationships: []
+      }
       historial_reportes: {
         Row: {
           id: string

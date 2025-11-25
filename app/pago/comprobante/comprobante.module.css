@@ -303,6 +303,211 @@
   opacity: 0.8;
 }
 
+/* Sección de bloqueo por falta de factura */
+.blockedSection {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: clamp(2rem, 5vw, 3rem);
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  text-align: center;
+}
+
+.blockedIcon {
+  font-size: clamp(3rem, 8vw, 5rem);
+  margin-bottom: 1rem;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+.blockedTitle {
+  color: #ef4444;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 700;
+  margin: 0 0 1rem 0;
+}
+
+.blockedMessage {
+  color: #1f2937;
+  font-size: clamp(1rem, 2.5vw, 1.125rem);
+  line-height: 1.6;
+  margin: 0 0 2rem 0;
+  padding: 0 1rem;
+}
+
+.blockedInfo {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 2px solid #fbbf24;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.blockedInfo p {
+  color: #92400e;
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  line-height: 1.6;
+  margin: 0.75rem 0;
+  text-align: left;
+}
+
+.blockedInfo p:first-child {
+  margin-top: 0;
+}
+
+.blockedInfo p:last-child {
+  margin-bottom: 0;
+}
+
+.backToHomeButton {
+  background: linear-gradient(135deg, #19304B 0%, #2c4d6b 100%);
+  color: white;
+  border: none;
+  padding: clamp(0.875rem, 2vw, 1rem) clamp(2rem, 4vw, 3rem);
+  border-radius: 12px;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(25, 48, 75, 0.3);
+}
+
+.backToHomeButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(25, 48, 75, 0.4);
+}
+
+/* Sección de facturas electrónicas */
+.invoiceSection {
+  max-width: 900px;
+  margin: 0 auto 2rem auto;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+.invoiceTitle {
+  color: #19304B;
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+  font-weight: 700;
+  margin: 0 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.invoiceSubtitle {
+  color: #6b7280;
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  margin: 0 0 1.5rem 0;
+}
+
+.invoicesList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.invoiceCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border: 2px solid #cbd5e1;
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.invoiceCard:hover {
+  border-color: #FAD02C;
+  box-shadow: 0 4px 15px rgba(250, 208, 44, 0.2);
+  transform: translateY(-2px);
+}
+
+.invoiceIcon {
+  font-size: 2.5rem;
+  flex-shrink: 0;
+}
+
+.invoiceDetails {
+  flex: 1;
+  min-width: 0;
+}
+
+.invoiceFileName {
+  color: #1f2937;
+  font-weight: 600;
+  font-size: clamp(0.9rem, 2vw, 1rem);
+  margin: 0 0 0.25rem 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceDate {
+  color: #6b7280;
+  font-size: clamp(0.8rem, 1.5vw, 0.875rem);
+  margin: 0 0 0.5rem 0;
+}
+
+.invoiceType {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 6px;
+  font-family: monospace;
+}
+
+.downloadInvoiceButton {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  padding: clamp(0.625rem, 1.5vw, 0.75rem) clamp(1rem, 2vw, 1.5rem);
+  border-radius: 10px;
+  font-size: clamp(0.875rem, 1.5vw, 0.95rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.downloadInvoiceButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.4);
+}
+
+.downloadInvoiceButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.downloadInvoiceButton .spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
 .loadingState {
   display: flex;
   flex-direction: column;

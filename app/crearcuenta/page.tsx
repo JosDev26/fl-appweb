@@ -7,6 +7,7 @@ import styles from './crearcuenta.module.css'
 
 export default function CrearCuenta() {
   const [identificacion, setIdentificacion] = useState('')
+  const [invitationCode, setInvitationCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [tipoUsuario, setTipoUsuario] = useState<'cliente' | 'empresa'>('cliente')
@@ -20,11 +21,24 @@ export default function CrearCuenta() {
       return
     }
 
+    if (!invitationCode.trim()) {
+      setError('Por favor ingrese un código de invitación válido')
+      return
+    }
+
     setLoading(true)
     setError('')
 
     try {
-      // Usar la API correspondiente según el tipo de usuario
+      // Primero validar el código de invitación
+      const codeResponse = await fetch(`/api/invitation-codes?code=${encodeURIComponent(invitationCode.trim())}&type=${tipoUsuario}`)
+      const codeData = await codeResponse.json()
+
+      if (!codeResponse.ok || !codeData.valid) {
+        throw new Error(codeData.error || 'Código de invitación inválido')
+      }
+
+      // Si el código es válido, continuar con la validación de identificación
       const endpoint = tipoUsuario === 'cliente' 
         ? '/api/validar-identificacion' 
         : '/api/validar-identificacion-empresa'
@@ -44,10 +58,11 @@ export default function CrearCuenta() {
       }
 
       if (data.exists) {
-        // Guardar la identificación y tipo en sessionStorage de forma segura
+        // Guardar la identificación, tipo y código en sessionStorage
         sessionStorage.setItem('tempIdentificacion', identificacion.trim())
         sessionStorage.setItem('tempTipoUsuario', tipoUsuario)
-        // Redirigir a la página para crear contraseña sin parámetros en la URL
+        sessionStorage.setItem('tempInvitationCode', invitationCode.trim())
+        // Redirigir a la página para crear contraseña
         router.push('/crearcuenta/password')
       } else {
         if (data.hasAccount) {
@@ -58,7 +73,7 @@ export default function CrearCuenta() {
       }
     } catch (error) {
       console.error('Error:', error)
-      setError(error instanceof Error ? error.message : 'Error al validar identificación')
+      setError(error instanceof Error ? error.message : 'Error al validar información')
     } finally {
       setLoading(false)
     }
@@ -102,6 +117,31 @@ export default function CrearCuenta() {
                 <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Empresa</span>
               </label>
             </div>
+          </div>
+
+          <div className={styles.formGroup}>
+            <label htmlFor="invitationCode" className={styles.label}>
+              Código de Invitación
+            </label>
+            <input
+              id="invitationCode"
+              name="invitationCode"
+              type="text"
+              required
+              className={styles.input}
+              placeholder="Ingrese su código de invitación"
+              value={invitationCode}
+              onChange={(e) => setInvitationCode(e.target.value)}
+              disabled={loading}
+            />
+            <small style={{ 
+              color: '#64748b', 
+              fontSize: '0.875rem', 
+              marginTop: '0.5rem',
+              display: 'block' 
+            }}>
+              Debe tener un código de invitación válido para registrarse
+            </small>
           </div>
 
           <div className={styles.formGroup}>
