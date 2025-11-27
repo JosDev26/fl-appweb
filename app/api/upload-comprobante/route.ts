@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { getCurrentDate } from '@/lib/dateSimulator'
 
 // Configuración de seguridad
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -89,6 +90,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const file = formData.get('file') as File
     const montoPago = formData.get('monto') as string
+    const simulatedDate = formData.get('simulatedDate') as string | null // Fecha simulada desde el cliente
     
     if (!file) {
       return NextResponse.json(
@@ -138,9 +140,30 @@ export async function POST(request: NextRequest) {
     const fileExtension = sanitizedName.match(/\.[^.]+$/)?.[0] || ''
     const fileName = `${userId}/${timestamp}${fileExtension}`
 
-    // 6. Obtener mes actual para el registro
-    const now = new Date()
-    const mesPago = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    // 6. Obtener mes de la factura que está pagando
+    // Buscar la factura más reciente con estado pendiente
+    const { data: invoiceDeadline, error: deadlineError } = await supabase
+      .from('invoice_payment_deadlines' as any)
+      .select('mes_factura')
+      .eq('client_id', userId)
+      .eq('client_type', tipoCliente)
+      .eq('estado_pago', 'pendiente')
+      .order('fecha_emision', { ascending: false })
+      .limit(1)
+      .single()
+    
+    let mesPago: string
+    
+    if (invoiceDeadline && !deadlineError) {
+      // Usar el mes de la factura pendiente
+      mesPago = (invoiceDeadline as any).mes_factura
+      console.log('📅 Comprobante para factura del mes:', mesPago)
+    } else {
+      // Fallback: usar mes actual
+      const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+      mesPago = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      console.warn('⚠️ No se encontró factura pendiente, usando mes actual:', mesPago)
+    }
 
     // 7. Subir archivo a Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase
@@ -161,6 +184,10 @@ export async function POST(request: NextRequest) {
     }
 
     // 8. Registrar en la base de datos
+    const uploadedAt = simulatedDate 
+      ? new Date(simulatedDate + 'T' + new Date().toISOString().split('T')[1]).toISOString()
+      : new Date().toISOString()
+    
     const { data: receiptData, error: dbError } = await supabase
       .from('payment_receipts' as any)
       .insert({
@@ -172,7 +199,8 @@ export async function POST(request: NextRequest) {
         file_type: file.type,
         mes_pago: mesPago,
         monto_declarado: montoPago ? parseFloat(montoPago) : null,
-        estado: 'pendiente'
+        estado: 'pendiente',
+        uploaded_at: uploadedAt
       })
       .select()
       .single()

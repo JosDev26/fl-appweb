@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import InitialLoader from "./components/InitialLoader";
+import DateSimulatorIndicator from "./components/DateSimulatorIndicator";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,7 @@ export default function RootLayout({
     <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <InitialLoader />
+        <DateSimulatorIndicator />
         {children}
       </body>
     </html>

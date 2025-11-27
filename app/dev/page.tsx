@@ -64,7 +64,13 @@ export default function DevPage() {
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState<SyncResult[]>([])
   const [activeView, setActiveView] = useState<'principal' | 'avanzado'>('principal')
-  const [activeTab, setActiveTab] = useState<'sync' | 'config' | 'test' | 'invitations'>('sync')
+  const [activeTab, setActiveTab] = useState<'sync' | 'config' | 'test' | 'invitations' | 'date-simulator' | 'invoice-deadlines' | 'visto-bueno'>('sync')
+  
+  // Estados para simulador de fecha
+  const [simulatedDate, setSimulatedDate] = useState<string>('')
+  const [isDateSimulated, setIsDateSimulated] = useState(false)
+  const [currentRealDate, setCurrentRealDate] = useState<string>('')
+  const [isMounted, setIsMounted] = useState(false)
   
   // Estados para vista principal
   const [receipts, setReceipts] = useState<PaymentReceipt[]>([])
@@ -89,21 +95,94 @@ export default function DevPage() {
   const [selectedClient, setSelectedClient] = useState<ClienteModoPago | null>(null)
   const [uploadingInvoice, setUploadingInvoice] = useState(false)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<string>('')
   const [monthInvoices, setMonthInvoices] = useState<InvoiceFile[]>([])
   const [loadingInvoices, setLoadingInvoices] = useState(false)
+
+  // Estados para plazos de facturas
+  interface InvoiceDeadline {
+    id: string
+    mes_factura: string
+    client_id: string
+    client_type: string
+    file_path: string
+    fecha_emision: string
+    fecha_vencimiento: string
+    estado_pago: 'pendiente' | 'pagado' | 'vencido'
+    fecha_pago?: string
+    dias_plazo: number
+    nota?: string
+    clientName?: string
+    clientCedula?: string | number
+    diasRestantes?: number
+  }
+  const [invoiceDeadlines, setInvoiceDeadlines] = useState<InvoiceDeadline[]>([])
+  const [loadingDeadlines, setLoadingDeadlines] = useState(false)
+  const [editingDeadline, setEditingDeadline] = useState<string | null>(null)
+  const [newDiasPlazo, setNewDiasPlazo] = useState<string>('')
+  const [newNota, setNewNota] = useState<string>('')
+
+  // Estados para notificaciones
+  const [notification, setNotification] = useState<{
+    show: boolean
+    message: string
+    type: 'success' | 'error'
+  }>({ show: false, message: '', type: 'success' })
+
+  // Estados para gestión de visto bueno
+  interface ClientVistoBueno {
+    id: string
+    nombre: string
+    cedula: string | number
+    tipo: 'cliente' | 'empresa'
+    darVistoBueno: boolean
+    modoPago: boolean
+    vistoBuenoDado?: boolean
+    fechaVistoBueno?: string
+  }
+  const [clientesVistoBueno, setClientesVistoBueno] = useState<ClientVistoBueno[]>([])
+  const [loadingVistoBueno, setLoadingVistoBueno] = useState(false)
+  const [updatingVistoBueno, setUpdatingVistoBueno] = useState<string | null>(null)
 
   // Cargar datos de pagos
   useEffect(() => {
     if (activeView === 'principal') {
       loadPaymentData()
       loadMonthInvoices()
+      loadClientesVistoBueno() // Cargar para validar al subir facturas
     }
   }, [activeView])
+
+  // Inicializar fecha actual
+  useEffect(() => {
+    setIsMounted(true)
+    const now = new Date()
+    const dateStr = now.toISOString().split('T')[0]
+    setCurrentRealDate(dateStr)
+    
+    // Verificar si hay fecha simulada en localStorage
+    const savedSimulatedDate = localStorage.getItem('simulatedDate')
+    if (savedSimulatedDate) {
+      setSimulatedDate(savedSimulatedDate)
+      setIsDateSimulated(true)
+    } else {
+      setSimulatedDate(dateStr)
+    }
+    
+    // Cargar datos de visto bueno después de que isMounted esté listo
+    setTimeout(() => {
+      loadClientesVistoBueno()
+    }, 0)
+  }, [])
 
   // Cargar códigos de invitación cuando se accede a la pestaña
   useEffect(() => {
     if (activeTab === 'invitations') {
       loadInvitationCodes()
+    } else if (activeTab === 'invoice-deadlines') {
+      loadInvoiceDeadlines()
+    } else if (activeTab === 'visto-bueno') {
+      loadClientesVistoBueno()
     }
   }, [activeTab])
 
@@ -141,13 +220,13 @@ export default function DevPage() {
       const data = await response.json()
       
       if (data.success) {
-        alert('Comprobante aprobado exitosamente')
+        setNotification({ show: true, message: 'Comprobante aprobado exitosamente', type: 'success' })
         loadPaymentData()
       } else {
-        alert('Error: ' + (data.error || 'Error al aprobar'))
+        setNotification({ show: true, message: `Error: ${data.error || 'Error al aprobar'}`, type: 'error' })
       }
     } catch (error) {
-      alert('Error al aprobar comprobante')
+      setNotification({ show: true, message: 'Error al aprobar comprobante', type: 'error' })
       console.error(error)
     } finally {
       setReviewingReceipt(null)
@@ -173,13 +252,13 @@ export default function DevPage() {
       const data = await response.json()
       
       if (data.success) {
-        alert('Comprobante rechazado')
+        setNotification({ show: true, message: 'Comprobante rechazado', type: 'success' })
         loadPaymentData()
       } else {
-        alert('Error: ' + (data.error || 'Error al rechazar'))
+        setNotification({ show: true, message: `Error: ${data.error || 'Error al rechazar'}`, type: 'error' })
       }
     } catch (error) {
-      alert('Error al rechazar comprobante')
+      setNotification({ show: true, message: 'Error al rechazar comprobante', type: 'error' })
       console.error(error)
     } finally {
       setReviewingReceipt(null)
@@ -205,7 +284,7 @@ export default function DevPage() {
         URL.revokeObjectURL(url)
       }
     } catch (error) {
-      alert('Error al descargar archivo')
+      setNotification({ show: true, message: 'Error al descargar archivo', type: 'error' })
       console.error(error)
     }
   }
@@ -218,6 +297,23 @@ export default function DevPage() {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  const formatInvoiceDate = (fileName: string, fallbackDate: string) => {
+    // Extraer timestamp del nombre del archivo (formato: {timestamp}_{mes}_{nombre})
+    const parts = fileName.split('_')
+    if (parts.length >= 3 && !isNaN(Number(parts[0]))) {
+      const timestamp = Number(parts[0])
+      return new Date(timestamp).toLocaleString('es-ES', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    // Fallback a la fecha de creación del archivo
+    return formatDate(fallbackDate)
   }
 
   const formatMonto = (monto: number | null) => {
@@ -302,8 +398,24 @@ export default function DevPage() {
   }
 
   // Funciones para facturas electrónicas
-  const openInvoiceModal = (cliente: ClienteModoPago) => {
+  const openInvoiceModal = async (cliente: ClienteModoPago) => {
+    // Verificar si requiere visto bueno y si ya lo dio
+    if (cliente.modo_pago) {
+      const clienteVB = clientesVistoBueno.find(c => c.id === cliente.id && c.tipo === cliente.tipo)
+      
+      if (clienteVB?.darVistoBueno && !clienteVB?.vistoBuenoDado) {
+        alert(`⚠️ ${cliente.nombre} aún no ha dado visto bueno a las horas del mes.\n\nNo se puede subir la factura hasta que el cliente apruebe las horas trabajadas.`)
+        return
+      }
+    }
+    
+    // Inicializar mes por defecto (mes anterior)
+    const now = new Date()
+    const mesAnterior = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const mesDefault = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`
+    
     setSelectedClient(cliente)
+    setSelectedInvoiceMonth(mesDefault)
     setShowInvoiceModal(true)
     setSelectedFile(null)
   }
@@ -312,6 +424,7 @@ export default function DevPage() {
     setShowInvoiceModal(false)
     setSelectedClient(null)
     setSelectedFile(null)
+    setSelectedInvoiceMonth('')
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -335,7 +448,7 @@ export default function DevPage() {
   }
 
   const uploadInvoice = async () => {
-    if (!selectedFile || !selectedClient) return
+    if (!selectedFile || !selectedClient || !selectedInvoiceMonth) return
 
     setUploadingInvoice(true)
     try {
@@ -343,6 +456,12 @@ export default function DevPage() {
       formData.append('file', selectedFile)
       formData.append('clientId', selectedClient.id)
       formData.append('clientType', selectedClient.tipo)
+      formData.append('mesFactura', selectedInvoiceMonth) // Mes de las horas trabajadas
+      
+      // Incluir fecha simulada si está activa (para fecha de emisión)
+      if (isMounted && isDateSimulated && simulatedDate) {
+        formData.append('simulatedDate', simulatedDate)
+      }
 
       const response = await fetch('/api/upload-invoice', {
         method: 'POST',
@@ -352,7 +471,8 @@ export default function DevPage() {
       const data = await response.json()
 
       if (data.success) {
-        alert('Factura subida exitosamente')
+        const monthInfo = data.mesFactura ? ` para ${data.mesFactura}` : ''
+        alert(`Factura${monthInfo} subida exitosamente`)
         closeInvoiceModal()
         loadMonthInvoices() // Recargar el historial
       } else {
@@ -369,7 +489,12 @@ export default function DevPage() {
   const loadMonthInvoices = async () => {
     setLoadingInvoices(true)
     try {
-      const response = await fetch('/api/upload-invoice?getAllMonth=true')
+      // Enviar fecha simulada si existe
+      const simulatedDateStr = typeof window !== 'undefined' ? localStorage.getItem('simulatedDate') : null
+      const url = simulatedDateStr 
+        ? `/api/upload-invoice?getAllMonth=true&simulatedDate=${simulatedDateStr}`
+        : '/api/upload-invoice?getAllMonth=true'
+      const response = await fetch(url)
       const data = await response.json()
       
       console.log('Respuesta del API de facturas:', data)
@@ -434,6 +559,217 @@ export default function DevPage() {
     } catch (error) {
       alert('Error al eliminar factura')
       console.error(error)
+    }
+  }
+
+  // Funciones para gestión de plazos
+  const loadInvoiceDeadlines = async () => {
+    setLoadingDeadlines(true)
+    try {
+      const response = await fetch('/api/invoice-payment-status?getAllPending=true')
+      const data = await response.json()
+      
+      if (data.success) {
+        setInvoiceDeadlines(data.deadlines || [])
+      } else {
+        console.error('Error al cargar plazos:', data.error)
+      }
+    } catch (error) {
+      console.error('Error loading deadlines:', error)
+    } finally {
+      setLoadingDeadlines(false)
+    }
+  }
+
+  const updateDeadlinePlazo = async (deadline: InvoiceDeadline) => {
+    try {
+      const response = await fetch('/api/invoice-payment-status', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mesFactura: deadline.mes_factura,
+          clientId: deadline.client_id,
+          clientType: deadline.client_type,
+          diasPlazo: parseInt(newDiasPlazo),
+          nota: newNota || deadline.nota
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        alert('Plazo actualizado exitosamente')
+        setEditingDeadline(null)
+        setNewDiasPlazo('')
+        setNewNota('')
+        loadInvoiceDeadlines()
+      } else {
+        alert('Error: ' + (data.error || 'Error al actualizar plazo'))
+      }
+    } catch (error) {
+      alert('Error al actualizar plazo')
+      console.error(error)
+    }
+  }
+
+  const startEditDeadline = (deadline: InvoiceDeadline) => {
+    setEditingDeadline(deadline.id)
+    setNewDiasPlazo(deadline.dias_plazo.toString())
+    setNewNota(deadline.nota || '')
+  }
+
+  const cancelEditDeadline = () => {
+    setEditingDeadline(null)
+    setNewDiasPlazo('')
+    setNewNota('')
+  }
+
+  // Funciones para gestión de visto bueno
+  const loadClientesVistoBueno = async () => {
+    setLoadingVistoBueno(true)
+    try {
+      // Obtener mes anterior (mes de horas trabajadas)
+      // Leer directamente de localStorage sin depender de isMounted
+      const simulatedDateStr = typeof window !== 'undefined' ? localStorage.getItem('simulatedDate') : null
+      const now = simulatedDateStr ? new Date(simulatedDateStr + 'T12:00:00') : new Date()
+      
+      // Calcular mes anterior (mes de las horas que se están revisando)
+      const mesAnterior = new Date(now)
+      mesAnterior.setMonth(mesAnterior.getMonth() - 1)
+      const mes = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, '0')}`
+      
+      // Cargar usuarios
+      const resUsuarios = await fetch('/api/client?getAll=true')
+      const dataUsuarios = await resUsuarios.json()
+      
+      // Cargar empresas
+      const resEmpresas = await fetch('/api/client?getAllEmpresas=true')
+      const dataEmpresas = await resEmpresas.json()
+      
+      const clientes: ClientVistoBueno[] = []
+      
+      if (dataUsuarios.success && dataUsuarios.clientes) {
+        for (const c of dataUsuarios.clientes) {
+          let vistoBuenoDado = false
+          let fechaVistoBueno = undefined
+          
+          // Si tiene darVistoBueno activo, verificar si ya dio visto bueno este mes
+          if (c.darVistoBueno) {
+            try {
+              const vbRes = await fetch(`/api/visto-bueno?mes=${mes}`, {
+                headers: {
+                  'x-user-id': c.id,
+                  'x-tipo-cliente': 'cliente'
+                }
+              })
+              const vbData = await vbRes.json()
+              if (vbData.success) {
+                vistoBuenoDado = vbData.dado
+                fechaVistoBueno = vbData.fecha_visto_bueno
+              }
+            } catch (err) {
+              console.error('Error checking visto bueno:', err)
+            }
+          }
+          
+          clientes.push({
+            id: c.id,
+            nombre: c.nombre,
+            cedula: c.cedula,
+            tipo: 'cliente',
+            darVistoBueno: c.darVistoBueno || false,
+            modoPago: c.modoPago || false,
+            vistoBuenoDado,
+            fechaVistoBueno
+          })
+        }
+      }
+      
+      if (dataEmpresas.success && dataEmpresas.empresas) {
+        for (const e of dataEmpresas.empresas) {
+          let vistoBuenoDado = false
+          let fechaVistoBueno = undefined
+          
+          // Si tiene darVistoBueno activo, verificar si ya dio visto bueno este mes
+          if (e.darVistoBueno) {
+            try {
+              const vbRes = await fetch(`/api/visto-bueno?mes=${mes}`, {
+                headers: {
+                  'x-user-id': e.id,
+                  'x-tipo-cliente': 'empresa'
+                }
+              })
+              const vbData = await vbRes.json()
+              if (vbData.success) {
+                vistoBuenoDado = vbData.dado
+                fechaVistoBueno = vbData.fecha_visto_bueno
+              }
+            } catch (err) {
+              console.error('Error checking visto bueno:', err)
+            }
+          }
+          
+          clientes.push({
+            id: e.id,
+            nombre: e.nombre,
+            cedula: e.cedula,
+            tipo: 'empresa',
+            darVistoBueno: e.darVistoBueno || false,
+            modoPago: e.modoPago || false,
+            vistoBuenoDado,
+            fechaVistoBueno
+          })
+        }
+      }
+      
+      // Ordenar: primero los que tienen darVistoBueno activo, luego por nombre
+      clientes.sort((a, b) => {
+        if (a.darVistoBueno !== b.darVistoBueno) {
+          return b.darVistoBueno ? 1 : -1
+        }
+        return a.nombre.localeCompare(b.nombre)
+      })
+      
+      setClientesVistoBueno(clientes)
+    } catch (error) {
+      console.error('Error loading visto bueno:', error)
+    } finally {
+      setLoadingVistoBueno(false)
+    }
+  }
+
+  const toggleVistoBueno = async (cliente: ClientVistoBueno) => {
+    setUpdatingVistoBueno(cliente.id)
+    try {
+      const response = await fetch('/api/client/visto-bueno', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: cliente.id,
+          clientType: cliente.tipo,
+          darVistoBueno: !cliente.darVistoBueno
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Actualizar estado local
+        setClientesVistoBueno(prev =>
+          prev.map(c =>
+            c.id === cliente.id
+              ? { ...c, darVistoBueno: !c.darVistoBueno }
+              : c
+          )
+        )
+      } else {
+        alert('Error: ' + (data.error || 'Error al actualizar'))
+      }
+    } catch (error) {
+      alert('Error al actualizar visto bueno')
+      console.error(error)
+    } finally {
+      setUpdatingVistoBueno(null)
     }
   }
 
@@ -794,8 +1130,66 @@ export default function DevPage() {
     setResults([])
   }
 
+  // Funciones para simulador de fecha
+  const activateSimulatedDate = () => {
+    if (!simulatedDate) {
+      alert('Por favor seleccione una fecha')
+      return
+    }
+    
+    localStorage.setItem('simulatedDate', simulatedDate)
+    setIsDateSimulated(true)
+    alert(`Fecha simulada activada: ${new Date(simulatedDate).toLocaleDateString('es-ES', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    })}`)
+    
+    // Recargar la página para que todos los componentes usen la nueva fecha
+    window.location.reload()
+  }
+
+  const deactivateSimulatedDate = () => {
+    localStorage.removeItem('simulatedDate')
+    setIsDateSimulated(false)
+    const now = new Date()
+    const dateStr = now.toISOString().split('T')[0]
+    setSimulatedDate(dateStr)
+    alert('Fecha simulada desactivada. Usando fecha real del sistema.')
+    
+    // Recargar la página para que todos los componentes usen la fecha real
+    window.location.reload()
+  }
+
+  const resetToToday = () => {
+    const now = new Date()
+    const dateStr = now.toISOString().split('T')[0]
+    setSimulatedDate(dateStr)
+  }
+
+  const adjustDate = (days: number) => {
+    const current = new Date(simulatedDate)
+    current.setDate(current.getDate() + days)
+    const newDateStr = current.toISOString().split('T')[0]
+    setSimulatedDate(newDateStr)
+  }
+
   return (
     <div className={styles.container}>
+      {/* Notificación flotante */}
+      {notification.show && (
+        <div className={`${styles.notification} ${styles[notification.type]}`}>
+          <span>{notification.message}</span>
+          <button
+            className={styles.notificationClose}
+            onClick={() => setNotification({ ...notification, show: false })}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className={styles.panel}>
         <header className={styles.header}>
           <h1 className={styles.title}>Panel de Desarrollo</h1>
@@ -824,7 +1218,10 @@ export default function DevPage() {
             <div className={styles.principalHeader}>
               <h2 className={styles.sectionTitle}>Gestión de Comprobantes de Pago</h2>
               <button
-                onClick={loadPaymentData}
+                onClick={() => {
+                  loadPaymentData()
+                  loadClientesVistoBueno()
+                }}
                 disabled={loadingReceipts}
                 className={styles.refreshButton}
               >
@@ -939,25 +1336,52 @@ export default function DevPage() {
                             <th>Tipo</th>
                             <th>Nombre</th>
                             <th>Cédula</th>
+                            <th>Estado Visto Bueno</th>
                             <th>Factura Electrónica</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {clientesModoPago.map((cliente) => (
-                            <tr key={`${cliente.tipo}-${cliente.id}`}>
-                              <td>{cliente.tipo === 'empresa' ? 'Empresa' : 'Cliente'}</td>
-                              <td>{cliente.nombre}</td>
-                              <td>{cliente.cedula}</td>
-                              <td>
-                                <button
-                                  onClick={() => openInvoiceModal(cliente)}
-                                  className={styles.invoiceButton}
-                                >
-                                  📄 Adjuntar Factura
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
+                          {clientesModoPago.map((cliente) => {
+                            const clienteVB = clientesVistoBueno.find(c => c.id === cliente.id && c.tipo === cliente.tipo)
+                            const requiereVB = clienteVB?.darVistoBueno || false
+                            const vbDado = clienteVB?.vistoBuenoDado || false
+                            
+                            return (
+                              <tr key={`${cliente.tipo}-${cliente.id}`}>
+                                <td>{cliente.tipo === 'empresa' ? 'Empresa' : 'Cliente'}</td>
+                                <td>{cliente.nombre}</td>
+                                <td>{cliente.cedula}</td>
+                                <td>
+                                  {requiereVB ? (
+                                    vbDado ? (
+                                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '0.875rem' }}>
+                                        ✅ Aprobado
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '0.875rem' }}>
+                                        ⏳ Pendiente
+                                      </span>
+                                    )
+                                  ) : (
+                                    <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>
+                                      N/A
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <button
+                                    onClick={() => openInvoiceModal(cliente)}
+                                    className={styles.invoiceButton}
+                                    disabled={requiereVB && !vbDado}
+                                    style={requiereVB && !vbDado ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                                    title={requiereVB && !vbDado ? 'Cliente debe dar visto bueno primero' : 'Adjuntar factura electrónica'}
+                                  >
+                                    📄 Adjuntar Factura
+                                  </button>
+                                </td>
+                              </tr>
+                            )
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1003,7 +1427,7 @@ export default function DevPage() {
                         <tbody>
                           {monthInvoices.map((invoice, index) => (
                             <tr key={`${invoice.clientId}-${invoice.name}-${index}`}>
-                              <td>{formatDate(invoice.created_at)}</td>
+                              <td>{formatInvoiceDate(invoice.name, invoice.created_at)}</td>
                               <td>{invoice.clientName}</td>
                               <td>{invoice.clientCedula}</td>
                               <td>
@@ -1065,6 +1489,23 @@ export default function DevPage() {
                       <p><strong>Cliente:</strong> {selectedClient.nombre}</p>
                       <p><strong>Cédula:</strong> {selectedClient.cedula}</p>
                       <p><strong>Tipo:</strong> {selectedClient.tipo === 'empresa' ? 'Empresa' : 'Cliente'}</p>
+                    </div>
+
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold', color: '#19304B' }}>
+                        📅 Mes de las horas trabajadas (a facturar):
+                      </label>
+                      <input
+                        type="month"
+                        value={selectedInvoiceMonth}
+                        onChange={(e) => setSelectedInvoiceMonth(e.target.value)}
+                        className={styles.formInput}
+                        disabled={uploadingInvoice}
+                        style={{ width: '100%', padding: '0.75rem', fontSize: '1rem' }}
+                      />
+                      <p style={{ fontSize: '0.875rem', color: '#64748b', marginTop: '0.5rem' }}>
+                        Selecciona el mes de las horas que se están facturando (normalmente el mes anterior)
+                      </p>
                     </div>
 
                     <div className={styles.uploadSection}>
@@ -1135,6 +1576,24 @@ export default function DevPage() {
           <>
             <div className={styles.tabs}>
           <button
+            className={`${styles.tab} ${activeTab === 'date-simulator' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('date-simulator')}
+          >
+            🗓️ Simulador de Fecha
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === 'invoice-deadlines' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('invoice-deadlines')}
+          >
+            📅 Plazos de Facturas
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === 'visto-bueno' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('visto-bueno')}
+          >
+            ✅ Visto Bueno
+          </button>
+          <button
             className={`${styles.tab} ${activeTab === 'invitations' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('invitations')}
           >
@@ -1161,6 +1620,510 @@ export default function DevPage() {
         </div>
 
         <div className={styles.content}>
+          {activeTab === 'date-simulator' && (
+            <div className={styles.section}>
+              <h2 className={styles.sectionTitle}>Simulador de Fecha</h2>
+              <p className={styles.description}>
+                Simula diferentes fechas para probar funcionalidades dependientes del tiempo (facturas, pagos, reportes, etc.)
+              </p>
+
+              <div className={styles.dateSimulatorContainer}>
+                <div className={styles.dateStatusCard}>
+                  <h3>Estado Actual</h3>
+                  {!isMounted ? (
+                    <div className={styles.loadingState}>
+                      <div className={styles.spinner}></div>
+                      <p>Cargando...</p>
+                    </div>
+                  ) : isDateSimulated ? (
+                    <div className={styles.dateActive}>
+                      <span className={styles.statusBadge} style={{ backgroundColor: '#f59e0b' }}>🕐 Simulación Activa</span>
+                      <p className={styles.dateDisplay}>
+                        <strong>Fecha Simulada:</strong><br />
+                        {new Date(simulatedDate + 'T12:00:00').toLocaleDateString('es-ES', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className={styles.dateInactive}>
+                      <span className={styles.statusBadge} style={{ backgroundColor: '#10b981' }}>✓ Fecha Real</span>
+                      <p className={styles.dateDisplay}>
+                        <strong>Fecha del Sistema:</strong><br />
+                        {new Date(currentRealDate + 'T12:00:00').toLocaleDateString('es-ES', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className={styles.dateControlCard}>
+                  <h3>Seleccionar Fecha</h3>
+                  <div className={styles.dateInputGroup}>
+                    <input
+                      type="date"
+                      value={simulatedDate}
+                      onChange={(e) => setSimulatedDate(e.target.value)}
+                      className={styles.dateInput}
+                    />
+                    <button
+                      onClick={resetToToday}
+                      className={styles.todayButton}
+                      title="Volver a hoy"
+                    >
+                      Hoy
+                    </button>
+                  </div>
+
+                  <div className={styles.quickAdjust}>
+                    <h4>Ajuste Rápido</h4>
+                    <div className={styles.adjustButtons}>
+                      <button onClick={() => adjustDate(-30)} className={styles.adjustButton}>-30 días</button>
+                      <button onClick={() => adjustDate(-7)} className={styles.adjustButton}>-7 días</button>
+                      <button onClick={() => adjustDate(-1)} className={styles.adjustButton}>-1 día</button>
+                      <button onClick={() => adjustDate(1)} className={styles.adjustButton}>+1 día</button>
+                      <button onClick={() => adjustDate(7)} className={styles.adjustButton}>+7 días</button>
+                      <button onClick={() => adjustDate(30)} className={styles.adjustButton}>+30 días</button>
+                    </div>
+                  </div>
+
+                  <div className={styles.dateActions}>
+                    {!isDateSimulated ? (
+                      <button
+                        onClick={activateSimulatedDate}
+                        className={`${styles.actionButton} ${styles.primary}`}
+                      >
+                        🕐 Activar Simulación
+                      </button>
+                    ) : (
+                      <div className={styles.actionGroup}>
+                        <button
+                          onClick={activateSimulatedDate}
+                          className={`${styles.actionButton} ${styles.warning}`}
+                        >
+                          🔄 Actualizar Fecha
+                        </button>
+                        <button
+                          onClick={deactivateSimulatedDate}
+                          className={`${styles.actionButton} ${styles.danger}`}
+                        >
+                          ✕ Desactivar Simulación
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.infoBox} style={{ marginTop: '2rem' }}>
+                <h3>ℹ️ Información Importante:</h3>
+                <ul>
+                  <li><strong>Alcance Global:</strong> La fecha simulada afectará a toda la aplicación</li>
+                  <li><strong>Persistencia:</strong> La fecha se guarda en localStorage y persiste entre sesiones</li>
+                  <li><strong>Recarga Automática:</strong> La página se recargará al activar/desactivar para aplicar los cambios</li>
+                  <li><strong>Casos de Uso:</strong> Probar vencimientos, generar reportes históricos, simular ciclos de facturación</li>
+                  <li><strong>Advertencia:</strong> No usar en producción, solo para desarrollo y pruebas</li>
+                </ul>
+              </div>
+
+              <div className={styles.infoBox} style={{ marginTop: '1rem', backgroundColor: '#fef3c7' }}>
+                <h3>⚠️ Recomendaciones:</h3>
+                <ul>
+                  <li>Verifica que la fecha simulada sea coherente con tus pruebas</li>
+                  <li>Recuerda desactivar la simulación cuando termines las pruebas</li>
+                  <li>Ten en cuenta que algunos datos pueden quedar con timestamps simulados</li>
+                  <li>Los jobs automáticos y cron jobs usarán la fecha simulada si está activa</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'invoice-deadlines' && (
+            <div className={styles.section}>
+              <h2 className={styles.sectionTitle}>Gestión de Plazos de Facturas</h2>
+              <p className={styles.description}>
+                Monitorea y gestiona los plazos de pago de las facturas electrónicas enviadas a los clientes
+              </p>
+
+              <div className={styles.principalHeader}>
+                <h3>Facturas Pendientes y Vencidas</h3>
+                <button
+                  onClick={loadInvoiceDeadlines}
+                  disabled={loadingDeadlines}
+                  className={styles.refreshButton}
+                >
+                  {loadingDeadlines ? 'Cargando...' : 'Actualizar'}
+                </button>
+              </div>
+
+              {loadingDeadlines ? (
+                <div className={styles.loadingState}>
+                  <div className={styles.spinner}></div>
+                  <p>Cargando plazos...</p>
+                </div>
+              ) : invoiceDeadlines.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p>No hay facturas pendientes de pago</p>
+                </div>
+              ) : (
+                <div className={styles.deadlinesTable}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Cédula</th>
+                        <th>Mes Factura</th>
+                        <th>Fecha Emisión</th>
+                        <th>Fecha Vencimiento</th>
+                        <th>Días Restantes</th>
+                        <th>Estado</th>
+                        <th>Plazo (días)</th>
+                        <th>Notas</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceDeadlines.map((deadline) => {
+                        const isVencido = deadline.estado_pago === 'vencido'
+                        const isPagado = deadline.estado_pago === 'pagado'
+                        const isUrgente = (deadline.diasRestantes ?? 0) <= 3 && !isPagado && !isVencido
+                        const isEditing = editingDeadline === deadline.id
+
+                        return (
+                          <tr key={deadline.id} className={isVencido ? styles.rowVencido : isUrgente ? styles.rowUrgente : ''}>
+                            <td>{deadline.clientName}</td>
+                            <td>{deadline.clientCedula}</td>
+                            <td>
+                              <strong>
+                                {new Date(deadline.mes_factura + '-01').toLocaleDateString('es-CR', { 
+                                  year: 'numeric', 
+                                  month: 'long' 
+                                })}
+                              </strong>
+                            </td>
+                            <td>{new Date(deadline.fecha_emision).toLocaleDateString('es-CR')}</td>
+                            <td>{new Date(deadline.fecha_vencimiento).toLocaleDateString('es-CR')}</td>
+                            <td>
+                              <span className={
+                                isPagado ? styles.diasPagado :
+                                isVencido ? styles.diasVencido : 
+                                isUrgente ? styles.diasUrgente : 
+                                styles.diasNormal
+                              }>
+                                {isPagado ? '✓ Pagado' : 
+                                 isVencido ? `${Math.abs(deadline.diasRestantes ?? 0)} días vencido` : 
+                                 `${deadline.diasRestantes} días`}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`${styles.statusBadge} ${
+                                isPagado ? styles.statusPagado :
+                                isVencido ? styles.statusVencido :
+                                styles.statusPendiente
+                              }`}>
+                                {deadline.estado_pago}
+                              </span>
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={newDiasPlazo}
+                                  onChange={(e) => setNewDiasPlazo(e.target.value)}
+                                  className={styles.formInput}
+                                  style={{ width: '70px' }}
+                                />
+                              ) : (
+                                `${deadline.dias_plazo} días`
+                              )}
+                            </td>
+                            <td>
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={newNota}
+                                  onChange={(e) => setNewNota(e.target.value)}
+                                  className={styles.formInput}
+                                  placeholder="Agregar nota..."
+                                />
+                              ) : (
+                                deadline.nota || '-'
+                              )}
+                            </td>
+                            <td>
+                              {!isPagado && (
+                                <>
+                                  {isEditing ? (
+                                    <div style={{ display: 'flex', gap: '5px' }}>
+                                      <button
+                                        onClick={() => updateDeadlinePlazo(deadline)}
+                                        className={styles.actionButtonSmall}
+                                        style={{ backgroundColor: '#10b981' }}
+                                        title="Guardar"
+                                      >
+                                        ✓
+                                      </button>
+                                      <button
+                                        onClick={cancelEditDeadline}
+                                        className={styles.actionButtonSmall}
+                                        style={{ backgroundColor: '#ef4444' }}
+                                        title="Cancelar"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => startEditDeadline(deadline)}
+                                      className={styles.actionButtonSmall}
+                                      title="Editar plazo"
+                                    >
+                                      ✏️
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                              {isPagado && (
+                                <span style={{ color: '#10b981' }}>
+                                  ✓ {new Date(deadline.fecha_pago!).toLocaleDateString('es-CR')}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className={styles.infoBox} style={{ marginTop: '2rem' }}>
+                <h3>📋 Información del Sistema de Plazos:</h3>
+                <ul>
+                  <li><strong>Fecha de Emisión:</strong> Fecha en que se sube la factura (segunda semana del mes siguiente)</li>
+                  <li><strong>Plazo por defecto:</strong> 14 días desde la fecha de emisión</li>
+                  <li><strong>Estados:</strong>
+                    <ul>
+                      <li><span style={{ color: '#f59e0b' }}>Pendiente:</span> Esperando pago dentro del plazo</li>
+                      <li><span style={{ color: '#ef4444' }}>Vencido:</span> Pasó la fecha límite sin pagar</li>
+                      <li><span style={{ color: '#10b981' }}>Pagado:</span> Comprobante aprobado</li>
+                    </ul>
+                  </li>
+                  <li><strong>Alertas:</strong>
+                    <ul>
+                      <li>🔴 Filas rojas: Facturas vencidas</li>
+                      <li>🟡 Filas amarillas: Facturas urgentes (3 días o menos)</li>
+                    </ul>
+                  </li>
+                  <li><strong>Flujo de Pago:</strong>
+                    <ol>
+                      <li>Primera semana: Cliente recibe reporte de horas trabajadas</li>
+                      <li>Primera semana: Cliente da visto bueno al monto</li>
+                      <li>Segunda semana: Se envía factura electrónica (14 días para pagar)</li>
+                      <li>Cliente sube comprobante y admin lo aprueba</li>
+                    </ol>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'visto-bueno' && (
+            <div className={styles.section}>
+              <h2 className={styles.sectionTitle}>Gestión de Visto Bueno</h2>
+              <p className={styles.description}>
+                Configura qué clientes y empresas deben dar visto bueno a las horas trabajadas del mes antes de emitir la factura
+              </p>
+
+              <div className={styles.principalHeader}>
+                <h3>Clientes y Empresas</h3>
+                <button
+                  onClick={loadClientesVistoBueno}
+                  disabled={loadingVistoBueno}
+                  className={styles.refreshButton}
+                >
+                  {loadingVistoBueno ? 'Cargando...' : 'Actualizar'}
+                </button>
+              </div>
+
+              {loadingVistoBueno ? (
+                <div className={styles.loadingState}>
+                  <div className={styles.spinner}></div>
+                  <p>Cargando clientes...</p>
+                </div>
+              ) : clientesVistoBueno.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p>No hay clientes registrados</p>
+                </div>
+              ) : (
+                <>
+                  <div className={styles.statsCards} style={{ marginBottom: '1.5rem' }}>
+                    <div className={styles.statCard}>
+                      <div className={styles.statValue}>
+                        {clientesVistoBueno.filter(c => c.darVistoBueno).length}
+                      </div>
+                      <div className={styles.statLabel}>Con Visto Bueno Requerido</div>
+                    </div>
+                    <div className={styles.statCard} style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
+                      <div className={styles.statValue} style={{ color: 'white' }}>
+                        {clientesVistoBueno.filter(c => c.darVistoBueno && c.modoPago && c.vistoBuenoDado).length}
+                      </div>
+                      <div className={styles.statLabel} style={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                        ✅ Aprobaciones Este Mes
+                      </div>
+                    </div>
+                    <div className={styles.statCard} style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' }}>
+                      <div className={styles.statValue} style={{ color: 'white' }}>
+                        {clientesVistoBueno.filter(c => c.darVistoBueno && c.modoPago && !c.vistoBuenoDado).length}
+                      </div>
+                      <div className={styles.statLabel} style={{ color: 'rgba(255, 255, 255, 0.9)' }}>
+                        ⏳ Pendientes de Aprobar
+                      </div>
+                    </div>
+                    <div className={styles.statCard}>
+                      <div className={styles.statValue}>
+                        {clientesVistoBueno.filter(c => !c.darVistoBueno).length}
+                      </div>
+                      <div className={styles.statLabel}>Sin Visto Bueno Requerido</div>
+                    </div>
+                  </div>
+
+                  <div className={styles.deadlinesTable}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Cédula</th>
+                          <th>Tipo</th>
+                          <th>Requiere Visto Bueno</th>
+                          <th>Estado del Mes</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientesVistoBueno.map((cliente) => (
+                          <tr key={`${cliente.tipo}-${cliente.id}`}>
+                            <td><strong>{cliente.nombre}</strong></td>
+                            <td>{cliente.cedula}</td>
+                            <td>
+                              <span className={`${styles.statusBadge} ${cliente.tipo === 'empresa' ? styles.statusPendiente : styles.statusPagado}`}>
+                                {cliente.tipo === 'empresa' ? 'Jurídico' : 'Físico'}
+                              </span>
+                            </td>
+                            <td>
+                              {cliente.darVistoBueno ? (
+                                <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                                  ✅ Sí
+                                </span>
+                              ) : (
+                                <span style={{ color: '#475569', fontWeight: '600' }}>
+                                  ➖ No
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {cliente.darVistoBueno ? (
+                                !cliente.modoPago ? (
+                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                                    ⏸️ Sin facturación activa
+                                  </span>
+                                ) : cliente.vistoBuenoDado ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    <span style={{ color: '#10b981', fontWeight: 'bold' }}>
+                                      ✅ Visto Bueno Dado
+                                    </span>
+                                    {cliente.fechaVistoBueno && (
+                                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                        📅 {new Date(cliente.fechaVistoBueno).toLocaleDateString('es-ES', {
+                                          day: '2-digit',
+                                          month: 'short',
+                                          year: 'numeric'
+                                        })} • {new Date(cliente.fechaVistoBueno).toLocaleTimeString('es-ES', {
+                                          hour: '2-digit',
+                                          minute: '2-digit'
+                                        })}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>
+                                    ⏳ Pendiente de Aprobación
+                                  </span>
+                                )
+                              ) : (
+                                <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                                  N/A
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                onClick={() => toggleVistoBueno(cliente)}
+                                disabled={updatingVistoBueno === cliente.id}
+                                className={styles.actionButtonSmall}
+                                style={{
+                                  backgroundColor: cliente.darVistoBueno ? '#ef4444' : '#10b981'
+                                }}
+                                title={cliente.darVistoBueno ? 'Desactivar visto bueno' : 'Activar visto bueno'}
+                              >
+                                {updatingVistoBueno === cliente.id ? '...' : (cliente.darVistoBueno ? '✕ Desactivar' : '✓ Activar')}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              <div className={styles.infoBox} style={{ marginTop: '2rem', borderLeft: '4px solid #f59e0b' }}>
+                <h3>⚠️ Restricción de Facturas</h3>
+                <p style={{ fontSize: '1rem', marginBottom: '1rem', color: '#f59e0b', fontWeight: '600' }}>
+                  <strong>IMPORTANTE:</strong> Los clientes con visto bueno requerido NO pueden recibir facturas electrónicas hasta que den su aprobación mensual.
+                </p>
+                <ul>
+                  <li><strong>🔒 Bloqueo automático:</strong> En la vista "Principal", el botón "Adjuntar Factura" estará deshabilitado para clientes pendientes de aprobación</li>
+                  <li><strong>✅ Aprobación requerida:</strong> El cliente debe entrar a su portal, revisar las horas del mes y dar "Visto Bueno" desde la página de Pago</li>
+                  <li><strong>📄 Después de aprobar:</strong> Una vez dado el visto bueno, se desbloquea la opción de adjuntar la factura electrónica</li>
+                  <li><strong>📅 Renovación mensual:</strong> El visto bueno se reinicia cada mes - cada mes se requiere nueva aprobación</li>
+                </ul>
+              </div>
+
+              <div className={styles.infoBox} style={{ marginTop: '1.5rem' }}>
+                <h3>📋 ¿Qué es el Visto Bueno?</h3>
+                <ul>
+                  <li><strong>Propósito:</strong> Algunos clientes/empresas necesitan revisar y aprobar las horas trabajadas del mes antes de recibir la factura</li>
+                  <li><strong>Flujo con Visto Bueno:</strong>
+                    <ol>
+                      <li><strong>Primera semana del mes siguiente:</strong> Cliente recibe reporte de horas trabajadas</li>
+                      <li><strong>Primera semana:</strong> Cliente revisa y da visto bueno al monto desde su portal</li>
+                      <li><strong>Segunda semana:</strong> Una vez aprobado, el administrador puede adjuntar la factura electrónica</li>
+                      <li><strong>Plazo de pago:</strong> Cliente tiene 14 días para pagar desde la emisión de factura</li>
+                    </ol>
+                  </li>
+                  <li><strong>Flujo sin Visto Bueno:</strong>
+                    <ol>
+                      <li><strong>Primera semana:</strong> Cliente recibe reporte informativo</li>
+                      <li><strong>Segunda semana:</strong> Se puede adjuntar factura directamente sin esperar aprobación</li>
+                      <li><strong>Plazo de pago:</strong> 14 días desde la emisión</li>
+                    </ol>
+                  </li>
+                  <li><strong>Cuándo activar:</strong> Para clientes corporativos, empresas con proceso de aprobación interno, o contratos que lo requieran</li>
+                  <li><strong>Nota:</strong> Este campo NO se sincroniza con AppSheet, es exclusivo del sistema web</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'invitations' && (
             <div className={styles.section}>
               <h2 className={styles.sectionTitle}>Generador de Códigos de Invitación</h2>
@@ -1171,15 +2134,15 @@ export default function DevPage() {
               <div className={styles.codeGeneratorForm}>
                 <div className={styles.formRow}>
                   <div className={styles.formField}>
-                    <label className={styles.formLabel}>Tipo de Usuario</label>
+                    <label className={styles.formLabel}>Tipo de cedula</label>
                     <select 
                       value={newCodeType} 
                       onChange={(e) => setNewCodeType(e.target.value as 'cliente' | 'empresa')}
                       className={styles.formSelect}
                       disabled={generatingCode}
                     >
-                      <option value="cliente">Cliente</option>
-                      <option value="empresa">Empresa</option>
+                      <option value="cliente">Físico</option>
+                      <option value="empresa">Jurídico</option>
                     </select>
                   </div>
 

@@ -14,8 +14,8 @@ CREATE INDEX IF NOT EXISTS idx_solicitudes_se_cobra_iva ON solicitudes(se_cobra_
 CREATE INDEX IF NOT EXISTS idx_solicitudes_monto_iva ON solicitudes(monto_iva);
 
 -- 4. Comentarios explicativos
-COMMENT ON COLUMN solicitudes.se_cobra_iva IS 'Indica si se cobra IVA en esta solicitud (columna L de Sheets)';
-COMMENT ON COLUMN solicitudes.monto_iva IS 'Monto del IVA a cobrar (columna M de Sheets)';
+COMMENT ON COLUMN solicitudes.se_cobra_iva IS 'Indica si se cobra IVA en esta solicitud (columna K de Sheets: SeCobra_IVA)';
+COMMENT ON COLUMN solicitudes.monto_iva IS 'Monto del IVA a cobrar (columna L de Sheets: Monto_IVA)';
 
 -- 5. Verificar que las columnas se agregaron correctamente
 SELECT 

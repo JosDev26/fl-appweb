@@ -94,11 +94,12 @@ export async function PATCH(request: NextRequest) {
 
     if (action === 'aprobar') {
       // Aprobar: Actualizar estado y desactivar modoPago
+      const fechaAprobacion = new Date().toISOString()
       const { error: updateReceiptError } = await supabase
         .from('payment_receipts' as any)
         .update({
           estado: 'aprobado',
-          reviewed_at: new Date().toISOString(),
+          reviewed_at: fechaAprobacion,
           nota_revision: nota || null
         })
         .eq('id', receiptId)
@@ -124,6 +125,120 @@ export async function PATCH(request: NextRequest) {
           { error: 'Error al desactivar modo pago' },
           { status: 500 }
         )
+      }
+
+      // Actualizar solicitudes con modalidad mensual
+      console.log('💰 Actualizando solicitudes mensualidades del cliente:', userId)
+      try {
+        const { data: solicitudesMensuales, error: solicitudesError } = await supabase
+          .from('solicitudes')
+          .select('*')
+          .eq('id_cliente', userId)
+          .ilike('modalidad_pago', 'mensualidad')
+
+        if (solicitudesError) {
+          console.error('❌ Error al obtener solicitudes:', solicitudesError)
+        } else if (solicitudesMensuales && solicitudesMensuales.length > 0) {
+          console.log(`📋 Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
+          
+          for (const solicitud of solicitudesMensuales) {
+            // Calcular nuevos valores
+            const montoCuota = solicitud.monto_por_cuota || 0
+            let ivaCuota = 0
+            
+            // Calcular IVA de la cuota
+            if (solicitud.se_cobra_iva) {
+              if (solicitud.monto_iva && solicitud.cantidad_cuotas && solicitud.cantidad_cuotas > 0) {
+                ivaCuota = solicitud.monto_iva / solicitud.cantidad_cuotas
+              } else if (solicitud.costo_neto) {
+                const ivaTotal = solicitud.costo_neto * 0.13 // IVA por defecto
+                ivaCuota = solicitud.cantidad_cuotas ? ivaTotal / solicitud.cantidad_cuotas : ivaTotal
+              }
+            }
+            
+            const pagoRealizado = montoCuota + ivaCuota
+            const nuevoMontoPagado = (solicitud.monto_pagado || 0) + pagoRealizado
+            const totalAPagar = solicitud.total_a_pagar || 0
+            const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
+            
+            // Actualizar la solicitud
+            const { error: updateError } = await supabase
+              .from('solicitudes')
+              .update({
+                monto_pagado: nuevoMontoPagado,
+                saldo_pendiente: nuevoSaldoPendiente,
+                updated_at: fechaAprobacion
+              })
+              .eq('id', solicitud.id)
+            
+            if (updateError) {
+              console.error(`❌ Error al actualizar solicitud ${solicitud.id}:`, updateError)
+            } else {
+              console.log(`✅ Solicitud ${solicitud.id} actualizada:`, {
+                titulo: solicitud.titulo,
+                pagoRealizado,
+                nuevoMontoPagado,
+                nuevoSaldoPendiente
+              })
+            }
+          }
+        } else {
+          console.log('ℹ️ No se encontraron solicitudes mensualidades para actualizar')
+        }
+      } catch (err) {
+        console.error('❌ Error al actualizar solicitudes:', err)
+      }
+
+      // Marcar factura como pagada directamente en la base de datos
+      const mesPago = (receipt as any).mes_pago
+      console.log('🔍 Intentando actualizar factura con mes_pago:', mesPago, 'userId:', userId, 'tipoCliente:', tipoCliente)
+      
+      if (mesPago) {
+        try {
+          // Primero verificar si existe el registro
+          const { data: existingDeadline, error: checkError } = await supabase
+            .from('invoice_payment_deadlines' as any)
+            .select('*')
+            .eq('mes_factura', mesPago)
+            .eq('client_id', userId)
+            .eq('client_type', tipoCliente)
+            .single()
+
+          console.log('🔍 Búsqueda de factura existente:', { 
+            encontrada: !!existingDeadline, 
+            error: checkError?.message,
+            datos: existingDeadline 
+          })
+
+          if (existingDeadline) {
+            const { error: invoiceError } = await supabase
+              .from('invoice_payment_deadlines' as any)
+              .update({
+                estado_pago: 'pagado',
+                fecha_pago: fechaAprobacion
+              })
+              .eq('mes_factura', mesPago)
+              .eq('client_id', userId)
+              .eq('client_type', tipoCliente)
+
+            if (invoiceError) {
+              console.error('❌ Error al actualizar estado de factura:', invoiceError)
+            } else {
+              console.log('✅ Estado de factura actualizado a pagado:', { mesPago, userId, tipoCliente })
+            }
+          } else {
+            console.warn('⚠️ No se encontró factura para actualizar. Posibles causas:', {
+              mesPago,
+              userId,
+              tipoCliente,
+              checkError: checkError?.message
+            })
+          }
+        } catch (err) {
+          console.error('❌ Error al actualizar estado de factura:', err)
+        }
+      } else {
+        console.warn('⚠️ El comprobante no tiene mes_pago asociado')
       }
 
       return NextResponse.json({

@@ -534,9 +534,13 @@ export const SYNC_CONFIG: TableMapping[] = [
       {
         sheetsColumn: "ID_Click",       // Columna A
         supabaseColumn: "id",
+        required: true,
         transform: (value) => {
           const id = String(value || '').trim();
-          return id === '' ? null : id;
+          if (id === '') {
+            throw new Error('ID_Click es requerido');
+          }
+          return id;
         }
       },
       {

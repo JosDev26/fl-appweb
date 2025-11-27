@@ -191,6 +191,12 @@ export default function ComprobantePage() {
       if (montoPago) {
         formData.append('monto', String(montoPago))
       }
+      
+      // Enviar fecha simulada si está activa
+      const simulatedDate = localStorage.getItem('simulatedDate')
+      if (simulatedDate) {
+        formData.append('simulatedDate', simulatedDate)
+      }
 
       const response = await fetch('/api/upload-comprobante', {
         method: 'POST',
@@ -207,8 +213,8 @@ export default function ComprobantePage() {
         throw new Error(data.error || 'Error al subir el comprobante')
       }
 
-      // Redirigir al home sin query parameters
-      router.push('/home')
+      // Redirigir al home con parámetro para mostrar notificación
+      router.push('/home?fromUpload=true')
 
     } catch (err: any) {
       console.error('Error uploading:', err)

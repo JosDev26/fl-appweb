@@ -1,23 +1,11 @@
--- Crear tabla de historial de reportes
-CREATE TABLE IF NOT EXISTS historial_reportes (
-  id text PRIMARY KEY,
-  fecha date,
-  hora time,
-  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- Crear índices para mejorar el rendimiento
-CREATE INDEX IF NOT EXISTS idx_historial_reportes_fecha ON historial_reportes(fecha);
-
--- Crear función para activar modoPago cuando se inserta un registro
+-- Modificar función para usar CURRENT_DATE (fecha del servidor)
 CREATE OR REPLACE FUNCTION activar_modo_pago()
 RETURNS TRIGGER AS $$
 DECLARE
   inicio_mes date;
   inicio_mes_text text;
 BEGIN
-  -- Calcular el primer día del mes actual
+  -- Calcular el primer día del mes actual del servidor
   inicio_mes := date_trunc('month', CURRENT_DATE)::date;
   inicio_mes_text := to_char(inicio_mes, 'YYYY-MM-DD');
   
@@ -119,15 +107,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Crear trigger que ejecuta la función después de cada INSERT
-DROP TRIGGER IF EXISTS trigger_activar_modo_pago ON historial_reportes;
-CREATE TRIGGER trigger_activar_modo_pago
-  AFTER INSERT ON historial_reportes
-  FOR EACH ROW
-  EXECUTE FUNCTION activar_modo_pago();
-
--- Comentarios para documentación
-COMMENT ON TABLE historial_reportes IS 'Tabla de historial de reportes sincronizada con Google Sheets';
-COMMENT ON COLUMN historial_reportes.id IS 'ID del click desde Google Sheets (ID_Click) - Columna A';
-COMMENT ON COLUMN historial_reportes.fecha IS 'Fecha del reporte - Columna B';
-COMMENT ON COLUMN historial_reportes.hora IS 'Hora del reporte - Columna C';
+-- El trigger ya existe, solo actualizamos la función
+COMMENT ON FUNCTION activar_modo_pago() IS 'Revertido: Usa CURRENT_DATE (fecha del servidor) para activar modoPago';

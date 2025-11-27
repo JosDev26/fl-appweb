@@ -110,6 +110,7 @@ export async function POST(request: Request) {
     const file = formData.get('file') as File
     const clientId = formData.get('clientId') as string
     const clientType = formData.get('clientType') as string
+    const simulatedDate = formData.get('simulatedDate') as string | null
 
     // Validaciones básicas
     if (!file) {
@@ -188,10 +189,42 @@ export async function POST(request: Request) {
       }
     }
 
+    // Obtener mes de la factura del formulario (mes de las horas trabajadas)
+    const mesFacturaFromForm = formData.get('mesFactura') as string | null
+    
+    // Si no se proporciona, calcular automáticamente (mes actual, para compatibilidad)
+    const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+    const mesFactura = mesFacturaFromForm || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    
+    console.log('📅 Mes de factura:', mesFactura, '(proporcionado:', mesFacturaFromForm, ')')
+    
+    // Verificar si ya existe una factura para este mes
+    const folderPath = `${clientType}/${clientId}`
+    const { data: existingFiles } = await supabase.storage
+      .from('electronic-invoices')
+      .list(folderPath, {
+        limit: 1000,
+        sortBy: { column: 'created_at', order: 'desc' }
+      })
+    
+    // Buscar facturas del mismo mes en los metadatos del nombre
+    const existingMonthInvoice = existingFiles?.find(file => 
+      file.name && file.name.includes(`_${mesFactura}_`)
+    )
+    
+    if (existingMonthInvoice) {
+      return NextResponse.json(
+        { error: `Ya existe una factura para ${mesFactura}. Solo se permite una factura por mes.` },
+        { status: 400 }
+      )
+    }
+
     // Sanitizar nombre de archivo
     const sanitizedFileName = sanitizeFileName(file.name)
-    const timestamp = new Date().getTime()
-    const fileName = `${timestamp}_${sanitizedFileName}`
+    // Usar timestamp de la fecha simulada o actual
+    const timestamp = now.getTime()
+    // Incluir mes en el nombre del archivo para fácil identificación
+    const fileName = `${timestamp}_${mesFactura}_${sanitizedFileName}`
 
     // Determinar la ruta del archivo
     const filePath = `${clientType}/${clientId}/${fileName}`
@@ -213,11 +246,40 @@ export async function POST(request: Request) {
       )
     }
 
+    // Crear registro de plazo de pago
+    // Fecha de emisión: la fecha actual (segunda semana del mes siguiente al reportado)
+    const fechaEmision = new Date(now)
+    // Fecha de vencimiento: 14 días después de la emisión (configurable)
+    const diasPlazo = 14
+    const fechaVencimiento = new Date(fechaEmision)
+    fechaVencimiento.setDate(fechaVencimiento.getDate() + diasPlazo)
+
+    const { error: deadlineError } = await supabase
+      .from('invoice_payment_deadlines')
+      .insert({
+        mes_factura: mesFactura,
+        client_id: clientId,
+        client_type: clientType,
+        file_path: data.path,
+        fecha_emision: fechaEmision.toISOString().split('T')[0],
+        fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0],
+        dias_plazo: diasPlazo,
+        estado_pago: 'pendiente'
+      })
+
+    if (deadlineError) {
+      console.error('Error al crear plazo de pago:', deadlineError)
+      // No fallar la subida de factura si falla el registro del plazo
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Factura subida exitosamente',
+      message: `Factura para ${mesFactura} subida exitosamente`,
       filePath: data.path,
-      fileName: sanitizedFileName
+      fileName: sanitizedFileName,
+      mesFactura: mesFactura,
+      fechaVencimiento: fechaVencimiento.toISOString().split('T')[0],
+      diasPlazo: diasPlazo
     })
 
   } catch (error) {
@@ -240,8 +302,16 @@ export async function GET(request: Request) {
     // Si se solicitan todas las facturas del mes
     if (getAllMonth) {
       const invoices: any[] = []
-      const currentMonth = new Date().getMonth()
-      const currentYear = new Date().getFullYear()
+      
+      // Usar fecha simulada si se proporciona
+      const simulatedDate = searchParams.get('simulatedDate')
+      const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+      
+      // Calcular mes anterior (mes de las horas trabajadas / mes de facturación)
+      const mesAnterior = new Date(now)
+      mesAnterior.setMonth(mesAnterior.getMonth() - 1)
+      const currentMonth = mesAnterior.getMonth()
+      const currentYear = mesAnterior.getFullYear()
       
       // Función auxiliar para procesar archivos de una carpeta
       const processFolder = async (type: 'cliente' | 'empresa', folderId: string) => {
@@ -259,7 +329,13 @@ export async function GET(request: Request) {
           }
 
           if (files && files.length > 0) {
+            const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
             const monthFiles = files.filter(file => {
+              // Filtrar por mes en el nombre del archivo (más confiable)
+              if (file.name && file.name.includes(`_${currentMonthStr}_`)) {
+                return true
+              }
+              // Fallback: filtrar por fecha de creación
               if (!file.created_at) return false
               const fileDate = new Date(file.created_at)
               return fileDate.getMonth() === currentMonth && fileDate.getFullYear() === currentYear
@@ -465,8 +541,14 @@ export async function PUT(request: Request) {
     // Filtrar facturas del mes actual
     const currentMonth = new Date().getMonth()
     const currentYear = new Date().getFullYear()
+    const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
 
     const monthInvoices = files?.filter(file => {
+      // Primero buscar por mes en el nombre del archivo
+      if (file.name && file.name.includes(`_${currentMonthStr}_`)) {
+        return true
+      }
+      // Fallback: buscar por fecha de creación
       if (!file.created_at) return false
       const fileDate = new Date(file.created_at)
       return fileDate.getMonth() === currentMonth && fileDate.getFullYear() === currentYear

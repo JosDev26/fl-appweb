@@ -37,6 +37,10 @@ interface SolicitudMensual {
   descripcion: string | null
   materia: string | null
   monto_por_cuota: number | null
+  se_cobra_iva: boolean | null
+  monto_iva: number | null
+  costo_neto: number | null
+  cantidad_cuotas: number | null
   expediente: string | null
 }
 
@@ -53,9 +57,11 @@ interface Gasto {
 interface DatosPago {
   success: boolean
   tipoCliente: string
+  darVistoBueno: boolean
   trabajosPorHora: TrabajoPorCaso[]
   solicitudesMensuales: SolicitudMensual[]
   totalMensualidades: number
+  totalIVAMensualidades: number
   gastos: Gasto[]
   totalGastos: number
   totalMinutosGlobal: number
@@ -70,13 +76,27 @@ interface DatosPago {
   montoIVA: number
   totalAPagar: number
   mesActual: string
+  mesActualISO: string
 }
 
 export default function PagoPage() {
   const { user, loading: authLoading } = useAuth()
   const [datosPago, setDatosPago] = useState<DatosPago | null>(null)
   const [loading, setLoading] = useState(true)
+  const [vistoBuenoDado, setVistoBuenoDado] = useState(false)
+  const [loadingVistoBueno, setLoadingVistoBueno] = useState(false)
   const router = useRouter()
+
+  // Obtener fecha actual (simulada o real)
+  const getCurrentDate = () => {
+    if (typeof window !== 'undefined') {
+      const simulatedDate = localStorage.getItem('simulatedDate')
+      if (simulatedDate) {
+        return new Date(simulatedDate + 'T12:00:00')
+      }
+    }
+    return new Date()
+  }
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -93,7 +113,11 @@ export default function PagoPage() {
   const loadDatosPago = async (userData: any) => {
     setLoading(true)
     try {
-      const response = await fetch('/api/datos-pago', {
+      // Enviar fecha simulada si existe
+      const now = getCurrentDate()
+      const simulatedDateParam = now ? `?simulatedDate=${now.toISOString().split('T')[0]}` : ''
+      
+      const response = await fetch(`/api/datos-pago${simulatedDateParam}`, {
         headers: {
           'x-user-id': String(userData.id),
           'x-tipo-cliente': userData.tipo || 'cliente'
@@ -106,11 +130,68 @@ export default function PagoPage() {
 
       const data = await response.json()
       setDatosPago(data)
+
+      // Si requiere dar visto bueno, verificar si ya lo dio para el mes de trabajo
+      if (data.darVistoBueno) {
+        // Usar el mes actual de datos de pago (mes de las horas trabajadas)
+        const mes = data.mesActualISO
+        
+        const checkResponse = await fetch(`/api/visto-bueno?mes=${mes}`, {
+          headers: {
+            'x-user-id': String(userData.id),
+            'x-tipo-cliente': userData.tipo || 'cliente'
+          }
+        })
+
+        if (checkResponse.ok) {
+          const checkData = await checkResponse.json()
+          setVistoBuenoDado(checkData.dado || false)
+        }
+      }
     } catch (error) {
       console.error('Error al cargar datos de pago:', error)
       alert('Error al cargar los datos de pago')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDarVistoBueno = async () => {
+    if (!user || !datosPago) return
+
+    setLoadingVistoBueno(true)
+    try {
+      // Usar el mes de las horas trabajadas
+      const mes = datosPago.mesActualISO
+      const now = getCurrentDate()
+      
+      const response = await fetch('/api/visto-bueno', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': String(user.id),
+          'x-tipo-cliente': user.tipo || 'cliente'
+        },
+        body: JSON.stringify({ 
+          mes,
+          fechaSimulada: now.toISOString()
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al dar visto bueno')
+      }
+
+      const data = await response.json()
+      if (data.success) {
+        setVistoBuenoDado(true)
+        alert('✅ Visto bueno registrado. La factura electrónica se enviará próximamente.')
+      }
+    } catch (error) {
+      console.error('Error al dar visto bueno:', error)
+      alert('Error al registrar el visto bueno')
+    } finally {
+      setLoadingVistoBueno(false)
     }
   }
 
@@ -351,34 +432,64 @@ export default function PagoPage() {
             <h2 className={styles.sectionTitle}>Mensualidades</h2>
             
             <div className={styles.mensualidadesGrid}>
-              {datosPago.solicitudesMensuales.map((solicitud) => (
-                <div key={solicitud.id} className={styles.mensualidadCard}>
-                  <h3 className={styles.mensualidadTitulo}>
-                    {solicitud.titulo || 'Sin título'}
-                  </h3>
-                  
-                  {solicitud.materia && (
-                    <p className={styles.mensualidadMateria}>
-                      Materia: {solicitud.materia}
-                    </p>
-                  )}
-                  
-                  {solicitud.expediente && (
-                    <p className={styles.mensualidadExpediente}>
-                      Expediente: {solicitud.expediente}
-                    </p>
-                  )}
-                  
-                  <div className={styles.mensualidadMonto}>
-                    {formatMonto(solicitud.monto_por_cuota)}
+              {datosPago.solicitudesMensuales.map((solicitud) => {
+                // Calcular IVA de esta solicitud
+                let ivaSolicitud = 0
+                if (solicitud.se_cobra_iva) {
+                  if (solicitud.monto_iva && solicitud.cantidad_cuotas) {
+                    ivaSolicitud = solicitud.monto_iva / solicitud.cantidad_cuotas
+                  } else if (solicitud.monto_iva) {
+                    ivaSolicitud = solicitud.monto_iva
+                  } else if (solicitud.costo_neto) {
+                    const ivaTotal = solicitud.costo_neto * datosPago.ivaPerc
+                    ivaSolicitud = solicitud.cantidad_cuotas ? ivaTotal / solicitud.cantidad_cuotas : ivaTotal
+                  }
+                }
+                
+                const montoCuota = solicitud.monto_por_cuota || 0
+                const totalConIVA = montoCuota + ivaSolicitud
+                
+                return (
+                  <div key={solicitud.id} className={styles.mensualidadCard}>
+                    <h3 className={styles.mensualidadTitulo}>
+                      {solicitud.titulo || 'Sin título'}
+                    </h3>
+                    
+                    {solicitud.materia && (
+                      <p className={styles.mensualidadMateria}>
+                        Materia: {solicitud.materia}
+                      </p>
+                    )}
+                    
+                    {solicitud.expediente && (
+                      <p className={styles.mensualidadExpediente}>
+                        Expediente: {solicitud.expediente}
+                      </p>
+                    )}
+                    
+                    <div className={styles.mensualidadDetalle}>
+                      <div className={styles.mensualidadMontoRow}>
+                        <span>Cuota:</span>
+                        <span>{formatMonto(montoCuota)}</span>
+                      </div>
+                      {solicitud.se_cobra_iva && ivaSolicitud > 0 && (
+                        <div className={styles.mensualidadMontoRow}>
+                          <span>IVA:</span>
+                          <span>{formatMonto(ivaSolicitud)}</span>
+                        </div>
+                      )}
+                      <div className={styles.mensualidadMonto}>
+                        {formatMonto(totalConIVA)}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             <div className={styles.totalMensualidades}>
               <span>Total a pagar este mes:</span>
-              <strong>{formatMonto(datosPago.totalMensualidades)}</strong>
+              <strong>{formatMonto(datosPago.totalMensualidades + datosPago.totalIVAMensualidades)}</strong>
             </div>
           </section>
         )}
@@ -395,15 +506,49 @@ export default function PagoPage() {
         {/* Botón de acción */}
         {(tieneTrabajosHora || tieneMensualidades) && (
           <div className={styles.actionSection}>
-            <button 
-              className={styles.pagarButton}
-              onClick={() => router.push('/pago/comprobante')}
-            >
-              Proceder al Pago
-            </button>
-            <p className={styles.nota}>
-              * Los trabajos por hora serán facturados según la tarifa acordada
-            </p>
+            {datosPago?.darVistoBueno && !vistoBuenoDado ? (
+              <>
+                <button 
+                  className={styles.vistoBuenoButton}
+                  onClick={handleDarVistoBueno}
+                  disabled={loadingVistoBueno}
+                >
+                  {loadingVistoBueno ? '⏳ Procesando...' : '✅ Dar Visto Bueno a las Horas del Mes'}
+                </button>
+                <p className={styles.nota}>
+                  * Al dar visto bueno, confirmas las horas trabajadas este mes. La factura electrónica se enviará próximamente.
+                </p>
+              </>
+            ) : datosPago?.darVistoBueno && vistoBuenoDado ? (
+              <>
+                <div className={styles.vistoBuenoConfirmado}>
+                  <span className={styles.checkIcon}>✅</span>
+                  <p className={styles.confirmadoText}>Visto bueno confirmado para este mes</p>
+                  <p className={styles.facturaText}>La factura electrónica se enviará próximamente</p>
+                </div>
+                <button 
+                  className={styles.pagarButton}
+                  onClick={() => router.push('/pago/comprobante')}
+                >
+                  Proceder al Pago
+                </button>
+                <p className={styles.nota}>
+                  * Los trabajos por hora serán facturados según la tarifa acordada
+                </p>
+              </>
+            ) : (
+              <>
+                <button 
+                  className={styles.pagarButton}
+                  onClick={() => router.push('/pago/comprobante')}
+                >
+                  Proceder al Pago
+                </button>
+                <p className={styles.nota}>
+                  * Los trabajos por hora serán facturados según la tarifa acordada
+                </p>
+              </>
+            )}
           </div>
         )}
       </main>

@@ -43,12 +43,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       lastReceipt: {
-        id: lastReceipt.id,
-        estado: lastReceipt.estado,
-        nota_revision: lastReceipt.nota_revision,
-        monto_declarado: lastReceipt.monto_declarado,
-        uploaded_at: lastReceipt.uploaded_at,
-        reviewed_at: lastReceipt.reviewed_at
+        id: (lastReceipt as any).id,
+        estado: (lastReceipt as any).estado,
+        nota_revision: (lastReceipt as any).nota_revision,
+        monto_declarado: (lastReceipt as any).monto_declarado,
+        uploaded_at: (lastReceipt as any).uploaded_at,
+        reviewed_at: (lastReceipt as any).reviewed_at
       }
     })
 

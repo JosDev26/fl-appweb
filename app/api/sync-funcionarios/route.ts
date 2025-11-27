@@ -63,8 +63,7 @@ export async function POST(request: NextRequest) {
         const { error } = await supabase
           .from('funcionarios')
           .update({
-            nombre: funcionario.nombre,
-            updated_at: new Date().toISOString()
+            nombre: funcionario.nombre
           })
           .eq('id', funcionario.id)
         

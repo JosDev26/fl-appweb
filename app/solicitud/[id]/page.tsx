@@ -196,12 +196,16 @@ export default function SolicitudDetalle() {
   }
 
   const calcularIVA = () => {
-    if (!solicitud?.costo_neto) return 0
-    // Si la solicitud tiene monto_iva, usarlo
+    // Si no se cobra IVA, retornar 0
+    if (!solicitud?.se_cobra_iva) return 0
+    // Si se cobra IVA y hay monto_iva definido, usarlo
     if (solicitud.monto_iva) return solicitud.monto_iva
-    // Si no, calcular basado en el iva_perc del cliente
-    const ivaPerc = solicitud.cliente?.iva_perc || 0.13
-    return solicitud.costo_neto * ivaPerc
+    // Si no hay monto_iva, calcular basado en el iva_perc del cliente
+    if (solicitud.costo_neto) {
+      const ivaPerc = solicitud.cliente?.iva_perc || 0.13
+      return solicitud.costo_neto * ivaPerc
+    }
+    return 0
   }
 
   const calcularTotal = () => {
@@ -300,7 +304,7 @@ export default function SolicitudDetalle() {
               <span className={styles.montoLabel}>Costo Neto</span>
               <span className={styles.montoValor}>{formatMonto(solicitud.costo_neto)}</span>
             </div>
-            {calcularIVA() > 0 && (
+            {solicitud.se_cobra_iva && (
               <div className={styles.montoCard}>
                 <span className={styles.montoLabel}>IVA ({((solicitud.cliente?.iva_perc || 0.13) * 100).toFixed(0)}%)</span>
                 <span className={styles.montoValor}>{formatMonto(calcularIVA())}</span>
@@ -312,10 +316,10 @@ export default function SolicitudDetalle() {
                 {formatMonto(calcularTotal())}
               </span>
             </div>
-            {solicitud.cantidad_cuotas && solicitud.cantidad_cuotas > 1 && (
+            {solicitud.cantidad_cuotas && solicitud.cantidad_cuotas > 1 && solicitud.monto_por_cuota && (
               <div className={styles.montoCard}>
                 <span className={styles.montoLabel}>Monto por Cuota ({solicitud.cantidad_cuotas} cuotas)</span>
-                <span className={styles.montoValor}>{formatMonto(calcularTotal() / solicitud.cantidad_cuotas)}</span>
+                <span className={styles.montoValor}>{formatMonto(solicitud.monto_por_cuota)}</span>
               </div>
             )}
           </div>

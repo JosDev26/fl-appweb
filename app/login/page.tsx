@@ -71,7 +71,7 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.formGroup}>
-            <label className={styles.label}>Tipo de Usuario</label>
+            <label className={styles.label}>Tipo de cedula</label>
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                 <input
@@ -81,7 +81,7 @@ export default function Login() {
                   onChange={(e) => setTipoUsuario(e.target.value as 'cliente')}
                   style={{ cursor: 'pointer' }}
                 />
-                <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Cliente</span>
+                <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Físico</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                 <input
@@ -91,7 +91,7 @@ export default function Login() {
                   onChange={(e) => setTipoUsuario(e.target.value as 'empresa')}
                   style={{ cursor: 'pointer' }}
                 />
-                <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Empresa</span>
+                <span style={{ color: '#19304B', fontSize: '0.9375rem' }}>Jurídico</span>
               </label>
             </div>
           </div>

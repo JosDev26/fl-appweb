@@ -1,0 +1,136 @@
+.indicator {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  padding: 0.75rem 1.25rem;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 9999;
+  animation: slideIn 0.3s ease, pulse 2s ease-in-out infinite;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow: 0 8px 32px rgba(245, 158, 11, 0.6);
+  }
+}
+
+.icon {
+  font-size: 1.5rem;
+  animation: rotate 3s linear infinite;
+}
+
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.9;
+}
+
+.date {
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.link {
+  background: rgba(255, 255, 255, 0.2);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1.25rem;
+  transition: all 0.2s;
+  margin-left: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.link:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg) scale(1.1);
+}
+
+/* Responsive para móviles */
+@media (max-width: 768px) {
+  .indicator {
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    gap: 0.5rem;
+  }
+
+  .icon {
+    font-size: 1.25rem;
+  }
+
+  .title {
+    font-size: 0.65rem;
+  }
+
+  .date {
+    font-size: 0.8rem;
+  }
+
+  .link {
+    width: 28px;
+    height: 28px;
+    font-size: 1rem;
+  }
+}
+
+/* Para pantallas muy pequeñas, mostrar versión compacta */
+@media (max-width: 480px) {
+  .indicator {
+    padding: 0.5rem;
+  }
+
+  .content {
+    display: none;
+  }
+
+  .icon {
+    margin: 0;
+  }
+}

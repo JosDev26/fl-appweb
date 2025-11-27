@@ -158,6 +158,28 @@
   transform: translateY(-1px);
 }
 
+.rejectedClose {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+.rejectedClose:hover {
+  opacity: 1;
+}
+
 .header {
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
@@ -194,6 +216,24 @@
   gap: 1rem;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.comprobantesButton {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  padding: clamp(0.625rem, 1.5vw, 0.875rem) clamp(1rem, 2.5vw, 1.5rem);
+  border-radius: 12px;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
+.comprobantesButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
 }
 
 .pagoButton {

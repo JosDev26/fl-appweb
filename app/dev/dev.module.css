@@ -1142,3 +1142,386 @@
 .invoicesSummary strong {
   color: #19304B;
 }
+
+/* Simulador de Fecha */
+.dateSimulatorContainer {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.dateStatusCard,
+.dateControlCard {
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.dateStatusCard h3,
+.dateControlCard h3 {
+  margin: 0 0 1.5rem 0;
+  color: #19304B;
+  font-size: 1.25rem;
+  font-weight: 700;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 0.75rem;
+}
+
+.dateActive,
+.dateInactive {
+  text-align: center;
+}
+
+.dateDisplay {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-radius: 8px;
+  font-size: 1.1rem;
+  line-height: 1.8;
+  color: #1f2937;
+}
+
+.dateDisplay strong {
+  color: #19304B;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dateInputGroup {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.dateInput {
+  flex: 1;
+  padding: 0.875rem;
+  border: 2px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: all 0.3s;
+}
+
+.dateInput:focus {
+  outline: none;
+  border-color: #FAD02C;
+  box-shadow: 0 0 0 3px rgba(250, 208, 44, 0.1);
+}
+
+.todayButton {
+  padding: 0.875rem 1.5rem;
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.todayButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.3);
+}
+
+.quickAdjust {
+  margin-bottom: 1.5rem;
+}
+
+.quickAdjust h4 {
+  margin: 0 0 1rem 0;
+  color: #475569;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.adjustButtons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.adjustButton {
+  padding: 0.75rem 0.5rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  color: #19304B;
+  border: 2px solid #cbd5e1;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.adjustButton:hover {
+  background: linear-gradient(135deg, #FAD02C 0%, #f9c74f 100%);
+  border-color: #FAD02C;
+  transform: translateY(-2px);
+}
+
+.dateActions {
+  margin-top: 1.5rem;
+}
+
+.actionGroup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.actionButton.warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+}
+
+.actionButton.warning:hover:not(:disabled) {
+  box-shadow: 0 8px 20px rgba(245, 158, 11, 0.4);
+}
+
+/* Estilos para tarjetas de estadísticas */
+.statsCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.statCard {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border: 2px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 1.5rem;
+  text-align: center;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.statCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  border-color: #19304B;
+}
+
+.statValue {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #19304B;
+  margin-bottom: 0.5rem;
+}
+
+.statLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1e293b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Estilos para tabla de plazos */
+.deadlinesTable {
+  overflow-x: auto;
+  margin-top: 1.5rem;
+}
+
+.deadlinesTable table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.deadlinesTable th {
+  background: linear-gradient(135deg, #19304B 0%, #0f1419 100%);
+  color: white;
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.deadlinesTable td {
+  padding: 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.875rem;
+}
+
+.rowVencido {
+  background-color: #fee2e2 !important;
+}
+
+.rowUrgente {
+  background-color: #fef3c7 !important;
+}
+
+.diasNormal {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.diasUrgente {
+  color: #f59e0b;
+  font-weight: 700;
+  animation: pulse 2s infinite;
+}
+
+.diasVencido {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.diasPagado {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.statusPagado {
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+.statusVencido {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.statusPendiente {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.actionButtonSmall {
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, #19304B 0%, #0f1419 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.actionButtonSmall:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(25, 48, 75, 0.3);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Notificación flotante */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  max-width: 400px;
+  padding: 1rem 1.5rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  z-index: 9999;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.notification.success {
+  border-left: 4px solid #10b981;
+}
+
+.notification.error {
+  border-left: 4px solid #ef4444;
+}
+
+.notification span {
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.notificationClose {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.notificationClose:hover {
+  color: #1f2937;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .notification {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: calc(100% - 20px);
+  }
+
+  .dateSimulatorContainer {
+    grid-template-columns: 1fr;
+  }
+
+  .adjustButtons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .actionGroup {
+    grid-template-columns: 1fr;
+  }
+  
+  .deadlinesTable {
+    font-size: 0.75rem;
+  }
+  
+  .deadlinesTable th,
+  .deadlinesTable td {
+    padding: 0.5rem;
+  }
+}

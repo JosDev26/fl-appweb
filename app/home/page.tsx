@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/useAuth'
 import styles from './home.module.css'
@@ -56,21 +56,32 @@ interface PaymentReceipt {
   reviewed_at: string | null
 }
 
-export default function Home() {
+function HomeContent() {
   const { user, loading, logout } = useAuth()
   const [casos, setCasos] = useState<Caso[]>([])
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [casosUnificados, setCasosUnificados] = useState<CasoUnificado[]>([])
   const [loadingData, setLoadingData] = useState(false)
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState<PaymentReceipt | null>(null)
+  const [showPendingNotification, setShowPendingNotification] = useState(false)
+  const [showRejectedNotification, setShowRejectedNotification] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     if (!loading && user) {
       loadData(user)
       loadPaymentStatus(user)
+      
+      // Mostrar notificación solo si viene del upload de comprobante
+      const fromUpload = searchParams.get('fromUpload')
+      if (fromUpload === 'true') {
+        setShowPendingNotification(true)
+        // Limpiar el parámetro de la URL sin recargar
+        window.history.replaceState({}, '', '/home')
+      }
     }
-  }, [loading, user])
+  }, [loading, user, searchParams])
 
   const loadPaymentStatus = async (userData: User) => {
     try {
@@ -173,19 +184,26 @@ export default function Home() {
   return (
     <div className={styles.container}>
       {/* Notificación de pago pendiente */}
-      {lastPaymentReceipt?.estado === 'pendiente' && (
+      {lastPaymentReceipt?.estado === 'pendiente' && showPendingNotification && (
         <div className={styles.notification}>
           <div className={styles.notificationContent}>
             <span className={styles.notificationIcon}>✓</span>
             <span className={styles.notificationText}>
               Su pago está pendiente de revisión
             </span>
+            <button 
+              className={styles.notificationClose}
+              onClick={() => setShowPendingNotification(false)}
+              aria-label="Cerrar notificación"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
 
       {/* Notificación de pago rechazado */}
-      {lastPaymentReceipt?.estado === 'rechazado' && (
+      {lastPaymentReceipt?.estado === 'rechazado' && showRejectedNotification && (
         <div className={styles.rejectedNotifications}>
           <div className={styles.rejectedNotification}>
             <div className={styles.rejectedContent}>
@@ -208,6 +226,13 @@ export default function Home() {
               >
                 Reintentar
               </button>
+              <button 
+                className={styles.rejectedClose}
+                onClick={() => setShowRejectedNotification(false)}
+                aria-label="Cerrar notificación"
+              >
+                ✕
+              </button>
             </div>
           </div>
         </div>
@@ -223,6 +248,9 @@ export default function Home() {
             <p className={styles.headerSubtitle}>{user.nombre}</p>
           </div>
           <div className={styles.headerActions}>
+            <button onClick={() => router.push('/comprobantes')} className={styles.comprobantesButton}>
+              📄 Mis Comprobantes
+            </button>
             {user.modoPago && (
               <button onClick={() => router.push('/pago')} className={styles.pagoButton}>
                 💳 Ir a pagar
@@ -285,5 +313,13 @@ export default function Home() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div>Cargando...</div>}>
+      <HomeContent />
+    </Suspense>
   )
 }

@@ -96,12 +96,28 @@ export async function POST() {
           totalCobro = isNaN(num) ? null : num
         }
 
+        // Validar que el funcionario existe si hay id_responsable
+        let responsableValido = null
+        if (idResponsable) {
+          const { data: funcionarioExiste } = await supabase
+            .from('funcionarios')
+            .select('id')
+            .eq('id', idResponsable)
+            .maybeSingle()
+          
+          if (funcionarioExiste) {
+            responsableValido = idResponsable
+          } else {
+            console.log(`⚠️ Funcionario ${idResponsable} no existe en la BD, usando null`)
+          }
+        }
+
         // Preparar datos para insertar/actualizar
         const gastoData = {
           id,
           id_asociacion: idAsociacion || null,
           id_caso: idCaso,
-          id_responsable: idResponsable || null,
+          id_responsable: responsableValido,
           id_cliente: idCliente,
           fecha: fecha,
           producto: producto || null,
@@ -110,7 +126,7 @@ export async function POST() {
         }
 
         // Debug: mostrar lo que se está procesando
-        console.log(`📝 Procesando gasto: ID=${id}, Caso=${idCaso}, Producto=${producto}, Total=${totalCobro}`)
+        console.log(`📝 Procesando gasto: ID=${id}, Responsable=${responsableValido || 'null'}, Producto=${producto}, Total=${totalCobro}`)
 
         // 3. Insertar o actualizar en Supabase
         const { error } = await supabase
