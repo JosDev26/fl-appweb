@@ -21,13 +21,21 @@ export async function GET(request: NextRequest) {
     const simulatedDate = searchParams.get('simulatedDate')
     const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
     
-    // Calcular el primer día del mes (simulado o actual)
-    const inicioMes = new Date(now);
-    inicioMes.setDate(1);
-    inicioMes.setHours(0, 0, 0, 0);
-    const inicioMesStr = inicioMes.toISOString().split('T')[0];
+    // IMPORTANTE: Los clientes ven las horas/gastos del MES ANTERIOR
+    // Si hoy es diciembre, se muestran datos de NOVIEMBRE
+    
+    // Calcular el primer día del mes anterior (método seguro)
+    const year = now.getFullYear()
+    const month = now.getMonth() // 0-11
+    
+    const inicioMes = new Date(year, month - 1, 1, 0, 0, 0, 0)
+    const inicioMesStr = inicioMes.toISOString().split('T')[0]
+    
+    // Calcular el último día del mes anterior
+    const finMes = new Date(year, month, 0, 23, 59, 59, 999) // día 0 = último día del mes anterior
+    const finMesStr = finMes.toISOString().split('T')[0]
 
-    // Obtener trabajos por hora del mes actual
+    // Obtener trabajos por hora del mes anterior
     let trabajosPorHora: any[] = [];
     if (tipoCliente === 'usuario') {
       // Para usuarios, buscar directamente por id_cliente
@@ -36,6 +44,7 @@ export async function GET(request: NextRequest) {
         .select('*, casos!fk_caso(nombre, expediente)')
         .eq('id_cliente', userId)
         .gte('fecha', inicioMesStr)
+        .lte('fecha', finMesStr)
         .order('fecha', { ascending: false });
 
       if (error) throw error;
@@ -56,6 +65,7 @@ export async function GET(request: NextRequest) {
           .select('*, casos!fk_caso(nombre, expediente)')
           .in('caso_asignado', casoIds)
           .gte('fecha', inicioMesStr)
+          .lte('fecha', finMesStr)
           .order('fecha', { ascending: false });
 
         if (error) throw error;
@@ -92,7 +102,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Obtener gastos del mes actual del cliente con detalles
+    // Obtener gastos del mes anterior del cliente con detalles
     const { data: gastos, error: gastosError } = await supabase
       .from('gastos' as any)
       .select(`
@@ -106,6 +116,7 @@ export async function GET(request: NextRequest) {
       `)
       .eq('id_cliente', userId)
       .gte('fecha', inicioMesStr)
+      .lte('fecha', finMesStr)
       .order('fecha', { ascending: false });
     
     if (gastosError) throw gastosError;
@@ -121,30 +132,31 @@ export async function GET(request: NextRequest) {
 
     if (solicitudesError) throw solicitudesError;
 
-    // Calcular totales de mensualidades (sin IVA, se calcula después)
-    let totalMensualidades = 0;
-    let totalIVAMensualidades = 0;
+    // Calcular totales de mensualidades
+    // Si se_cobra_iva = true: monto_por_cuota incluye IVA (ej: ₡50,000 = ₡44,248 + ₡5,752 IVA)
+    // Si se_cobra_iva = false: monto_por_cuota NO incluye IVA (ej: ₡50,000 sin IVA)
+    let totalMensualidades = 0; // Total SIN IVA
+    let totalIVAMensualidades = 0; // IVA extraído
+    
     if (solicitudes && solicitudes.length > 0) {
+      console.log('🔍 SOLICITUDES MENSUALIDADES:', solicitudes.length);
       solicitudes.forEach(s => {
+        console.log(`  - ${s.titulo}: monto_por_cuota=${s.monto_por_cuota}, se_cobra_iva=${s.se_cobra_iva}, monto_iva=${s.monto_iva}`);
         const montoCuota = s.monto_por_cuota || 0;
-        totalMensualidades += montoCuota;
         
-        // Si la solicitud cobra IVA, sumar su monto_iva
-        if (s.se_cobra_iva && s.monto_iva) {
-          // El monto_iva en la BD es el IVA total, calculamos la proporción por cuota
-          if (s.cantidad_cuotas && s.cantidad_cuotas > 0) {
-            totalIVAMensualidades += s.monto_iva / s.cantidad_cuotas;
-          } else {
-            totalIVAMensualidades += s.monto_iva;
-          }
-        } else if (s.se_cobra_iva && s.costo_neto) {
-          // Si no hay monto_iva pero se cobra IVA, calcular basado en costo_neto
-          const ivaSolicitud = (s.costo_neto * ivaPerc);
-          if (s.cantidad_cuotas && s.cantidad_cuotas > 0) {
-            totalIVAMensualidades += ivaSolicitud / s.cantidad_cuotas;
-          } else {
-            totalIVAMensualidades += ivaSolicitud;
-          }
+        if (s.se_cobra_iva) {
+          // El monto incluye IVA, extraerlo
+          // monto_cuota = subtotal + IVA
+          // subtotal = monto_cuota / 1.13
+          // IVA = monto_cuota - subtotal
+          const subtotalCuota = montoCuota / (1 + ivaPerc);
+          const ivaCuota = montoCuota - subtotalCuota;
+          
+          totalMensualidades += subtotalCuota;
+          totalIVAMensualidades += ivaCuota;
+        } else {
+          // No se cobra IVA, el monto es el subtotal
+          totalMensualidades += montoCuota;
         }
       });
     }
@@ -195,14 +207,30 @@ export async function GET(request: NextRequest) {
     const ahorroComparativo = costoServiciosEstandar - costoServiciosTarifa;
 
     // Calcular totales
-    // Subtotal: servicios + mensualidades (sin IVA) + gastos
-    const subtotal = costoServiciosTarifa + totalMensualidades + totalGastos;
+    // Subtotal (sin IVA): servicios + gastos + mensualidades sin IVA
+    const subtotal = costoServiciosTarifa + totalGastos + totalMensualidades;
     
-    // IVA: sobre servicios y gastos + IVA específico de mensualidades
-    const ivaServiciosGastos = (costoServiciosTarifa + totalGastos) * ivaPerc;
-    const montoIVA = ivaServiciosGastos + totalIVAMensualidades;
+    // IVA total: IVA solo de servicios + IVA extraído de mensualidades
+    // IMPORTANTE: Los gastos NO llevan IVA porque total_cobro ya es el monto final
+    const ivaServicios = costoServiciosTarifa * ivaPerc;
+    const montoIVA = ivaServicios + totalIVAMensualidades;
     
+    // Total a pagar: subtotal + IVA
     const totalAPagar = subtotal + montoIVA;
+
+    // Debug logs
+    console.log('📊 CÁLCULO DE PAGO (MES ANTERIOR):');
+    console.log('  - Fecha actual/simulada:', now.toISOString().split('T')[0]);
+    console.log('  - Mes a mostrar:', inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' }));
+    console.log('  - Rango de fechas:', `${inicioMesStr} a ${finMesStr}`);
+    console.log('  - Costo servicios:', costoServiciosTarifa);
+    console.log('  - Total gastos (sin IVA):', totalGastos);
+    console.log('  - Total mensualidades (sin IVA):', totalMensualidades);
+    console.log('  - Subtotal:', subtotal);
+    console.log('  - IVA servicios:', ivaServicios);
+    console.log('  - IVA mensualidades:', totalIVAMensualidades);
+    console.log('  - Monto IVA total:', montoIVA);
+    console.log('  - Total a pagar:', totalAPagar);
 
     return NextResponse.json({
       success: true,
@@ -226,7 +254,9 @@ export async function GET(request: NextRequest) {
       montoIVA,
       totalAPagar,
       mesActual: inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' }),
-      mesActualISO: `${inicioMes.getFullYear()}-${String(inicioMes.getMonth() + 1).padStart(2, '0')}`
+      mesActualISO: `${inicioMes.getFullYear()}-${String(inicioMes.getMonth() + 1).padStart(2, '0')}`,
+      // Información adicional para debugging
+      mesActualText: `Datos del mes anterior: ${inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' })}`
     });
 
   } catch (error: any) {

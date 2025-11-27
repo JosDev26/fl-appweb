@@ -189,6 +189,90 @@
   font-weight: 700;
 }
 
+.gastosDetalle {
+  background: #f8fafc;
+  border-radius: 16px;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  border: 2px solid rgba(250, 208, 44, 0.2);
+  margin-bottom: clamp(2rem, 3vw, 3rem);
+}
+
+.gastosDetalleTitle {
+  color: #19304B;
+  font-size: clamp(1.125rem, 2vw, 1.5rem);
+  font-weight: 700;
+  margin: 0 0 clamp(1rem, 2vw, 1.5rem) 0;
+}
+
+.gastosTable {
+  overflow-x: auto;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.gastosTable table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.gastosTable thead {
+  background: linear-gradient(135deg, #19304B 0%, #0f1419 100%);
+}
+
+.gastosTable thead th {
+  color: #FAD02C;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  font-weight: 700;
+  text-align: left;
+  padding: clamp(1rem, 2vw, 1.25rem);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.gastosTable tbody tr {
+  border-bottom: 1px solid rgba(25, 48, 75, 0.1);
+  transition: background-color 0.2s ease;
+}
+
+.gastosTable tbody tr:hover {
+  background-color: rgba(250, 208, 44, 0.05);
+}
+
+.gastosTable tbody td {
+  color: #19304B;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  padding: clamp(0.875rem, 1.5vw, 1.125rem) clamp(1rem, 2vw, 1.25rem);
+}
+
+.gastoMonto {
+  font-weight: 700;
+  color: #19304B;
+  text-align: right;
+}
+
+.gastosTable tfoot {
+  background: rgba(250, 208, 44, 0.1);
+  border-top: 2px solid #FAD02C;
+}
+
+.gastosTable tfoot td {
+  padding: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 700;
+}
+
+.gastoTotalLabel {
+  color: #19304B;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  text-align: right;
+}
+
+.gastoTotalMonto {
+  color: #19304B;
+  font-size: clamp(1.125rem, 2vw, 1.375rem);
+  text-align: right;
+}
+
 .progresoSection {
   background: #f8fafc;
   border-radius: 16px;

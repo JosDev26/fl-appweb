@@ -6,9 +6,9 @@ export async function POST() {
   try {
     console.log('🔄 Iniciando sincronización de Gastos...')
 
-    // 1. Obtener datos de Google Sheets (columnas A:P)
+    // 1. Obtener datos de Google Sheets (columnas A:Q)
     const SHEET_NAME = 'Gastos'
-    const sheetData = await GoogleSheetsService.getSheetData(SHEET_NAME, 'A2:P')
+    const sheetData = await GoogleSheetsService.getSheetData(SHEET_NAME, 'A2:Q')
 
     if (!sheetData || sheetData.length === 0) {
       console.log('⚠️ No hay datos en la hoja de gastos')
@@ -28,17 +28,17 @@ export async function POST() {
 
     for (const row of sheetData) {
       try {
-        // Columnas según la estructura proporcionada
-        const id = row[0]?.toString().trim()                     // A: ID_Gasto
-        const idAsociacion = row[1]?.toString().trim()           // B: ID_Asociacion
-        const idSolicitud = row[2]?.toString().trim()            // C: ID_Solicitud
-        const idCasoCol = row[3]?.toString().trim()              // D: ID_Caso
-        const idClienteCol = row[5]?.toString().trim()           // F: ID_Cliente
-        const idResponsable = row[6]?.toString().trim()          // G: ID_Responsable
-        const idEmpresaCol = row[7]?.toString().trim()           // H: ID_Empresa
-        const fechaStr = row[8]?.toString().trim()               // I: Fecha
-        const producto = row[10]?.toString().trim()              // K: Producto
-        const totalCobroStr = row[15]?.toString().trim()         // P: Total_Cobro
+        // Columnas según la estructura actualizada (A=0, B=1, C=2, etc.)
+        const id = row[0]?.toString().trim()                     // A (índice 0): ID_Gasto
+        const idAsociacion = row[2]?.toString().trim()           // C (índice 2): ID_Asociacion
+        const idSolicitud = row[3]?.toString().trim()            // D (índice 3): ID_Solicitud
+        const idCasoCol = row[4]?.toString().trim()              // E (índice 4): ID_Caso
+        const idClienteCol = row[6]?.toString().trim()           // G (índice 6): ID_Cliente
+        const idEmpresaCol = row[7]?.toString().trim()           // H (índice 7): ID_Empresa
+        const idResponsable = row[8]?.toString().trim()          // I (índice 8): ID_Responsable
+        const fechaStr = row[9]?.toString().trim()               // J (índice 9): Fecha
+        const producto = row[11]?.toString().trim()              // L (índice 11): Producto
+        const totalCobroStr = row[16]?.toString().trim()         // Q (índice 16): Total_Cobro
 
         // Validar que tenga al menos el ID
         if (!id) {
@@ -46,10 +46,10 @@ export async function POST() {
           continue
         }
 
-        // Determinar ID_Caso (columna C o D, la que tenga dato)
+        // Determinar ID_Caso (columna D o E, la que tenga dato)
         const idCaso = idSolicitud || idCasoCol || null
         
-        // Determinar ID_Cliente (columna F o H, la que tenga dato)
+        // Determinar ID_Cliente (columna G o H, la que tenga dato)
         const idCliente = idClienteCol || idEmpresaCol || null
 
         // Parsear la fecha (detectar formato automáticamente)

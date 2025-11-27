@@ -1,12 +1,13 @@
--- Modificar función para usar CURRENT_DATE (fecha del servidor)
+-- Modificar función para usar NEW.fecha (fecha del registro insertado)
 CREATE OR REPLACE FUNCTION activar_modo_pago()
 RETURNS TRIGGER AS $$
 DECLARE
   inicio_mes date;
   inicio_mes_text text;
 BEGIN
-  -- Calcular el primer día del mes actual del servidor
-  inicio_mes := date_trunc('month', CURRENT_DATE)::date;
+  -- Calcular el primer día del mes basado en la fecha del registro insertado
+  -- Esto permite sincronizar con la fecha del reporte, no la fecha actual del servidor
+  inicio_mes := date_trunc('month', NEW.fecha)::date;
   inicio_mes_text := to_char(inicio_mes, 'YYYY-MM-DD');
   
   -- PRIMERO: Desactivar modoPago para TODOS

@@ -409,11 +409,13 @@ export default function PagoPage() {
                 <strong>{formatMonto(datosPago.subtotal)}</strong>
               </div>
               
-              {/* IVA */}
-              <div className={styles.costoItem}>
-                <span>IVA ({(datosPago.ivaPerc * 100).toFixed(0)}%):</span>
-                <strong>{formatMonto(datosPago.montoIVA)}</strong>
-              </div>
+              {/* IVA - solo mostrar si hay IVA */}
+              {datosPago.montoIVA > 0 && (
+                <div className={styles.costoItem}>
+                  <span>IVA ({(datosPago.ivaPerc * 100).toFixed(0)}%):</span>
+                  <strong>{formatMonto(datosPago.montoIVA)}</strong>
+                </div>
+              )}
               
               <div className={styles.divider + ' ' + styles.dividerBold} />
               
@@ -433,21 +435,16 @@ export default function PagoPage() {
             
             <div className={styles.mensualidadesGrid}>
               {datosPago.solicitudesMensuales.map((solicitud) => {
-                // Calcular IVA de esta solicitud
-                let ivaSolicitud = 0
-                if (solicitud.se_cobra_iva) {
-                  if (solicitud.monto_iva && solicitud.cantidad_cuotas) {
-                    ivaSolicitud = solicitud.monto_iva / solicitud.cantidad_cuotas
-                  } else if (solicitud.monto_iva) {
-                    ivaSolicitud = solicitud.monto_iva
-                  } else if (solicitud.costo_neto) {
-                    const ivaTotal = solicitud.costo_neto * datosPago.ivaPerc
-                    ivaSolicitud = solicitud.cantidad_cuotas ? ivaTotal / solicitud.cantidad_cuotas : ivaTotal
-                  }
-                }
-                
                 const montoCuota = solicitud.monto_por_cuota || 0
-                const totalConIVA = montoCuota + ivaSolicitud
+                
+                // Si se_cobra_iva = true, el monto incluye IVA, extraerlo para mostrar
+                let subtotalCuota = montoCuota
+                let ivaCuota = 0
+                
+                if (solicitud.se_cobra_iva) {
+                  subtotalCuota = montoCuota / (1 + datosPago.ivaPerc)
+                  ivaCuota = montoCuota - subtotalCuota
+                }
                 
                 return (
                   <div key={solicitud.id} className={styles.mensualidadCard}>
@@ -468,28 +465,30 @@ export default function PagoPage() {
                     )}
                     
                     <div className={styles.mensualidadDetalle}>
-                      <div className={styles.mensualidadMontoRow}>
-                        <span>Cuota:</span>
-                        <span>{formatMonto(montoCuota)}</span>
-                      </div>
-                      {solicitud.se_cobra_iva && ivaSolicitud > 0 && (
+                      {solicitud.se_cobra_iva ? (
+                        <>
+                          <div className={styles.mensualidadMontoRow}>
+                            <span>Subtotal:</span>
+                            <span>{formatMonto(subtotalCuota)}</span>
+                          </div>
+                          <div className={styles.mensualidadMontoRow}>
+                            <span>IVA ({(datosPago.ivaPerc * 100).toFixed(0)}%):</span>
+                            <span>{formatMonto(ivaCuota)}</span>
+                          </div>
+                        </>
+                      ) : (
                         <div className={styles.mensualidadMontoRow}>
-                          <span>IVA:</span>
-                          <span>{formatMonto(ivaSolicitud)}</span>
+                          <span>Cuota:</span>
+                          <span>{formatMonto(montoCuota)}</span>
                         </div>
                       )}
                       <div className={styles.mensualidadMonto}>
-                        {formatMonto(totalConIVA)}
+                        {formatMonto(montoCuota)}
                       </div>
                     </div>
                   </div>
                 )
               })}
-            </div>
-
-            <div className={styles.totalMensualidades}>
-              <span>Total a pagar este mes:</span>
-              <strong>{formatMonto(datosPago.totalMensualidades + datosPago.totalIVAMensualidades)}</strong>
             </div>
           </section>
         )}

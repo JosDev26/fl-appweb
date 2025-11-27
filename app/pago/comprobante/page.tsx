@@ -16,64 +16,53 @@ export default function ComprobantePage() {
   const [error, setError] = useState<string | null>(null)
   const [montoPago, setMontoPago] = useState<number | null>(null)
   const [loadingMonto, setLoadingMonto] = useState(true)
-  const [hasInvoice, setHasInvoice] = useState<boolean>(false)
-  const [checkingInvoice, setCheckingInvoice] = useState(true)
-  const [invoiceError, setInvoiceError] = useState<string | null>(null)
   const [invoiceFiles, setInvoiceFiles] = useState<Array<{name: string, created_at: string}>>([])
   const [downloadingInvoice, setDownloadingInvoice] = useState<string | null>(null)
 
-  // Verificar si existe factura electrónica y obtener el monto
+  // Cargar información del mes (monto e invoices opcionales)
   useEffect(() => {
     if (user) {
-      checkInvoiceAndLoadData()
+      loadDataAndInvoices()
     }
   }, [user])
 
-  const checkInvoiceAndLoadData = async () => {
+  const loadDataAndInvoices = async () => {
     if (!user) return
 
-    setCheckingInvoice(true)
     setLoadingMonto(true)
 
     try {
-      // Verificar si tiene factura electrónica del mes
-      const invoiceResponse = await fetch('/api/upload-invoice', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          clientId: user.id,
-          clientType: user.tipo || 'cliente'
-        })
-      })
-
-      const invoiceData = await invoiceResponse.json()
-
-      if (!invoiceResponse.ok) {
-        throw new Error('Error al verificar factura electrónica')
-      }
-
-      setHasInvoice(invoiceData.hasInvoice)
-      
-      if (invoiceData.hasInvoice && invoiceData.invoices) {
-        setInvoiceFiles(invoiceData.invoices)
-      }
-
-      if (!invoiceData.hasInvoice) {
-        setInvoiceError('No puede subir un comprobante de pago hasta que los administradores adjunten su factura electrónica correspondiente del mes.')
-        setCheckingInvoice(false)
-        setLoadingMonto(false)
-        return
-      }
-
-      // Si tiene factura, cargar el monto del pago
+      // Cargar el monto del pago (siempre, ya no depende de factura)
       await fetchMontoPago()
+
+      // Intentar cargar facturas electrónicas (opcional, no bloquea)
+      try {
+        const invoiceResponse = await fetch('/api/upload-invoice', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            clientId: user.id,
+            clientType: user.tipo || 'cliente'
+          })
+        })
+
+        if (invoiceResponse.ok) {
+          const invoiceData = await invoiceResponse.json()
+          if (invoiceData.hasInvoice && invoiceData.invoices) {
+            setInvoiceFiles(invoiceData.invoices)
+          }
+        }
+      } catch (err) {
+        // No bloquear si falla la carga de facturas
+        console.log('No hay facturas disponibles (opcional)')
+      }
     } catch (err) {
-      console.error('Error checking invoice:', err)
-      setInvoiceError('Error al verificar la factura electrónica. Por favor, intente más tarde.')
+      console.error('Error loading data:', err)
+      setError('No se pudo cargar la información. Por favor, intente más tarde.')
     } finally {
-      setCheckingInvoice(false)
+      setLoadingMonto(false)
     }
   }
 
@@ -280,12 +269,12 @@ export default function ComprobantePage() {
     }
   }
 
-  if (checkingInvoice || loadingMonto) {
+  if (loadingMonto) {
     return (
       <div className={styles.container}>
         <div className={styles.loadingState}>
           <div className={styles.spinner}></div>
-          <p>Verificando información de pago...</p>
+          <p>Cargando información de pago...</p>
         </div>
       </div>
     )
@@ -307,28 +296,6 @@ export default function ComprobantePage() {
 
       {/* Main Content */}
       <main className={styles.main}>
-        {/* Mensaje de bloqueo si no hay factura */}
-        {!hasInvoice && invoiceError && (
-          <div className={styles.blockedSection}>
-            <div className={styles.blockedIcon}>🚫</div>
-            <h2 className={styles.blockedTitle}>No disponible</h2>
-            <p className={styles.blockedMessage}>{invoiceError}</p>
-            <div className={styles.blockedInfo}>
-              <p>📄 Los administradores deben adjuntar primero su factura electrónica del mes actual.</p>
-              <p>⏳ Por favor, espere a que sea procesada y vuelva a intentarlo.</p>
-            </div>
-            <button 
-              onClick={() => router.push('/home')} 
-              className={styles.backToHomeButton}
-            >
-              Volver al inicio
-            </button>
-          </div>
-        )}
-
-        {/* Contenido normal si tiene factura */}
-        {hasInvoice && (
-          <>
         {montoPago && (
           <div className={styles.montoInfo}>
             <span className={styles.montoLabel}>Monto a pagar:</span>
@@ -341,12 +308,12 @@ export default function ComprobantePage() {
           </div>
         )}
 
-        {/* Sección de facturas electrónicas */}
+        {/* Sección de facturas electrónicas (opcional) */}
         {invoiceFiles.length > 0 && (
           <div className={styles.invoiceSection}>
             <h2 className={styles.invoiceTitle}>📄 Su Factura Electrónica</h2>
             <p className={styles.invoiceSubtitle}>
-              Descargue su factura electrónica antes de realizar el pago
+              Descargue su factura electrónica (si está disponible)
             </p>
             
             <div className={styles.invoicesList}>
@@ -480,8 +447,6 @@ export default function ComprobantePage() {
             🔒 Su archivo será validado y almacenado de forma segura
           </p>
         </div>
-        </>
-        )}
       </main>
     </div>
   )

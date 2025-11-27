@@ -45,6 +45,22 @@ interface Actualizacion {
   updated_at: string
 }
 
+interface Gasto {
+  id: string
+  id_asociacion: string | null
+  id_caso: string | null
+  id_responsable: string | null
+  id_cliente: string | null
+  fecha: string | null
+  producto: string | null
+  total_cobro: number | null
+  created_at: string
+  updated_at: string
+  funcionarios?: {
+    nombre: string | null
+  } | null
+}
+
 interface User {
   id: string
   nombre: string
@@ -57,8 +73,10 @@ export default function SolicitudDetalle() {
   const { user, loading: authLoading } = useAuth()
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [actualizaciones, setActualizaciones] = useState<Actualizacion[]>([])
+  const [gastos, setGastos] = useState<Gasto[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingActualizaciones, setLoadingActualizaciones] = useState(false)
+  const [loadingGastos, setLoadingGastos] = useState(false)
   const router = useRouter()
   const params = useParams()
   const solicitudId = params.id as string
@@ -90,8 +108,9 @@ export default function SolicitudDetalle() {
         console.log('✅ Acceso permitido')
         setSolicitud(data.solicitud)
         
-        // Cargar actualizaciones de la solicitud
+        // Cargar actualizaciones y gastos de la solicitud
         loadActualizaciones()
+        loadGastos()
       } else {
         router.push('/home')
         return
@@ -118,6 +137,22 @@ export default function SolicitudDetalle() {
       console.error('Error al cargar actualizaciones:', error)
     } finally {
       setLoadingActualizaciones(false)
+    }
+  }
+
+  const loadGastos = async () => {
+    setLoadingGastos(true)
+    try {
+      const response = await fetch(`/api/solicitudes/${solicitudId}/gastos`)
+      const data = await response.json()
+      
+      if (data.gastos) {
+        setGastos(data.gastos)
+      }
+    } catch (error) {
+      console.error('Error al cargar gastos:', error)
+    } finally {
+      setLoadingGastos(false)
     }
   }
 
@@ -208,9 +243,14 @@ export default function SolicitudDetalle() {
     return 0
   }
 
+  const calcularTotalGastos = () => {
+    return gastos.reduce((total, gasto) => total + (gasto.total_cobro || 0), 0)
+  }
+
   const calcularTotal = () => {
     const costoNeto = solicitud?.costo_neto || 0
     const iva = calcularIVA()
+    // No incluir gastos en el total - se muestran por separado
     return costoNeto + iva
   }
 
@@ -310,8 +350,14 @@ export default function SolicitudDetalle() {
                 <span className={styles.montoValor}>{formatMonto(calcularIVA())}</span>
               </div>
             )}
+            {gastos.length > 0 && (
+              <div className={styles.montoCard}>
+                <span className={styles.montoLabel}>Gastos del Caso</span>
+                <span className={styles.montoValor}>{formatMonto(calcularTotalGastos())}</span>
+              </div>
+            )}
             <div className={styles.montoCard} style={{ backgroundColor: '#19304B' }}>
-              <span className={styles.montoLabel} style={{ color: '#fff' }}>Total a Pagar</span>
+              <span className={styles.montoLabel} style={{ color: '#fff' }}>Total del Servicio</span>
               <span className={styles.montoValor} style={{ color: '#FAD02C', fontSize: '1.5rem', fontWeight: '700' }}>
                 {formatMonto(calcularTotal())}
               </span>
@@ -323,6 +369,48 @@ export default function SolicitudDetalle() {
               </div>
             )}
           </div>
+
+          {/* Detalle de Gastos */}
+          {gastos.length > 0 && (
+            <div className={styles.gastosDetalle}>
+              <h3 className={styles.gastosDetalleTitle}>Detalle de Gastos</h3>
+              {loadingGastos ? (
+                <div className={styles.loadingState}>
+                  <div className={styles.spinner}></div>
+                  <p>Cargando gastos...</p>
+                </div>
+              ) : (
+                <div className={styles.gastosTable}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Producto/Servicio</th>
+                        <th>Responsable</th>
+                        <th>Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gastos.map((gasto) => (
+                        <tr key={gasto.id}>
+                          <td>{formatFecha(gasto.fecha)}</td>
+                          <td>{gasto.producto || '-'}</td>
+                          <td>{gasto.funcionarios?.nombre || '-'}</td>
+                          <td className={styles.gastoMonto}>{formatMonto(gasto.total_cobro)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={3} className={styles.gastoTotalLabel}>Total Gastos:</td>
+                        <td className={styles.gastoTotalMonto}>{formatMonto(calcularTotalGastos())}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className={styles.progresoSection}>
             <div className={styles.progresoHeader}>

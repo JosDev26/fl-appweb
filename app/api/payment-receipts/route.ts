@@ -128,6 +128,7 @@ export async function PATCH(request: NextRequest) {
       }
 
       // Actualizar solicitudes con modalidad mensual
+      // IMPORTANTE: Los gastos NO se incluyen en monto_pagado
       console.log('💰 Actualizando solicitudes mensualidades del cliente:', userId)
       try {
         const { data: solicitudesMensuales, error: solicitudesError } = await supabase
@@ -142,23 +143,21 @@ export async function PATCH(request: NextRequest) {
           console.log(`📋 Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
           
           for (const solicitud of solicitudesMensuales) {
-            // Calcular nuevos valores
+            // Calcular pago realizado SOLO de la cuota (SIN gastos)
             const montoCuota = solicitud.monto_por_cuota || 0
-            let ivaCuota = 0
             
-            // Calcular IVA de la cuota
-            if (solicitud.se_cobra_iva) {
-              if (solicitud.monto_iva && solicitud.cantidad_cuotas && solicitud.cantidad_cuotas > 0) {
-                ivaCuota = solicitud.monto_iva / solicitud.cantidad_cuotas
-              } else if (solicitud.costo_neto) {
-                const ivaTotal = solicitud.costo_neto * 0.13 // IVA por defecto
-                ivaCuota = solicitud.cantidad_cuotas ? ivaTotal / solicitud.cantidad_cuotas : ivaTotal
-              }
-            }
-            
-            const pagoRealizado = montoCuota + ivaCuota
+            // El pago realizado es solo el monto de la cuota
+            // Los gastos se pagan aparte y NO se suman a monto_pagado
+            const pagoRealizado = montoCuota
             const nuevoMontoPagado = (solicitud.monto_pagado || 0) + pagoRealizado
-            const totalAPagar = solicitud.total_a_pagar || 0
+            
+            // El total_a_pagar debe ser costo_neto + IVA (sin gastos)
+            const costoNeto = solicitud.costo_neto || 0
+            let iva = 0
+            if (solicitud.se_cobra_iva) {
+              iva = solicitud.monto_iva || (costoNeto * 0.13)
+            }
+            const totalAPagar = costoNeto + iva
             const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
             
             // Actualizar la solicitud
@@ -176,9 +175,12 @@ export async function PATCH(request: NextRequest) {
             } else {
               console.log(`✅ Solicitud ${solicitud.id} actualizada:`, {
                 titulo: solicitud.titulo,
+                montoCuota,
                 pagoRealizado,
                 nuevoMontoPagado,
-                nuevoSaldoPendiente
+                totalAPagar,
+                nuevoSaldoPendiente,
+                nota: 'Gastos NO incluidos en monto_pagado'
               })
             }
           }

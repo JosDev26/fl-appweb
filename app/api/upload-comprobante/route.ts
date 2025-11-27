@@ -99,7 +99,59 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. VALIDACIONES DE SEGURIDAD
+    // 4. VALIDAR QUE NO EXISTA YA UN COMPROBANTE PARA ESTE MES
+    // Obtener mes de pago primero
+    const { data: invoiceDeadline, error: deadlineError } = await supabase
+      .from('invoice_payment_deadlines' as any)
+      .select('mes_factura')
+      .eq('client_id', userId)
+      .eq('client_type', tipoCliente)
+      .eq('estado_pago', 'pendiente')
+      .order('fecha_emision', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    
+    let mesPago: string
+    
+    if (invoiceDeadline && !deadlineError) {
+      mesPago = (invoiceDeadline as any).mes_factura
+      console.log('📅 Comprobante para factura del mes:', mesPago)
+    } else {
+      const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+      mesPago = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      console.warn('⚠️ No se encontró factura pendiente, usando mes actual:', mesPago)
+    }
+
+    // Verificar si ya existe un comprobante pendiente o aprobado para este mes
+    const { data: existingReceipts, error: existingError } = await supabase
+      .from('payment_receipts' as any)
+      .select('id, estado')
+      .eq('user_id', userId)
+      .eq('tipo_cliente', tipoCliente)
+      .eq('mes_pago', mesPago)
+      .in('estado', ['pendiente', 'aprobado'])
+
+    console.log('🔍 Verificando comprobantes existentes:', { 
+      userId, 
+      tipoCliente, 
+      mesPago, 
+      count: existingReceipts?.length || 0,
+      estados: existingReceipts?.map((r: any) => r.estado)
+    })
+
+    if (existingReceipts && existingReceipts.length > 0) {
+      const estado = (existingReceipts[0] as any).estado
+      return NextResponse.json(
+        { 
+          error: estado === 'aprobado' 
+            ? 'Ya existe un comprobante aprobado para este mes. No puedes subir otro comprobante.'
+            : 'Ya existe un comprobante pendiente de revisión para este mes. Espera a que sea revisado antes de subir otro.'
+        },
+        { status: 400 }
+      )
+    }
+
+    // 5. VALIDACIONES DE SEGURIDAD DEL ARCHIVO
 
     // Validar tamaño
     if (file.size > MAX_FILE_SIZE) {
@@ -134,36 +186,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 5. Generar nombre único y seguro
+    // 6. Generar nombre único y seguro
     const timestamp = Date.now()
     const sanitizedName = sanitizeFileName(file.name)
     const fileExtension = sanitizedName.match(/\.[^.]+$/)?.[0] || ''
     const fileName = `${userId}/${timestamp}${fileExtension}`
-
-    // 6. Obtener mes de la factura que está pagando
-    // Buscar la factura más reciente con estado pendiente
-    const { data: invoiceDeadline, error: deadlineError } = await supabase
-      .from('invoice_payment_deadlines' as any)
-      .select('mes_factura')
-      .eq('client_id', userId)
-      .eq('client_type', tipoCliente)
-      .eq('estado_pago', 'pendiente')
-      .order('fecha_emision', { ascending: false })
-      .limit(1)
-      .single()
-    
-    let mesPago: string
-    
-    if (invoiceDeadline && !deadlineError) {
-      // Usar el mes de la factura pendiente
-      mesPago = (invoiceDeadline as any).mes_factura
-      console.log('📅 Comprobante para factura del mes:', mesPago)
-    } else {
-      // Fallback: usar mes actual
-      const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
-      mesPago = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      console.warn('⚠️ No se encontró factura pendiente, usando mes actual:', mesPago)
-    }
 
     // 7. Subir archivo a Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase
@@ -183,7 +210,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 8. Registrar en la base de datos
+    // 8. Registrar en la base de datos (mes_pago ya determinado antes)
     const uploadedAt = simulatedDate 
       ? new Date(simulatedDate + 'T' + new Date().toISOString().split('T')[1]).toISOString()
       : new Date().toISOString()
