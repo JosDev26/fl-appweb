@@ -52,6 +52,7 @@ interface PaymentReceipt {
   estado: 'pendiente' | 'aprobado' | 'rechazado'
   nota_revision: string | null
   monto_declarado: number | null
+  mes_pago: string | null
   uploaded_at: string
   reviewed_at: string | null
 }
@@ -63,8 +64,7 @@ function HomeContent() {
   const [casosUnificados, setCasosUnificados] = useState<CasoUnificado[]>([])
   const [loadingData, setLoadingData] = useState(false)
   const [lastPaymentReceipt, setLastPaymentReceipt] = useState<PaymentReceipt | null>(null)
-  const [showPendingNotification, setShowPendingNotification] = useState(false)
-  const [showRejectedNotification, setShowRejectedNotification] = useState(false)
+  const [showPaymentBanner, setShowPaymentBanner] = useState(true)
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -72,14 +72,6 @@ function HomeContent() {
     if (!loading && user) {
       loadData(user)
       loadPaymentStatus(user)
-      
-      // Mostrar notificación solo si viene del upload de comprobante
-      const fromUpload = searchParams.get('fromUpload')
-      if (fromUpload === 'true') {
-        setShowPendingNotification(true)
-        // Limpiar el parámetro de la URL sin recargar
-        window.history.replaceState({}, '', '/home')
-      }
     }
   }, [loading, user, searchParams])
 
@@ -173,6 +165,15 @@ function HomeContent() {
     }
   }
 
+  const formatMesPago = (mes: string | null) => {
+    if (!mes) return ''
+    const [year, month] = mes.split('-')
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    const nombreMes = meses[parseInt(month) - 1] || month
+    return `${nombreMes} ${year}`
+  }
+
   if (loading) {
     return null
   }
@@ -183,57 +184,57 @@ function HomeContent() {
 
   return (
     <div className={styles.container}>
-      {/* Notificación de pago pendiente */}
-      {lastPaymentReceipt?.estado === 'pendiente' && showPendingNotification && (
-        <div className={styles.notification}>
-          <div className={styles.notificationContent}>
-            <span className={styles.notificationIcon}>✓</span>
-            <span className={styles.notificationText}>
-              Su pago está pendiente de revisión
+      {/* Banner de estado de comprobante */}
+      {lastPaymentReceipt && showPaymentBanner && (
+        <div className={`${styles.paymentBanner} ${
+          lastPaymentReceipt.estado === 'pendiente' ? styles.paymentBannerPending :
+          lastPaymentReceipt.estado === 'aprobado' ? styles.paymentBannerApproved :
+          styles.paymentBannerRejected
+        }`}>
+          <div className={styles.paymentBannerContent}>
+            <span className={styles.paymentBannerIcon}>
+              {lastPaymentReceipt.estado === 'pendiente' ? '⏳' :
+               lastPaymentReceipt.estado === 'aprobado' ? '✓' : '✕'}
             </span>
+            <div className={styles.paymentBannerInfo}>
+              <strong>
+                {lastPaymentReceipt.estado === 'pendiente' 
+                  ? `Comprobante en Revisión${lastPaymentReceipt.mes_pago ? ` - ${formatMesPago(lastPaymentReceipt.mes_pago)}` : ''}`
+                  : lastPaymentReceipt.estado === 'aprobado' 
+                  ? `Pago Aprobado${lastPaymentReceipt.mes_pago ? ` - ${formatMesPago(lastPaymentReceipt.mes_pago)}` : ''}`
+                  : `Comprobante Rechazado${lastPaymentReceipt.mes_pago ? ` - ${formatMesPago(lastPaymentReceipt.mes_pago)}` : ''}`}
+              </strong>
+              <p>
+                {lastPaymentReceipt.estado === 'pendiente' 
+                  ? 'Su comprobante está siendo revisado. Le notificaremos cuando sea procesado.'
+                  : lastPaymentReceipt.estado === 'aprobado'
+                  ? 'Su pago ha sido verificado y aprobado exitosamente.'
+                  : lastPaymentReceipt.nota_revision || 'Su comprobante fue rechazado. Por favor, suba uno nuevo.'}
+              </p>
+              {lastPaymentReceipt.monto_declarado && (
+                <span className={styles.paymentBannerMonto}>
+                  Monto: ₡{lastPaymentReceipt.monto_declarado.toLocaleString('es-CR', { 
+                    minimumFractionDigits: 2, 
+                    maximumFractionDigits: 2 
+                  })}
+                </span>
+              )}
+            </div>
+            {lastPaymentReceipt.estado === 'rechazado' && (
+              <button 
+                onClick={() => router.push('/pago/comprobante')}
+                className={styles.paymentBannerRetry}
+              >
+                Subir Nuevo Comprobante
+              </button>
+            )}
             <button 
-              className={styles.notificationClose}
-              onClick={() => setShowPendingNotification(false)}
-              aria-label="Cerrar notificación"
+              className={styles.paymentBannerClose}
+              onClick={() => setShowPaymentBanner(false)}
+              aria-label="Cerrar banner"
             >
               ✕
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* Notificación de pago rechazado */}
-      {lastPaymentReceipt?.estado === 'rechazado' && showRejectedNotification && (
-        <div className={styles.rejectedNotifications}>
-          <div className={styles.rejectedNotification}>
-            <div className={styles.rejectedContent}>
-              <span className={styles.rejectedIcon}>✕</span>
-              <div className={styles.rejectedInfo}>
-                <strong>Pago Rechazado</strong>
-                <p>{lastPaymentReceipt.nota_revision}</p>
-                {lastPaymentReceipt.monto_declarado && (
-                  <span className={styles.rejectedMonto}>
-                    Monto: ₡{lastPaymentReceipt.monto_declarado.toLocaleString('es-CR', { 
-                      minimumFractionDigits: 2, 
-                      maximumFractionDigits: 2 
-                    })}
-                  </span>
-                )}
-              </div>
-              <button 
-                onClick={() => router.push('/pago/comprobante')}
-                className={styles.rejectedRetry}
-              >
-                Reintentar
-              </button>
-              <button 
-                className={styles.rejectedClose}
-                onClick={() => setShowRejectedNotification(false)}
-                aria-label="Cerrar notificación"
-              >
-                ✕
-              </button>
-            </div>
           </div>
         </div>
       )}

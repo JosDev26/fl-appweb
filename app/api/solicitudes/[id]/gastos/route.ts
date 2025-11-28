@@ -7,6 +7,9 @@ export async function GET(
 ) {
   try {
     const { id: solicitudId } = await params
+    const { searchParams } = new URL(request.url)
+    const clienteId = searchParams.get('clienteId')
+    const tipoCliente = searchParams.get('tipoCliente') || 'cliente'
 
     // Obtenemos los gastos asociados directamente al id de la solicitud
     const { data: gastos, error: gastosError } = await supabase
@@ -28,8 +31,64 @@ export async function GET(
       )
     }
 
+    // Si se proporciona clienteId, obtener información de pago por mes
+    let comprobantesAprobados: Record<string, boolean> = {}
+    let modoPagoActivo = false
+
+    if (clienteId) {
+      // Obtener comprobantes aprobados del cliente
+      const { data: receipts } = await supabase
+        .from('payment_receipts' as any)
+        .select('mes_pago, estado')
+        .eq('user_id', clienteId)
+        .eq('tipo_cliente', tipoCliente)
+        .eq('estado', 'aprobado')
+
+      if (receipts) {
+        receipts.forEach((r: any) => {
+          comprobantesAprobados[r.mes_pago] = true
+        })
+      }
+
+      // Verificar si el cliente tiene modoPago activo
+      const table = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
+      const { data: cliente } = await supabase
+        .from(table)
+        .select('modoPago')
+        .eq('id', clienteId)
+        .single()
+
+      modoPagoActivo = cliente?.modoPago || false
+    }
+
+    // Agregar estado de pago a cada gasto
+    const gastosConEstado = (gastos || []).map((gasto: any) => {
+      const fechaGasto = gasto.fecha ? new Date(gasto.fecha) : null
+      const mesGasto = fechaGasto ? `${fechaGasto.getFullYear()}-${String(fechaGasto.getMonth() + 1).padStart(2, '0')}` : null
+      
+      const now = new Date()
+      const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      
+      let estadoPago: 'pagado' | 'pendiente_mes_actual' | 'pendiente_anterior' = 'pendiente_mes_actual'
+      
+      if (mesGasto && comprobantesAprobados[mesGasto]) {
+        estadoPago = 'pagado'
+      } else if (mesGasto && mesGasto < mesActual) {
+        estadoPago = 'pendiente_anterior'
+      } else {
+        estadoPago = 'pendiente_mes_actual'
+      }
+
+      return {
+        ...gasto,
+        mes_gasto: mesGasto,
+        estado_pago: estadoPago
+      }
+    })
+
     return NextResponse.json({
-      gastos: gastos || []
+      gastos: gastosConEstado,
+      modoPagoActivo
     })
 
   } catch (error) {

@@ -34,6 +34,8 @@ interface Gasto {
   producto: string | null
   total_cobro: number | null
   id_responsable: string | null
+  mes_gasto?: string | null
+  estado_pago?: 'pagado' | 'pendiente_mes_actual' | 'pendiente_anterior'
   funcionarios?: {
     nombre: string | null
   } | null
@@ -90,8 +92,8 @@ export default function CasoDetalle() {
           setTrabajos(trabajosData.trabajos)
         }
 
-        // Obtener gastos del caso
-        const gastosResponse = await fetch(`/api/casos/${casoId}/gastos`)
+        // Obtener gastos del caso con información de pago
+        const gastosResponse = await fetch(`/api/casos/${casoId}/gastos?clienteId=${userIdCliente}&tipoCliente=${user.tipo}`)
         const gastosData = await gastosResponse.json()
         
         if (gastosData.gastos) {
@@ -282,7 +284,7 @@ export default function CasoDetalle() {
           )}
         </div>
 
-        {/* Tabla de gastos */}
+        {/* Sección de Gastos */}
         <div className={styles.trabajosSection}>
           <h2 className={styles.sectionTitle}>Gastos del Caso</h2>
           
@@ -291,36 +293,100 @@ export default function CasoDetalle() {
               <p>No hay gastos registrados para este caso</p>
             </div>
           ) : (
-            <div className={styles.tableContainer}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Producto/Servicio</th>
-                    <th>Responsable</th>
-                    <th>Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {gastos.map((gasto) => (
-                    <tr key={gasto.id}>
-                      <td className={styles.cellFecha}>
-                        {formatFecha(gasto.fecha)}
-                      </td>
-                      <td className={styles.cellDescripcion}>
-                        {gasto.producto || '-'}
-                      </td>
-                      <td className={styles.cellTitulo}>
-                        {gasto.funcionarios?.nombre || '-'}
-                      </td>
-                      <td className={styles.cellDuracion}>
-                        {formatMonto(gasto.total_cobro)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* Gastos Pagados */}
+              {gastos.filter(g => g.estado_pago === 'pagado').length > 0 && (
+                <div className={styles.gastosCategoria}>
+                  <h3 className={styles.gastosSubtitulo}>
+                    <span className={styles.iconoPagado}>✓</span> Gastos Pagados
+                  </h3>
+                  <div className={styles.tableContainer}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Producto/Servicio</th>
+                          <th>Responsable</th>
+                          <th>Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gastos.filter(g => g.estado_pago === 'pagado').map((gasto) => (
+                          <tr key={gasto.id} className={styles.filaPagado}>
+                            <td className={styles.cellFecha}>{formatFecha(gasto.fecha)}</td>
+                            <td className={styles.cellDescripcion}>{gasto.producto || '-'}</td>
+                            <td className={styles.cellTitulo}>{gasto.funcionarios?.nombre || '-'}</td>
+                            <td className={styles.cellDuracion}>{formatMonto(gasto.total_cobro)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Gastos Pendientes del Mes Actual */}
+              {gastos.filter(g => g.estado_pago === 'pendiente_mes_actual').length > 0 && (
+                <div className={styles.gastosCategoria}>
+                  <h3 className={styles.gastosSubtitulo}>
+                    <span className={styles.iconoPendiente}>⏳</span> Gastos del Mes Actual (Pendientes)
+                  </h3>
+                  <div className={styles.tableContainer}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Producto/Servicio</th>
+                          <th>Responsable</th>
+                          <th>Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gastos.filter(g => g.estado_pago === 'pendiente_mes_actual').map((gasto) => (
+                          <tr key={gasto.id} className={styles.filaPendiente}>
+                            <td className={styles.cellFecha}>{formatFecha(gasto.fecha)}</td>
+                            <td className={styles.cellDescripcion}>{gasto.producto || '-'}</td>
+                            <td className={styles.cellTitulo}>{gasto.funcionarios?.nombre || '-'}</td>
+                            <td className={styles.cellDuracion}>{formatMonto(gasto.total_cobro)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Gastos Pendientes de Meses Anteriores */}
+              {gastos.filter(g => g.estado_pago === 'pendiente_anterior').length > 0 && (
+                <div className={styles.gastosCategoria}>
+                  <h3 className={styles.gastosSubtitulo}>
+                    <span className={styles.iconoAtrasado}>⚠️</span> Gastos de Meses Anteriores (Por Pagar)
+                  </h3>
+                  <div className={styles.tableContainer}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Producto/Servicio</th>
+                          <th>Responsable</th>
+                          <th>Monto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {gastos.filter(g => g.estado_pago === 'pendiente_anterior').map((gasto) => (
+                          <tr key={gasto.id} className={styles.filaAtrasado}>
+                            <td className={styles.cellFecha}>{formatFecha(gasto.fecha)}</td>
+                            <td className={styles.cellDescripcion}>{gasto.producto || '-'}</td>
+                            <td className={styles.cellTitulo}>{gasto.funcionarios?.nombre || '-'}</td>
+                            <td className={styles.cellDuracion}>{formatMonto(gasto.total_cobro)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>

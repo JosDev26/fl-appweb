@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         estado: (lastReceipt as any).estado,
         nota_revision: (lastReceipt as any).nota_revision,
         monto_declarado: (lastReceipt as any).monto_declarado,
+        mes_pago: (lastReceipt as any).mes_pago,
         uploaded_at: (lastReceipt as any).uploaded_at,
         reviewed_at: (lastReceipt as any).reviewed_at
       }

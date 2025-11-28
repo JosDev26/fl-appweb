@@ -139,12 +139,55 @@ export async function GET(request: Request) {
   }
 }
 
-// Actualizar darVistoBueno de un cliente o empresa
+// Actualizar darVistoBueno de un cliente o empresa, o resetear modoPago
 export async function PATCH(request: Request) {
   try {
     const body = await request.json()
-    const { clientId, tipo, darVistoBueno } = body
+    const { clientId, tipo, darVistoBueno, action } = body
 
+    // Acción especial: resetear modoPago de todos los clientes y empresas
+    if (action === 'resetAllModoPago') {
+      const [usuariosRes, empresasRes] = await Promise.all([
+        supabase
+          .from('usuarios')
+          .update({ modoPago: false })
+          .eq('modoPago', true)
+          .select('id'),
+        supabase
+          .from('empresas')
+          .update({ modoPago: false })
+          .eq('modoPago', true)
+          .select('id')
+      ])
+
+      if (usuariosRes.error) {
+        console.error('Error reseteando usuarios:', usuariosRes.error)
+        return NextResponse.json(
+          { error: 'Error reseteando modoPago de usuarios' },
+          { status: 500 }
+        )
+      }
+
+      if (empresasRes.error) {
+        console.error('Error reseteando empresas:', empresasRes.error)
+        return NextResponse.json(
+          { error: 'Error reseteando modoPago de empresas' },
+          { status: 500 }
+        )
+      }
+
+      const usuariosActualizados = usuariosRes.data?.length || 0
+      const empresasActualizadas = empresasRes.data?.length || 0
+
+      return NextResponse.json({
+        success: true,
+        message: `modoPago reseteado: ${usuariosActualizados} usuarios, ${empresasActualizadas} empresas`,
+        usuariosActualizados,
+        empresasActualizadas
+      })
+    }
+
+    // Actualización normal de darVistoBueno
     if (!clientId || !tipo || typeof darVistoBueno !== 'boolean') {
       return NextResponse.json(
         { error: 'Parámetros requeridos: clientId, tipo, darVistoBueno' },

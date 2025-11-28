@@ -6,6 +6,11 @@
   grid-template-columns: minmax(250px, 280px) 1fr;
   grid-template-rows: auto 1fr;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transition: grid-template-columns 0.3s ease;
+}
+
+.container.sidebarClosed {
+  grid-template-columns: 0 1fr;
 }
 
 /* Sidebar colapsable */
@@ -16,12 +21,18 @@
   border-right: 1px solid #e0e0e0;
   padding: 1.5rem 0;
   overflow-y: auto;
-  transition: transform 0.3s ease;
+  overflow-x: hidden;
+  transition: all 0.3s ease;
+  min-width: 0;
 }
 
 .sidebar.collapsed {
-  transform: translateX(-100%);
-  position: absolute;
+  padding: 0;
+  border-right: none;
+}
+
+.sidebar.collapsed .nav {
+  display: none;
 }
 
 /* Header */
@@ -35,6 +46,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  transition: grid-column 0.3s ease;
+}
+
+.header.fullWidth {
+  grid-column: 1 / -1;
 }
 
 .headerLeft {
@@ -75,6 +91,7 @@
   grid-row: 2;
   padding: clamp(1rem, 3vw, 2rem);
   overflow-y: auto;
+  transition: grid-column 0.3s ease;
 }
 
 .content.fullWidth {
@@ -639,6 +656,21 @@
 .syncResultIcon {
   font-size: 1.25rem;
   flex-shrink: 0;
+}
+
+/* Botón que parece link */
+.linkButton {
+  background: none;
+  border: none;
+  color: #1976d2;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+  padding: 0;
+}
+
+.linkButton:hover {
+  color: #1565c0;
 }
 
 /* Responsive: Sidebar automático en pantallas pequeñas */

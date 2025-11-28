@@ -152,6 +152,23 @@ export default function DevPage() {
     }
   }
 
+  // Ver archivo con URL firmada (para bucket privado)
+  const handleViewFile = async (filePath: string) => {
+    try {
+      const response = await fetch(`/api/storage-url?path=${encodeURIComponent(filePath)}&bucket=payment-receipts`)
+      const data = await response.json()
+      
+      if (data.success && data.signedUrl) {
+        window.open(data.signedUrl, '_blank')
+      } else {
+        alert('Error obteniendo URL del archivo: ' + (data.error || 'Error desconocido'))
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error obteniendo URL del archivo')
+    }
+  }
+
   const handleApproveReceipt = async (receiptId: string) => {
     if (!confirm('¿Aprobar este comprobante y desactivar modo pago?')) return
     
@@ -176,8 +193,9 @@ export default function DevPage() {
     }
   }
 
-  const handleRejectReceipt = async (receiptId: string) => {
-    if (!rejectNota.trim()) {
+  const handleRejectReceipt = async (receiptId: string, nota?: string) => {
+    const notaRechazo = nota || rejectNota
+    if (!notaRechazo.trim()) {
       alert('Debes agregar una nota de rechazo')
       return
     }
@@ -186,7 +204,7 @@ export default function DevPage() {
       const res = await fetch('/api/payment-receipts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiptId, estado: 'rechazado', nota: rejectNota })
+        body: JSON.stringify({ receiptId, action: 'rechazar', nota: notaRechazo })
       })
       const data = await res.json()
       if (data.success) {
@@ -200,6 +218,32 @@ export default function DevPage() {
       alert('Error rechazando comprobante')
     } finally {
       setReviewingReceipt(null)
+    }
+  }
+
+  // Resetear modoPago de todos los clientes y empresas
+  const handleResetAllModoPago = async () => {
+    if (!confirm('¿Estás seguro de quitar el modoPago a TODOS los clientes y empresas? Esta acción no se puede deshacer.')) {
+      return
+    }
+    
+    try {
+      const res = await fetch('/api/client', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resetAllModoPago' })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        alert(`modoPago reseteado exitosamente:\n- ${data.usuariosActualizados} clientes\n- ${data.empresasActualizadas} empresas`)
+        await loadPaymentData()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error reseteando modoPago')
     }
   }
 
@@ -278,7 +322,8 @@ export default function DevPage() {
       const month = now.getMonth()
       const mesAnterior = new Date(year, month - 1, 1)
       const mesPago = mesAnterior.toISOString().slice(0, 7)
-      const finMes = new Date(year, month, 15) // 15 días del mes siguiente
+      // Fecha límite: día 15 del mes SIGUIENTE al actual
+      const finMes = new Date(year, month + 1, 15)
       
       const clientesConModoPago = (clientesModoPago || []).filter(c => c.modoPago)
       
@@ -551,7 +596,7 @@ export default function DevPage() {
   }
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} ${!sidebarOpen ? styles.sidebarClosed : ''}`}>
       {/* SIDEBAR */}
       <aside className={`${styles.sidebar} ${!sidebarOpen ? styles.collapsed : ''}`}>
         <nav className={styles.nav}>
@@ -617,7 +662,7 @@ export default function DevPage() {
       </aside>
 
       {/* HEADER */}
-      <header className={styles.header}>
+      <header className={`${styles.header} ${!sidebarOpen ? styles.fullWidth : ''}`}>
         <div className={styles.headerLeft}>
           <button className={styles.toggleButton} onClick={() => setSidebarOpen(!sidebarOpen)}>
             ☰
@@ -636,6 +681,12 @@ export default function DevPage() {
                 <h2 className={styles.sectionTitle}>Gestión de Comprobantes de Pago</h2>
                 <p className={styles.sectionDescription}>Revisa y aprueba/rechaza los comprobantes subidos por los clientes</p>
               </div>
+              <button 
+                className={`${styles.button} ${styles.buttonDanger}`}
+                onClick={handleResetAllModoPago}
+              >
+                🔄 Resetear modoPago de todos
+              </button>
             </div>
             {loadingReceipts ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando comprobantes...</p></div>
@@ -678,9 +729,12 @@ export default function DevPage() {
                             </span>
                           </td>
                           <td>
-                            <a href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/payment-receipts/${receipt.file_path}`} target="_blank" rel="noopener noreferrer">
+                            <button 
+                              className={styles.linkButton}
+                              onClick={() => handleViewFile(receipt.file_path)}
+                            >
                               Ver archivo
-                            </a>
+                            </button>
                           </td>
                           <td>
                           {receipt.estado === 'pendiente' && (
@@ -696,9 +750,8 @@ export default function DevPage() {
                                 className={`${styles.button} ${styles.buttonDanger}`}
                                 onClick={() => {
                                   const nota = prompt('Razón del rechazo:')
-                                  if (nota) {
-                                    setRejectNota(nota)
-                                    handleRejectReceipt(receipt.id)
+                                  if (nota && nota.trim()) {
+                                    handleRejectReceipt(receipt.id, nota)
                                   }
                                 }}
                                 disabled={reviewingReceipt === receipt.id}

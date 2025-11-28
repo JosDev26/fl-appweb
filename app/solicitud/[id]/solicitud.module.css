@@ -551,3 +551,70 @@
     align-self: flex-start;
   }
 }
+
+/* Estilos para categorías de gastos */
+.gastosCategoria {
+  margin-bottom: 1.5rem;
+}
+
+.gastosSubtitulo {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #19304B;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(25, 48, 75, 0.05);
+  border-radius: 6px;
+}
+
+.iconoPagado {
+  color: #22c55e;
+  font-weight: bold;
+}
+
+.iconoPendiente {
+  color: #f59e0b;
+}
+
+.iconoAtrasado {
+  color: #ef4444;
+}
+
+.filaPagado {
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.filaPagado:hover {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.filaPendiente {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.filaPendiente:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.filaAtrasado {
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.filaAtrasado:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.gastosTotalGeneral {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: rgba(25, 48, 75, 0.05);
+  border-radius: 8px;
+  margin-top: 1rem;
+  font-weight: 600;
+}
