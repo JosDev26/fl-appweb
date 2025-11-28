@@ -1,8 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { GoogleSheetsService } from '@/lib/googleSheets';
 
-export async function POST(request: NextRequest) {
+export async function GET() {
+  return syncMaterias()
+}
+
+export async function POST() {
+  return syncMaterias()
+}
+
+async function syncMaterias() {
   try {
     console.log('🔄 Iniciando sincronización de Materias...');
 
@@ -93,40 +101,12 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ Error en sincronización de Materias:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       {
         success: false,
-        message: 'Error al sincronizar materias',
-        error: error instanceof Error ? error.message : 'Error desconocido'
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    // Obtener estadísticas de la tabla materias
-    const { count, error } = await supabase
-      .from('materias')
-      .select('*', { count: 'exact', head: true });
-
-    if (error) {
-      throw error;
-    }
-
-    return NextResponse.json({
-      success: true,
-      total: count || 0
-    });
-
-  } catch (error) {
-    console.error('❌ Error obteniendo estadísticas de materias:', error);
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Error al obtener estadísticas',
-        error: error instanceof Error ? error.message : 'Error desconocido'
+        message: `Error al sincronizar materias: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     );

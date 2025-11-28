@@ -2,202 +2,52 @@
 
 **OBJETIVO**: Remover completamente la funcionalidad de simulación de fechas antes de desplegar a producción.
 
-**CONTEXTO**: El simulador de fechas (`localStorage.simulatedDate`) permite testear el flujo de facturación sin esperar al mes siguiente. Esta funcionalidad **DEBE** eliminarse en producción para usar siempre fechas reales.
+**CONTEXTO**: El simulador de fechas ahora es **GLOBAL** (se guarda en Supabase, tabla `system_config`). Cuando está activo, **TODOS** los usuarios ven la fecha simulada. Esta funcionalidad **DEBE** eliminarse en producción para usar siempre fechas reales.
 
 ---
 
-## 📋 Checklist de Archivos a Modificar
+## 🚨 CAMBIO IMPORTANTE (Nov 2025)
 
-### 1. **Frontend: `/app/dev/page.tsx`**
+El sistema de fecha simulada cambió de `localStorage` (por navegador) a **Supabase** (global).
 
-#### Eliminar estado y lógica del simulador:
+**Nuevo flujo:**
+1. La fecha simulada se guarda en `system_config` con `key = 'simulated_date'`
+2. Todos los endpoints usan `lib/dateUtils.ts` → `getCurrentDateCR()` que:
+   - Primero busca fecha simulada en Supabase
+   - Si no existe, usa la **fecha real de Costa Rica (UTC-6)**
 
-```typescript
-// ELIMINAR ESTOS ESTADOS (líneas ~67-71):
-const [simulatedDate, setSimulatedDate] = useState<string>('')
-const [isDateSimulated, setIsDateSimulated] = useState(false)
-const [currentRealDate, setCurrentRealDate] = useState<string>('')
-const [isMounted, setIsMounted] = useState(false)
-```
+---
 
-#### Eliminar useEffect de inicialización (líneas ~143-157):
+## ✅ Método Rápido: Solo Desactivar Fecha Simulada
 
-```typescript
-// ELIMINAR TODO ESTE useEffect:
-useEffect(() => {
-  setIsMounted(true)
-  const now = new Date()
-  const dateStr = now.toISOString().split('T')[0]
-  setCurrentRealDate(dateStr)
-  
-  const savedSimulatedDate = localStorage.getItem('simulatedDate')
-  if (savedSimulatedDate) {
-    setSimulatedDate(savedSimulatedDate)
-    setIsDateSimulated(true)
-  } else {
-    setSimulatedDate(dateStr)
-  }
-}, [])
-```
+**OPCIÓN 1 - Desde /dev:**
+1. Ir a `/dev` → "Simulador de Fecha"
+2. Clic en "Restaurar Fecha Real"
 
-#### Eliminar funciones del simulador (líneas ~480-530):
+**OPCIÓN 2 - Desde Supabase SQL:**
+```sql
+-- Verificar si hay fecha simulada
+SELECT * FROM system_config WHERE key = 'simulated_date';
 
-```typescript
-// ELIMINAR ESTAS FUNCIONES:
-const activateSimulation = () => { ... }
-const resetSimulation = () => { ... }
-const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => { ... }
-```
-
-#### Eliminar pestaña del simulador en UI (líneas ~1495-1510):
-
-```typescript
-// ELIMINAR ESTE BOTÓN:
-<button
-  className={`${styles.tab} ${activeTab === 'date-simulator' ? styles.tabActive : ''}`}
-  onClick={() => setActiveTab('date-simulator')}
->
-  🗓️ Simulador de Fecha
-</button>
-```
-
-#### Eliminar sección completa del simulador (líneas ~1540-1630):
-
-```typescript
-// ELIMINAR TODO ESTE BLOQUE:
-{activeTab === 'date-simulator' && (
-  <div className={styles.section}>
-    <h2 className={styles.sectionTitle}>Simulador de Fecha del Sistema</h2>
-    ...
-  </div>
-)}
-```
-
-#### En función `uploadInvoice()` (líneas ~420-430):
-
-```typescript
-// ELIMINAR ESTAS LÍNEAS:
-if (isMounted && isDateSimulated && simulatedDate) {
-  formData.append('simulatedDate', simulatedDate)
-}
-
-// RESULTADO: Solo enviar archivo, clientId, clientType, mesFactura
-```
-
-#### En función `loadMonthInvoices()` (líneas ~465-473):
-
-```typescript
-// CAMBIAR ESTO:
-const simulatedDateStr = typeof window !== 'undefined' ? localStorage.getItem('simulatedDate') : null
-const url = simulatedDateStr 
-  ? `/api/upload-invoice?getAllMonth=true&simulatedDate=${simulatedDateStr}`
-  : '/api/upload-invoice?getAllMonth=true'
-const response = await fetch(url)
-
-// POR ESTO:
-const response = await fetch('/api/upload-invoice?getAllMonth=true')
-```
-
-#### En función `formatInvoiceDate()` (líneas ~294-309):
-
-```typescript
-// ELIMINAR TODA LA FUNCIÓN:
-const formatInvoiceDate = (fileName: string, fallbackDate: string) => {
-  const parts = fileName.split('_')
-  if (parts.length >= 3 && !isNaN(Number(parts[0]))) {
-    const timestamp = Number(parts[0])
-    return new Date(timestamp).toLocaleString('es-ES', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-  return formatDate(fallbackDate)
-}
-
-// Y cambiar su uso (línea ~1406):
-// CAMBIAR:
-<td>{formatInvoiceDate(invoice.name, invoice.created_at)}</td>
-
-// POR:
-<td>{formatDate(invoice.created_at)}</td>
-```
-
-#### En modal de factura (líneas ~1425-1435):
-
-```typescript
-// ELIMINAR ESTE BLOQUE COMPLETO:
-{isMounted && isDateSimulated && simulatedDate && (
-  <p style={{ color: '#f59e0b', fontWeight: 'bold' }}>
-    📅 Mes de factura: {new Date(simulatedDate + 'T12:00:00').toLocaleDateString('es-CR', { year: 'numeric', month: 'long' })}
-  </p>
-)}
-{isMounted && !isDateSimulated && (
-  <p>
-    📅 Mes de factura: {new Date().toLocaleDateString('es-CR', { year: 'numeric', month: 'long' })}
-  </p>
-)}
-```
-
-#### En función `loadClientesVistoBueno()` (líneas ~595-601):
-
-```typescript
-// CAMBIAR ESTO:
-const simulatedDateStr = isMounted ? localStorage.getItem('simulatedDate') : null
-const now = simulatedDateStr ? new Date(simulatedDateStr + 'T12:00:00') : new Date()
-const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-
-console.log('📅 Verificando visto bueno para mes:', mes, simulatedDateStr ? '(simulado)' : '(real)')
-
-// POR ESTO:
-const now = new Date()
-const mes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+-- Eliminar fecha simulada
+DELETE FROM system_config WHERE key = 'simulated_date';
 ```
 
 ---
 
-### 2. **Frontend: `/app/pago/page.tsx`**
+## 📋 Checklist Completo para Producción
 
-#### Eliminar función `getCurrentDate()` (líneas ~83-92):
+Si quieres eliminar **completamente** el código del simulador (no solo desactivarlo):
 
-```typescript
-// ELIMINAR ESTA FUNCIÓN:
-const getCurrentDate = () => {
-  if (typeof window !== 'undefined') {
-    const simulatedDate = localStorage.getItem('simulatedDate')
-    if (simulatedDate) {
-      return new Date(simulatedDate + 'T12:00:00')
-    }
-  }
-  return new Date()
-}
+### 1. **Eliminar tabla de Supabase**
+```sql
+-- Solo si quieres eliminar la tabla completa
+DROP TABLE IF EXISTS system_config;
 ```
 
-#### Reemplazar llamadas a `getCurrentDate()` con `new Date()`:
+### 2. **Modificar `lib/dateUtils.ts`**
 
-```typescript
-// CAMBIAR ESTO (líneas ~115, ~145):
-const now = getCurrentDate()
-
-// POR ESTO:
-const now = new Date()
-```
-
----
-
-### 3. **Frontend: `/app/pago/comprobante/page.tsx`**
-
-#### En función `handleSubmit()` (líneas ~160-165):
-
-```typescript
-// ELIMINAR ESTAS LÍNEAS:
-const simulatedDate = localStorage.getItem('simulatedDate')
-if (simulatedDate) {
-  formData.append('simulatedDate', simulatedDate)
-}
-
+Eliminar el bloque de fecha simulada:
 // RESULTADO: Solo enviar 'file' y 'monto' en el FormData
 ```
 

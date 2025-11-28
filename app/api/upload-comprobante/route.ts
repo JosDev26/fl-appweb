@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { getCurrentDate } from '@/lib/dateSimulator'
+import { getCurrentDateCR, getMesAnterior, toDateString } from '@/lib/dateUtils'
 
 // Configuración de seguridad
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -99,28 +99,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. VALIDAR QUE NO EXISTA YA UN COMPROBANTE PARA ESTE MES
-    // Obtener mes de pago primero
-    const { data: invoiceDeadline, error: deadlineError } = await supabase
-      .from('invoice_payment_deadlines' as any)
-      .select('mes_factura')
-      .eq('client_id', userId)
-      .eq('client_type', tipoCliente)
-      .eq('estado_pago', 'pendiente')
-      .order('fecha_emision', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    
-    let mesPago: string
-    
-    if (invoiceDeadline && !deadlineError) {
-      mesPago = (invoiceDeadline as any).mes_factura
-      console.log('📅 Comprobante para factura del mes:', mesPago)
-    } else {
-      const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
-      mesPago = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-      console.warn('⚠️ No se encontró factura pendiente, usando mes actual:', mesPago)
-    }
+    // 4. DETERMINAR MES DE PAGO: SIEMPRE ES EL MES ANTERIOR
+    // Si hoy es diciembre, se cobra noviembre
+    // Si hoy es noviembre, se cobra octubre
+    // Esto aplica tanto para mensualidades como para cobro por hora
+    // Usa zona horaria de Costa Rica (UTC-6) y fecha simulada global si existe
+    const now = await getCurrentDateCR(simulatedDate)
+    const { mesPago } = getMesAnterior(now)
+    console.log('📅 Mes de pago (mes anterior):', mesPago, '| Fecha actual CR:', toDateString(now))
 
     // Verificar si ya existe un comprobante pendiente o aprobado para este mes
     const { data: existingReceipts, error: existingError } = await supabase

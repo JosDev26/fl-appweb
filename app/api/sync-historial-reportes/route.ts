@@ -1,11 +1,19 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { GoogleSheetsService } from "@/lib/googleSheets";
 import { getTableMapping } from "@/lib/sync-config";
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(request: NextRequest) {
+export async function GET() {
+  return syncHistorialReportes()
+}
+
+export async function POST() {
+  return syncHistorialReportes()
+}
+
+async function syncHistorialReportes() {
   console.log('=== INICIANDO SINCRONIZACIÓN DE HISTORIAL DE REPORTES ===');
 
   try {
@@ -225,18 +233,22 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Sincronización completada",
-      inserted: insertCount,
-      updated: updateCount,
-      deleted: deleteCount,
+      message: "Sincronización de Historial Reportes completada",
+      stats: {
+        inserted: insertCount,
+        updated: updateCount,
+        deleted: deleteCount,
+      }
     });
 
   } catch (error: any) {
     console.error('Error en la sincronización:', error);
+    const errorMessage = error.message || String(error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Error desconocido",
+        message: `Error al sincronizar Historial Reportes: ${errorMessage}`,
+        error: errorMessage,
       },
       { status: 500 }
     );

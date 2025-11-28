@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
 
+export async function GET() {
+  return syncActualizaciones()
+}
+
 export async function POST() {
+  return syncActualizaciones()
+}
+
+async function syncActualizaciones() {
   try {
     console.log('🔄 Iniciando sincronización de actualizaciones...')
 
@@ -135,11 +143,12 @@ export async function POST() {
 
   } catch (error) {
     console.error('❌ Error en sincronización de actualizaciones:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       {
         success: false,
-        error: 'Error al sincronizar actualizaciones',
-        details: error instanceof Error ? error.message : String(error)
+        message: `Error al sincronizar Actualizaciones: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     )

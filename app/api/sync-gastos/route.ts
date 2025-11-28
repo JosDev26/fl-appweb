@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
 
+export async function GET() {
+  return syncGastos()
+}
+
 export async function POST() {
+  return syncGastos()
+}
+
+async function syncGastos() {
   try {
     console.log('🔄 Iniciando sincronización de Gastos...')
 
@@ -158,9 +166,7 @@ export async function POST() {
 
     return NextResponse.json({
       success: errorCount === 0,
-      message: errorCount === 0 
-        ? 'Sincronización de gastos completada exitosamente'
-        : `Sincronización completada con ${errorCount} errores`,
+      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} sincronizados, ${errorCount} errores`,
       synced: syncedCount,
       errors: errorCount,
       total: sheetData.length,
@@ -169,22 +175,14 @@ export async function POST() {
 
   } catch (error) {
     console.error('❌ Error en sincronización de gastos:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       {
         success: false,
-        error: 'Error al sincronizar gastos',
-        details: error instanceof Error ? error.message : String(error)
+        message: `Error al sincronizar Gastos: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     )
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    endpoint: '/api/sync-gastos',
-    method: 'POST',
-    description: 'Sincroniza la hoja "Gastos" de Google Sheets con la tabla gastos en Supabase',
-    usage: 'POST /api/sync-gastos'
-  })
 }

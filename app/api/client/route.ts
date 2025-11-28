@@ -66,9 +66,11 @@ export async function GET(request: Request) {
     }
 
     if (tipo === 'empresa') {
+      const all = searchParams.get('all') === 'true'
+      
       const { data: empresas, error } = await supabase
         .from('empresas')
-        .select('id, id_sheets, nombre, cedula, correo, modoPago, darVistoBueno')
+        .select(all ? 'id, nombre, cedula, correo, modoPago, darVistoBueno, iva_perc, tarifa_hora' : 'id, nombre, cedula, correo, modoPago, darVistoBueno')
         .order('nombre', { ascending: true })
 
       if (error) {
@@ -78,7 +80,8 @@ export async function GET(request: Request) {
 
       return NextResponse.json({
         success: true,
-        clients: (empresas || []).map(e => ({ ...e, tipo: 'empresa' as const }))
+        empresas: empresas || [],
+        clients: (empresas || []).map((e: any) => ({ ...e, tipo: 'empresa' as const }))
       })
     }
 

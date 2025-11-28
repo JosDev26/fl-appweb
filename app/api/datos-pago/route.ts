@@ -1,7 +1,73 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getCurrentDateCR, getMesAnterior, getRangoMes } from "@/lib/dateUtils";
 
 export const dynamic = 'force-dynamic';
+
+// Función auxiliar para obtener datos de pago de una empresa específica
+async function getDatosEmpresa(
+  empresaId: string, 
+  inicioMes: string, 
+  finMes: string
+): Promise<{
+  trabajosPorHora: any[];
+  gastos: any[];
+  solicitudes: any[];
+  empresa: { nombre: string; tarifa_hora: number; iva_perc: number } | null;
+}> {
+  // Obtener info de la empresa
+  const { data: empresaData } = await supabase
+    .from('empresas')
+    .select('nombre, tarifa_hora, iva_perc')
+    .eq('id', empresaId)
+    .maybeSingle();
+
+  // Obtener casos de la empresa
+  const { data: casos } = await supabase
+    .from('casos')
+    .select('id')
+    .eq('id_cliente', empresaId);
+
+  let trabajosPorHora: any[] = [];
+  if (casos && casos.length > 0) {
+    const casoIds = casos.map(c => c.id);
+    const { data } = await supabase
+      .from('trabajos_por_hora')
+      .select('*, casos!fk_caso(nombre, expediente)')
+      .in('caso_asignado', casoIds)
+      .gte('fecha', inicioMes)
+      .lte('fecha', finMes)
+      .order('fecha', { ascending: false });
+    trabajosPorHora = data || [];
+  }
+
+  // Obtener gastos
+  const { data: gastos } = await supabase
+    .from('gastos' as any)
+    .select(`id, producto, fecha, total_cobro, funcionarios:id_responsable (nombre)`)
+    .eq('id_cliente', empresaId)
+    .gte('fecha', inicioMes)
+    .lte('fecha', finMes)
+    .order('fecha', { ascending: false });
+
+  // Obtener solicitudes mensuales
+  const { data: solicitudes } = await supabase
+    .from('solicitudes')
+    .select('*')
+    .eq('id_cliente', empresaId)
+    .ilike('modalidad_pago', 'mensualidad');
+
+  return {
+    trabajosPorHora: trabajosPorHora || [],
+    gastos: gastos || [],
+    solicitudes: solicitudes || [],
+    empresa: empresaData ? {
+      nombre: (empresaData as any).nombre,
+      tarifa_hora: (empresaData as any).tarifa_hora || 90000,
+      iva_perc: (empresaData as any).iva_perc || 0.13
+    } : null
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,24 +82,55 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Usar fecha simulada si se proporciona
+    // Usar fecha simulada si se proporciona, sino usar fecha global o fecha real Costa Rica
     const { searchParams } = new URL(request.url)
     const simulatedDate = searchParams.get('simulatedDate')
-    const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+    console.log('📅 [datos-pago] simulatedDate param:', simulatedDate)
+    const now = await getCurrentDateCR(simulatedDate)
+    console.log('📅 [datos-pago] getCurrentDateCR retornó:', now.toISOString())
     
     // IMPORTANTE: Los clientes ven las horas/gastos del MES ANTERIOR
     // Si hoy es diciembre, se muestran datos de NOVIEMBRE
+    // Usa zona horaria de Costa Rica (UTC-6)
     
-    // Calcular el primer día del mes anterior (método seguro)
-    const year = now.getFullYear()
-    const month = now.getMonth() // 0-11
+    const { year, month, mesPago } = getMesAnterior(now)
+    const { inicioMes: inicioMesStr, finMes: finMesStr } = getRangoMes(year, month)
     
-    const inicioMes = new Date(year, month - 1, 1, 0, 0, 0, 0)
-    const inicioMesStr = inicioMes.toISOString().split('T')[0]
+    console.log('📅 [datos-pago] Fecha actual:', now.toISOString().split('T')[0], '| Mes anterior:', mesPago, '| Rango:', inicioMesStr, 'a', finMesStr)
+
+    // Verificar si es empresa principal de un grupo
+    let esGrupoPrincipal = false;
+    let empresasDelGrupo: { id: string; nombre: string; iva_perc: number }[] = [];
     
-    // Calcular el último día del mes anterior
-    const finMes = new Date(year, month, 0, 23, 59, 59, 999) // día 0 = último día del mes anterior
-    const finMesStr = finMes.toISOString().split('T')[0]
+    if (tipoCliente === 'empresa') {
+      const { data: grupo } = await supabase
+        .from('grupos_empresas' as any)
+        .select(`
+          id,
+          nombre,
+          miembros:grupos_empresas_miembros(empresa_id)
+        `)
+        .eq('empresa_principal_id', userId)
+        .maybeSingle();
+
+      if (grupo) {
+        esGrupoPrincipal = true;
+        // Obtener info de las empresas miembros
+        const empresaIds = ((grupo as any).miembros || []).map((m: any) => m.empresa_id);
+        if (empresaIds.length > 0) {
+          const { data: empresasInfo } = await supabase
+            .from('empresas')
+            .select('id, nombre, iva_perc')
+            .in('id', empresaIds);
+          empresasDelGrupo = (empresasInfo || []).map((e: any) => ({
+            id: e.id,
+            nombre: e.nombre,
+            iva_perc: e.iva_perc || 0.13
+          }));
+        }
+        console.log('🏢 [datos-pago] Es empresa principal de grupo con', empresasDelGrupo.length, 'empresas asociadas');
+      }
+    }
 
     // Obtener trabajos por hora del mes anterior
     let trabajosPorHora: any[] = [];
@@ -77,14 +174,16 @@ export async function GET(request: NextRequest) {
     let tarifaHora = 90000; // Tarifa estándar por defecto
     let ivaPerc = 0.13; // IVA por defecto
     let darVistoBueno = false; // Requiere dar visto bueno
+    let nombreCliente = ''; // Nombre del cliente para mostrar
     if (tipoCliente === 'empresa') {
       const { data: empresa, error: empresaError } = await supabase
         .from('empresas')
-        .select('tarifa_hora, iva_perc, "darVistoBueno"')
+        .select('nombre, tarifa_hora, iva_perc, "darVistoBueno"')
         .eq('id', userId)
         .maybeSingle();
       
       if (!empresaError && empresa) {
+        nombreCliente = (empresa as any).nombre || '';
         tarifaHora = (empresa as any).tarifa_hora || 90000;
         ivaPerc = (empresa as any).iva_perc || 0.13;
         darVistoBueno = (empresa as any).darVistoBueno || false;
@@ -93,11 +192,12 @@ export async function GET(request: NextRequest) {
       // Para usuarios, obtener darVistoBueno
       const { data: usuario, error: usuarioError } = await supabase
         .from('usuarios')
-        .select('"darVistoBueno"')
+        .select('nombre, "darVistoBueno"')
         .eq('id', userId)
         .maybeSingle();
       
       if (!usuarioError && usuario) {
+        nombreCliente = (usuario as any).nombre || '';
         darVistoBueno = (usuario as any).darVistoBueno || false;
       }
     }
@@ -218,10 +318,117 @@ export async function GET(request: NextRequest) {
     // Total a pagar: subtotal + IVA
     const totalAPagar = subtotal + montoIVA;
 
+    // ========== DATOS DE EMPRESAS ASOCIADAS (GRUPOS) ==========
+    interface DatosEmpresaGrupo {
+      empresaId: string;
+      empresaNombre: string;
+      ivaPerc: number;
+      trabajosPorHora: any[];
+      gastos: any[];
+      solicitudes: any[];
+      totalMinutos: number;
+      totalHoras: number;
+      tarifaHora: number;
+      costoServicios: number;
+      totalGastos: number;
+      totalMensualidades: number;
+      totalIVAMensualidades: number;
+      subtotal: number;
+      ivaServicios: number;
+      montoIVA: number;
+      total: number;
+    }
+    
+    let datosEmpresasGrupo: DatosEmpresaGrupo[] = [];
+    let totalGrupoSubtotal = 0;
+    let totalGrupoIVA = 0;
+    let totalGrupoAPagar = 0;
+    
+    if (esGrupoPrincipal && empresasDelGrupo.length > 0) {
+      console.log('🏢 [datos-pago] Cargando datos de empresas asociadas...');
+      
+      for (const empresaAsociada of empresasDelGrupo) {
+        const datosEmp = await getDatosEmpresa(empresaAsociada.id, inicioMesStr, finMesStr);
+        
+        // Calcular totales para esta empresa
+        let empTotalMinutos = 0;
+        datosEmp.trabajosPorHora.forEach((t: any) => {
+          if (t.duracion) {
+            const duracion = t.duracion;
+            let minutos = 0;
+            if (duracion.includes(':')) {
+              const [h, m] = duracion.split(':').map(Number);
+              minutos = (h * 60) + m;
+            } else {
+              const horas = parseFloat(duracion);
+              minutos = Math.round(horas * 60);
+            }
+            empTotalMinutos += minutos;
+          }
+        });
+        
+        const empTarifaHora = datosEmp.empresa?.tarifa_hora || 90000;
+        const empIvaPerc = empresaAsociada.iva_perc;
+        const empTotalHoras = empTotalMinutos / 60;
+        const empCostoServicios = empTotalHoras * empTarifaHora;
+        const empTotalGastos = datosEmp.gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+        
+        // Calcular mensualidades de la empresa asociada
+        let empTotalMensualidades = 0;
+        let empTotalIVAMensualidades = 0;
+        datosEmp.solicitudes.forEach((s: any) => {
+          const montoCuota = s.monto_por_cuota || 0;
+          if (s.se_cobra_iva) {
+            const subtotalCuota = montoCuota / (1 + empIvaPerc);
+            empTotalMensualidades += subtotalCuota;
+            empTotalIVAMensualidades += montoCuota - subtotalCuota;
+          } else {
+            empTotalMensualidades += montoCuota;
+          }
+        });
+        
+        const empSubtotal = empCostoServicios + empTotalGastos + empTotalMensualidades;
+        const empIvaServicios = empCostoServicios * empIvaPerc;
+        const empMontoIVA = empIvaServicios + empTotalIVAMensualidades;
+        const empTotal = empSubtotal + empMontoIVA;
+        
+        datosEmpresasGrupo.push({
+          empresaId: empresaAsociada.id,
+          empresaNombre: empresaAsociada.nombre,
+          ivaPerc: empIvaPerc,
+          trabajosPorHora: datosEmp.trabajosPorHora,
+          gastos: datosEmp.gastos,
+          solicitudes: datosEmp.solicitudes,
+          totalMinutos: empTotalMinutos,
+          totalHoras: empTotalHoras,
+          tarifaHora: empTarifaHora,
+          costoServicios: empCostoServicios,
+          totalGastos: empTotalGastos,
+          totalMensualidades: empTotalMensualidades,
+          totalIVAMensualidades: empTotalIVAMensualidades,
+          subtotal: empSubtotal,
+          ivaServicios: empIvaServicios,
+          montoIVA: empMontoIVA,
+          total: empTotal
+        });
+        
+        totalGrupoSubtotal += empSubtotal;
+        totalGrupoIVA += empMontoIVA;
+        totalGrupoAPagar += empTotal;
+        
+        console.log(`  📊 ${empresaAsociada.nombre}: Subtotal=${empSubtotal}, IVA=${empMontoIVA}, Total=${empTotal}`);
+      }
+    }
+    
+    // Gran total incluyendo empresa principal y asociadas
+    const granTotalSubtotal = subtotal + totalGrupoSubtotal;
+    const granTotalIVA = montoIVA + totalGrupoIVA;
+    const granTotalAPagar = totalAPagar + totalGrupoAPagar;
+
     // Debug logs
     console.log('📊 CÁLCULO DE PAGO (MES ANTERIOR):');
-    console.log('  - Fecha actual/simulada:', now.toISOString().split('T')[0]);
-    console.log('  - Mes a mostrar:', inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' }));
+    console.log('  - Fecha actual CR:', now.toISOString().split('T')[0]);
+    console.log('  - Mes a mostrar:', `${year}-${String(month).padStart(2, '0')}`);
     console.log('  - Rango de fechas:', `${inicioMesStr} a ${finMesStr}`);
     console.log('  - Costo servicios:', costoServiciosTarifa);
     console.log('  - Total gastos (sin IVA):', totalGastos);
@@ -231,10 +438,15 @@ export async function GET(request: NextRequest) {
     console.log('  - IVA mensualidades:', totalIVAMensualidades);
     console.log('  - Monto IVA total:', montoIVA);
     console.log('  - Total a pagar:', totalAPagar);
+    if (esGrupoPrincipal) {
+      console.log('  🏢 GRUPO - Total asociadas:', totalGrupoAPagar);
+      console.log('  🏢 GRUPO - Gran total:', granTotalAPagar);
+    }
 
     return NextResponse.json({
       success: true,
       tipoCliente,
+      nombreCliente,
       darVistoBueno,
       trabajosPorHora: Object.values(trabajosPorCaso),
       solicitudesMensuales: solicitudes || [],
@@ -253,10 +465,18 @@ export async function GET(request: NextRequest) {
       ivaPerc,
       montoIVA,
       totalAPagar,
-      mesActual: inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' }),
-      mesActualISO: `${inicioMes.getFullYear()}-${String(inicioMes.getMonth() + 1).padStart(2, '0')}`,
-      // Información adicional para debugging
-      mesActualText: `Datos del mes anterior: ${inicioMes.toLocaleString('es-ES', { month: 'long', year: 'numeric' })}`
+      mesActual: new Date(year, month - 1, 1).toLocaleString('es-ES', { month: 'long', year: 'numeric' }),
+      mesActualISO: `${year}-${String(month).padStart(2, '0')}`,
+      mesActualText: `Datos del mes anterior: ${new Date(year, month - 1, 1).toLocaleString('es-ES', { month: 'long', year: 'numeric' })}`,
+      // Datos del grupo
+      esGrupoPrincipal,
+      empresasDelGrupo: esGrupoPrincipal ? datosEmpresasGrupo : [],
+      totalGrupoSubtotal: esGrupoPrincipal ? totalGrupoSubtotal : 0,
+      totalGrupoIVA: esGrupoPrincipal ? totalGrupoIVA : 0,
+      totalGrupoAPagar: esGrupoPrincipal ? totalGrupoAPagar : 0,
+      granTotalSubtotal: esGrupoPrincipal ? granTotalSubtotal : subtotal,
+      granTotalIVA: esGrupoPrincipal ? granTotalIVA : montoIVA,
+      granTotalAPagar: esGrupoPrincipal ? granTotalAPagar : totalAPagar
     });
 
   } catch (error: any) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getCurrentDateCR, toDateString } from '@/lib/dateUtils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -192,11 +193,11 @@ export async function POST(request: Request) {
     // Obtener mes de la factura del formulario (mes de las horas trabajadas)
     const mesFacturaFromForm = formData.get('mesFactura') as string | null
     
-    // Si no se proporciona, calcular automáticamente (mes actual, para compatibilidad)
-    const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+    // Si no se proporciona, calcular automáticamente usando fecha Costa Rica
+    const now = await getCurrentDateCR(simulatedDate)
     const mesFactura = mesFacturaFromForm || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
     
-    console.log('📅 Mes de factura:', mesFactura, '(proporcionado:', mesFacturaFromForm, ')')
+    console.log('📅 Mes de factura:', mesFactura, '(proporcionado:', mesFacturaFromForm, ') | Fecha CR:', toDateString(now))
     
     // Verificar si ya existe una factura para este mes
     const folderPath = `${clientType}/${clientId}`
@@ -303,15 +304,17 @@ export async function GET(request: Request) {
     if (getAllMonth) {
       const invoices: any[] = []
       
-      // Usar fecha simulada si se proporciona
+      // Usar fecha simulada si se proporciona, o fecha global, o fecha real Costa Rica
       const simulatedDate = searchParams.get('simulatedDate')
-      const now = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+      const now = await getCurrentDateCR(simulatedDate)
       
       // Calcular mes anterior (mes de las horas trabajadas / mes de facturación)
       const mesAnterior = new Date(now)
       mesAnterior.setMonth(mesAnterior.getMonth() - 1)
       const currentMonth = mesAnterior.getMonth()
       const currentYear = mesAnterior.getFullYear()
+      
+      console.log('📅 [GET invoices] Fecha CR:', toDateString(now), '| Buscando facturas de:', `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`)
       
       // Función auxiliar para procesar archivos de una carpeta
       const processFolder = async (type: 'cliente' | 'empresa', folderId: string) => {

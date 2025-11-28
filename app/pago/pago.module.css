@@ -540,3 +540,88 @@
     transform: rotate(360deg);
   }
 }
+
+/* Estilos para Empresas del Grupo */
+.sectionSubtitle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+  margin: -0.5rem 0 1.5rem 0;
+  font-weight: 400;
+}
+
+.empresaGrupoCard {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: clamp(1.25rem, 2.5vw, 1.75rem);
+  margin-bottom: 1.25rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border-left: 4px solid #3b82f6;
+}
+
+.empresaGrupoHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(25, 48, 75, 0.1);
+}
+
+.empresaGrupoNombre {
+  color: #19304B;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-weight: 700;
+  margin: 0;
+}
+
+.empresaGrupoIva {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  padding: 0.35rem 0.75rem;
+  border-radius: 20px;
+  font-size: clamp(0.75rem, 1.25vw, 0.875rem);
+  font-weight: 600;
+}
+
+.empresaGrupoDetalles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.granTotalGrupo {
+  background: linear-gradient(135deg, #19304B 0%, #1e3a5f 100%);
+  border-radius: 16px;
+  padding: clamp(1.5rem, 3vw, 2rem);
+  margin-top: 1.5rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.granTotalGrupo .divider {
+  background: rgba(250, 208, 44, 0.3);
+  margin-bottom: 1rem;
+}
+
+.granTotal {
+  background: linear-gradient(135deg, #FAD02C 0%, #f9c74f 100%);
+  margin: 0 -1rem;
+  padding: 1.25rem 1.5rem !important;
+  border-radius: 12px;
+}
+
+.granTotal span,
+.granTotal strong {
+  color: #19304B !important;
+}
+
+.granTotal strong {
+  font-size: clamp(1.5rem, 3vw, 2rem) !important;
+}
+
+.granTotalDetalle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: clamp(0.75rem, 1.25vw, 0.875rem);
+  text-align: center;
+  margin: 1rem 0 0 0;
+  font-style: italic;
+}

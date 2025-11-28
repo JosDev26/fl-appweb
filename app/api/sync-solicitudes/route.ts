@@ -1,10 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
 
-export async function POST(request: NextRequest) {
+export async function GET() {
+  return syncSolicitudes()
+}
+
+export async function POST() {
+  return syncSolicitudes()
+}
+
+async function syncSolicitudes() {
   try {
-    console.log('� Iniciando sincronización de Solicitudes...')
+    console.log('📋 Iniciando sincronización de Solicitudes...')
     
     // Leer TODAS las columnas manualmente (A hasta S)
     const allColumnsData = await GoogleSheetsService.getSheetData('Solicitudes', 'A:S')
@@ -208,21 +216,14 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Solicitudes:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       { 
-        error: 'Error al sincronizar Solicitudes',
-        details: error instanceof Error ? error.message : String(error)
+        success: false,
+        message: `Error al sincronizar Solicitudes: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     )
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    endpoint: '/api/sync-solicitudes',
-    method: 'POST',
-    description: 'Sincroniza la hoja "Solicitudes" de Google Sheets con la tabla solicitudes en Supabase',
-    usage: 'POST /api/sync-solicitudes'
-  })
 }

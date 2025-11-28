@@ -117,9 +117,9 @@ export class GoogleSheetsService {
     return this.readSheet('Empresas');
   }
 
-  // 📖 Leer datos de la hoja Materias
+  // 📖 Leer datos de la hoja Materia
   static async readMaterias(): Promise<any[]> {
-    return this.readSheet('Materias');
+    return this.readSheet('Materia');
   }
 
   // 📝 Escribir datos a la hoja Clientes PRESERVANDO columnas G e I
@@ -352,6 +352,52 @@ export class GoogleSheetsService {
     } catch (error) {
       console.error('Error obteniendo headers de Clientes:', error);
       return [];
+    }
+  }
+
+  // ✍️ Método para escribir una fila en una hoja
+  static async appendRow(sheetName: string, values: any[]): Promise<boolean> {
+    try {
+      console.log(`✍️ Escribiendo en hoja ${sheetName}:`, values);
+      
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `'${sheetName}'!A:Z`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: {
+          values: [values]
+        }
+      });
+      
+      console.log(`✅ Fila agregada correctamente a ${sheetName}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error escribiendo en ${sheetName}:`, error);
+      throw error;
+    }
+  }
+
+  // ✍️ Método para escribir múltiples filas
+  static async appendRows(sheetName: string, rows: any[][]): Promise<boolean> {
+    try {
+      console.log(`✍️ Escribiendo ${rows.length} filas en hoja ${sheetName}`);
+      
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `'${sheetName}'!A:Z`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: {
+          values: rows
+        }
+      });
+      
+      console.log(`✅ ${rows.length} filas agregadas correctamente a ${sheetName}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Error escribiendo en ${sheetName}:`, error);
+      throw error;
     }
   }
 }

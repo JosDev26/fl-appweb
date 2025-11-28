@@ -1,9 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
 import { getTableMapping } from '@/lib/sync-config'
 
-export async function POST(request: NextRequest) {
+export async function GET() {
+  return syncContactos()
+}
+
+export async function POST() {
+  return syncContactos()
+}
+
+async function syncContactos() {
   try {
     console.log('👥 Iniciando sincronización de Contactos...')
     
@@ -98,21 +106,14 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Contactos:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       { 
-        error: 'Error al sincronizar Contactos',
-        details: error instanceof Error ? error.message : String(error)
+        success: false,
+        message: `Error al sincronizar Contactos: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     )
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    endpoint: '/api/sync-contactos',
-    method: 'POST',
-    description: 'Sincroniza la hoja "Contacto" de Google Sheets con la tabla contactos en Supabase',
-    usage: 'POST /api/sync-contactos'
-  })
 }

@@ -69,7 +69,22 @@ interface ClientVistoBueno {
   tipo: 'cliente' | 'empresa'
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'fecha' | 'sync' | 'config'
+interface GrupoEmpresa {
+  id: string
+  nombre: string
+  empresa_principal_id: string
+  empresa_principal?: { id: string; nombre: string }
+  empresas_asociadas: { id: string; nombre: string; iva_perc?: number }[]
+  created_at: string
+}
+
+interface EmpresaDisponible {
+  id: string
+  nombre: string
+  iva_perc: number
+}
+
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos'
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -114,19 +129,51 @@ export default function DevPage() {
   const [generatedCode, setGeneratedCode] = useState<string | null>(null)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   
-  // Estados para simulador de fecha
+  // Estados para simulador de fecha (GLOBAL - afecta a todos los usuarios)
   const [simulatedDate, setSimulatedDate] = useState<string>('')
   const [isDateSimulated, setIsDateSimulated] = useState(false)
   const [currentRealDate, setCurrentRealDate] = useState<string>('')
+  const [loadingDateSimulator, setLoadingDateSimulator] = useState(false)
   
   // Estados para plazos de facturas
   const [invoiceDeadlines, setInvoiceDeadlines] = useState<any[]>([])
+  
+  // Estados para ingresos
+  const [ingresos, setIngresos] = useState<any[]>([])
+  const [ingresosResumen, setIngresosResumen] = useState<any>(null)
+  const [loadingIngresos, setLoadingIngresos] = useState(false)
+  const [ingresosYear, setIngresosYear] = useState<string>(new Date().getFullYear().toString())
+  const [ingresosMes, setIngresosMes] = useState<string>('')
 
-  // Montaje del componente
+  // Estados para grupos de empresas
+  const [grupos, setGrupos] = useState<GrupoEmpresa[]>([])
+  const [empresasDisponibles, setEmpresasDisponibles] = useState<EmpresaDisponible[]>([])
+  const [loadingGrupos, setLoadingGrupos] = useState(false)
+  const [nuevoGrupoNombre, setNuevoGrupoNombre] = useState('')
+  const [nuevoGrupoEmpresaPrincipal, setNuevoGrupoEmpresaPrincipal] = useState('')
+  const [nuevoGrupoEmpresas, setNuevoGrupoEmpresas] = useState<string[]>([])
+  const [creandoGrupo, setCreandoGrupo] = useState(false)
+
+  // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
     setIsMounted(true)
     const now = new Date()
     setCurrentRealDate(now.toISOString().split('T')[0])
+    
+    // Cargar fecha simulada global desde Supabase
+    const loadGlobalSimulatedDate = async () => {
+      try {
+        const res = await fetch('/api/simulated-date')
+        const data = await res.json()
+        if (data.simulated && data.date) {
+          setSimulatedDate(data.date)
+          setIsDateSimulated(true)
+        }
+      } catch (error) {
+        console.error('Error cargando fecha simulada:', error)
+      }
+    }
+    loadGlobalSimulatedDate()
   }, [])
 
   // ===== FUNCIONES DE CARGA POR SECCIÓN =====
@@ -251,13 +298,8 @@ export default function DevPage() {
   const loadMonthInvoices = async () => {
     setLoadingInvoices(true)
     try {
-      // Usar el endpoint original que carga todas las facturas del mes actual
-      const simulatedDateStr = typeof window !== 'undefined' ? localStorage.getItem('simulatedDate') : null
-      const url = simulatedDateStr 
-        ? `/api/upload-invoice?getAllMonth=true&simulatedDate=${simulatedDateStr}`
-        : '/api/upload-invoice?getAllMonth=true'
-      
-      const response = await fetch(url)
+      // El servidor usa la fecha simulada global automáticamente
+      const response = await fetch('/api/upload-invoice?getAllMonth=true')
       const data = await response.json()
       
       console.log('Respuesta facturas:', data)
@@ -511,6 +553,45 @@ export default function DevPage() {
     return { label: 'Activo', className: styles.badgePrimary }
   }
 
+  // INGRESOS
+  const loadIngresos = async () => {
+    setLoadingIngresos(true)
+    try {
+      // Cargar resumen mensual
+      const resumenRes = await fetch(`/api/ingresos?resumen=true&year=${ingresosYear}`)
+      const resumenData = await resumenRes.json()
+      
+      if (resumenData.success) {
+        setIngresosResumen(resumenData)
+      }
+      
+      // Cargar detalle del mes seleccionado o todos
+      let url = `/api/ingresos?year=${ingresosYear}`
+      if (ingresosMes) {
+        url = `/api/ingresos?mes=${ingresosYear}-${ingresosMes}`
+      }
+      
+      const detalleRes = await fetch(url)
+      const detalleData = await detalleRes.json()
+      
+      if (detalleData.success) {
+        setIngresos(detalleData.data || [])
+      }
+    } catch (error) {
+      console.error('Error cargando ingresos:', error)
+    } finally {
+      setLoadingIngresos(false)
+    }
+  }
+
+  // Formatear moneda
+  const formatCurrency = (amount: number, moneda: string = 'colones') => {
+    if (moneda?.toLowerCase() === 'dolares') {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
+    }
+    return new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC' }).format(amount)
+  }
+
   // SINCRONIZACIÓN
   const handleSync = async (endpoint: string, label: string) => {
     setLoading(true)
@@ -539,7 +620,8 @@ export default function DevPage() {
       { url: '/api/sync-solicitudes', label: 'Solicitudes' },
       { url: '/api/sync-actualizaciones', label: 'Actualizaciones' },
       { url: '/api/sync-historial-reportes', label: 'Historial Reportes' },
-      { url: '/api/sync-materias', label: 'Materias' }
+      { url: '/api/sync-materias', label: 'Materias' },
+      { url: '/api/sync-clicks-etapa', label: 'Clicks Etapa' }
     ]
     const syncResults: SyncResult[] = []
     for (const endpoint of endpoints) {
@@ -555,24 +637,51 @@ export default function DevPage() {
     setLoading(false)
   }
 
-  // SIMULADOR DE FECHA
+  // SIMULADOR DE FECHA (GLOBAL - afecta a todos los usuarios)
   const setSimulatedDateHandler = async () => {
     if (!simulatedDate) {
       alert('Selecciona una fecha')
       return
     }
-    // TODO: Implementar API /api/admin/simulate-date
-    // Por ahora solo simula localmente
-    setIsDateSimulated(true)
-    alert(`⚠️ Simulación de fecha solo local\nFecha simulada: ${simulatedDate}\n\nNOTA: Necesitas implementar /api/admin/simulate-date para que funcione en el servidor`)
+    setLoadingDateSimulator(true)
+    try {
+      const res = await fetch('/api/simulated-date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: simulatedDate })
+      })
+      const data = await res.json()
+      if (data.success) {
+        setIsDateSimulated(true)
+        alert(`✅ Fecha simulada GLOBAL activada: ${simulatedDate}\n\n⚠️ TODOS los usuarios verán esta fecha.\n\n📋 Para desactivar antes de producción:\n- Usar "Restaurar Fecha Real" aquí\n- O eliminar registro en Supabase: DELETE FROM system_config WHERE key = 'simulated_date'`)
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      alert('Error activando fecha simulada')
+    } finally {
+      setLoadingDateSimulator(false)
+    }
   }
 
   const resetSimulatedDate = async () => {
-    // TODO: Implementar API /api/admin/simulate-date DELETE
-    // Por ahora solo resetea localmente
-    setIsDateSimulated(false)
-    setSimulatedDate('')
-    alert('Fecha real restaurada (solo local)')
+    if (!confirm('¿Desactivar la fecha simulada? Todos los usuarios verán la fecha real de Costa Rica.')) return
+    setLoadingDateSimulator(true)
+    try {
+      const res = await fetch('/api/simulated-date', { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        setIsDateSimulated(false)
+        setSimulatedDate('')
+        alert('✅ Fecha real restaurada\n\nTodos los usuarios ahora ven la fecha real de Costa Rica (UTC-6)')
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      alert('Error restaurando fecha')
+    } finally {
+      setLoadingDateSimulator(false)
+    }
   }
 
   // CONFIGURACIÓN
@@ -587,6 +696,158 @@ export default function DevPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // GRUPOS DE EMPRESAS
+  const loadGrupos = async () => {
+    setLoadingGrupos(true)
+    try {
+      // Cargar grupos existentes
+      const resGrupos = await fetch('/api/grupos-empresas')
+      const dataGrupos = await resGrupos.json()
+      console.log('Grupos response:', dataGrupos)
+      if (dataGrupos.success) {
+        setGrupos(dataGrupos.grupos || [])
+      }
+
+      // Obtener empresas de Supabase directamente
+      const empresasRes = await fetch('/api/client?tipo=empresa&all=true')
+      const empresasData = await empresasRes.json()
+      console.log('Empresas response completa:', JSON.stringify(empresasData))
+      
+      // La respuesta puede tener empresas directamente o dentro de success
+      const empresasList = empresasData.empresas || []
+      console.log('Empresas encontradas:', empresasList.length)
+      
+      if (empresasList.length > 0) {
+        setEmpresasDisponibles(empresasList.map((e: any) => ({
+          id: e.id,
+          nombre: e.nombre,
+          iva_perc: e.iva_perc || 0.13
+        })))
+      } else {
+        console.warn('No hay empresas en la base de datos')
+        setEmpresasDisponibles([])
+      }
+    } catch (error) {
+      console.error('Error cargando grupos:', error)
+    } finally {
+      setLoadingGrupos(false)
+    }
+  }
+
+  const handleCrearGrupo = async () => {
+    if (!nuevoGrupoNombre.trim() || !nuevoGrupoEmpresaPrincipal) {
+      alert('Nombre del grupo y empresa principal son requeridos')
+      return
+    }
+
+    setCreandoGrupo(true)
+    try {
+      const res = await fetch('/api/grupos-empresas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: nuevoGrupoNombre.trim(),
+          empresa_principal_id: nuevoGrupoEmpresaPrincipal,
+          empresas_asociadas: nuevoGrupoEmpresas
+        })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        alert('✅ Grupo creado exitosamente')
+        setNuevoGrupoNombre('')
+        setNuevoGrupoEmpresaPrincipal('')
+        setNuevoGrupoEmpresas([])
+        await loadGrupos()
+      } else {
+        alert('Error: ' + (data.error || 'Error al crear grupo'))
+      }
+    } catch (error) {
+      console.error('Error creando grupo:', error)
+      alert('Error al crear grupo')
+    } finally {
+      setCreandoGrupo(false)
+    }
+  }
+
+  const handleAgregarEmpresaGrupo = async (grupoId: string, empresaId: string) => {
+    try {
+      const res = await fetch('/api/grupos-empresas', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grupo_id: grupoId,
+          action: 'add',
+          empresa_id: empresaId
+        })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        await loadGrupos()
+      } else {
+        alert('Error: ' + (data.error || 'Error al agregar empresa'))
+      }
+    } catch (error) {
+      alert('Error al agregar empresa al grupo')
+    }
+  }
+
+  const handleQuitarEmpresaGrupo = async (grupoId: string, empresaId: string) => {
+    if (!confirm('¿Quitar esta empresa del grupo?')) return
+    
+    try {
+      const res = await fetch('/api/grupos-empresas', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grupo_id: grupoId,
+          action: 'remove',
+          empresa_id: empresaId
+        })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        await loadGrupos()
+      } else {
+        alert('Error: ' + (data.error || 'Error al quitar empresa'))
+      }
+    } catch (error) {
+      alert('Error al quitar empresa del grupo')
+    }
+  }
+
+  const handleEliminarGrupo = async (grupoId: string) => {
+    if (!confirm('¿Eliminar este grupo? Las empresas asociadas quedarán libres.')) return
+    
+    try {
+      const res = await fetch(`/api/grupos-empresas?id=${grupoId}`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        alert('Grupo eliminado')
+        await loadGrupos()
+      } else {
+        alert('Error: ' + (data.error || 'Error al eliminar'))
+      }
+    } catch (error) {
+      alert('Error al eliminar grupo')
+    }
+  }
+
+  // Obtener empresas que NO están en ningún grupo
+  const getEmpresasLibres = () => {
+    const empresasEnGrupos = new Set<string>()
+    grupos.forEach(g => {
+      empresasEnGrupos.add(g.empresa_principal_id)
+      g.empresas_asociadas?.forEach(e => empresasEnGrupos.add(e.id))
+    })
+    return empresasDisponibles.filter(e => !empresasEnGrupos.has(e.id))
   }
 
   // ===== RENDERIZADO =====
@@ -635,6 +896,20 @@ export default function DevPage() {
           >
             <span className={styles.navIcon}>🎟️</span>
             <span className={styles.navLabel}>Códigos Invitación</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'ingresos' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('ingresos'); loadIngresos() }}
+          >
+            <span className={styles.navIcon}>💵</span>
+            <span className={styles.navLabel}>Ingresos</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'grupos' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('grupos'); loadGrupos() }}
+          >
+            <span className={styles.navIcon}>🏢</span>
+            <span className={styles.navLabel}>Grupos Empresas</span>
           </button>
           <button 
             className={`${styles.navItem} ${activeSection === 'fecha' ? styles.active : ''}`}
@@ -1048,38 +1323,239 @@ export default function DevPage() {
           </div>
         )}
 
+        {/* INGRESOS */}
+        {activeSection === 'ingresos' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Registro de Ingresos</h2>
+                <p className={styles.sectionDescription}>Resumen de ingresos por comprobantes aprobados</p>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <select 
+                  className={styles.input}
+                  value={ingresosYear}
+                  onChange={(e) => { setIngresosYear(e.target.value); setTimeout(loadIngresos, 100) }}
+                  style={{ width: 'auto' }}
+                >
+                  {[2024, 2025, 2026].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <select 
+                  className={styles.input}
+                  value={ingresosMes}
+                  onChange={(e) => { setIngresosMes(e.target.value); setTimeout(loadIngresos, 100) }}
+                  style={{ width: 'auto' }}
+                >
+                  <option value="">Todos los meses</option>
+                  <option value="01">Enero</option>
+                  <option value="02">Febrero</option>
+                  <option value="03">Marzo</option>
+                  <option value="04">Abril</option>
+                  <option value="05">Mayo</option>
+                  <option value="06">Junio</option>
+                  <option value="07">Julio</option>
+                  <option value="08">Agosto</option>
+                  <option value="09">Septiembre</option>
+                  <option value="10">Octubre</option>
+                  <option value="11">Noviembre</option>
+                  <option value="12">Diciembre</option>
+                </select>
+                <button 
+                  className={styles.button}
+                  onClick={loadIngresos}
+                  disabled={loadingIngresos}
+                >
+                  🔄 Actualizar
+                </button>
+              </div>
+            </div>
+
+            {loadingIngresos ? (
+              <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando ingresos...</p></div>
+            ) : (
+              <>
+                {/* Resumen Anual */}
+                {ingresosResumen && (
+                  <div style={{ marginBottom: '2rem' }}>
+                    <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem', fontWeight: 600 }}>
+                      Totales Anuales {ingresosYear}
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                      <div className={styles.infoBox} style={{ borderLeft: '4px solid #4caf50' }}>
+                        <h4 style={{ margin: 0, color: '#4caf50' }}>💵 Colones</h4>
+                        <p style={{ margin: '0.5rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {formatCurrency(ingresosResumen.totalesAnuales?.colones?.total || 0, 'colones')}
+                        </p>
+                        <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                          <p>Honorarios: {formatCurrency(ingresosResumen.totalesAnuales?.colones?.honorarios || 0, 'colones')}</p>
+                          <p>Servicios: {formatCurrency(ingresosResumen.totalesAnuales?.colones?.servicios || 0, 'colones')}</p>
+                          <p>Gastos: {formatCurrency(ingresosResumen.totalesAnuales?.colones?.gastos || 0, 'colones')}</p>
+                          <p><strong>{ingresosResumen.totalesAnuales?.colones?.cantidad || 0} comprobantes</strong></p>
+                        </div>
+                      </div>
+                      <div className={styles.infoBox} style={{ borderLeft: '4px solid #2196f3' }}>
+                        <h4 style={{ margin: 0, color: '#2196f3' }}>💲 Dólares</h4>
+                        <p style={{ margin: '0.5rem 0', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                          {formatCurrency(ingresosResumen.totalesAnuales?.dolares?.total || 0, 'dolares')}
+                        </p>
+                        <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                          <p>Honorarios: {formatCurrency(ingresosResumen.totalesAnuales?.dolares?.honorarios || 0, 'dolares')}</p>
+                          <p>Servicios: {formatCurrency(ingresosResumen.totalesAnuales?.dolares?.servicios || 0, 'dolares')}</p>
+                          <p>Gastos: {formatCurrency(ingresosResumen.totalesAnuales?.dolares?.gastos || 0, 'dolares')}</p>
+                          <p><strong>{ingresosResumen.totalesAnuales?.dolares?.cantidad || 0} comprobantes</strong></p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Resumen Mensual */}
+                {ingresosResumen?.resumenMensual && !ingresosMes && (
+                  <div style={{ marginBottom: '2rem' }}>
+                    <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem', fontWeight: 600 }}>
+                      Resumen por Mes
+                    </h3>
+                    <div className={styles.table}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Mes</th>
+                            <th>Colones</th>
+                            <th>Dólares</th>
+                            <th>Comprobantes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ingresosResumen.resumenMensual.map((mes: any) => (
+                            <tr key={mes.mesNumero} style={{ 
+                              opacity: mes.colones.cantidad + mes.dolares.cantidad === 0 ? 0.5 : 1 
+                            }}>
+                              <td><strong>{mes.mes}</strong></td>
+                              <td>{formatCurrency(mes.colones.total, 'colones')}</td>
+                              <td>{formatCurrency(mes.dolares.total, 'dolares')}</td>
+                              <td>{mes.colones.cantidad + mes.dolares.cantidad}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Detalle de Ingresos */}
+                <div>
+                  <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem', fontWeight: 600 }}>
+                    Detalle de Ingresos {ingresosMes ? `(${['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][parseInt(ingresosMes)]})` : ''}
+                  </h3>
+                  {ingresos.length === 0 ? (
+                    <div className={styles.emptyState}>No hay ingresos registrados para este período</div>
+                  ) : (
+                    <div className={styles.table}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>ID</th>
+                            <th>Fecha Pago</th>
+                            <th>Fecha Aprobación</th>
+                            <th>Cliente</th>
+                            <th>Modalidad</th>
+                            <th>Moneda</th>
+                            <th>Honorarios</th>
+                            <th>Gastos</th>
+                            <th>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ingresos.map((ingreso: any) => (
+                            <tr key={ingreso.id}>
+                              <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{ingreso.id}</td>
+                              <td>{ingreso.fecha_pago || '-'}</td>
+                              <td>{ingreso.fecha_aprobacion || '-'}</td>
+                              <td>{ingreso.id_cliente}</td>
+                              <td>{ingreso.modalidad_pago || '-'}</td>
+                              <td>
+                                <span className={ingreso.moneda?.toLowerCase() === 'dolares' ? styles.badgePrimary : styles.badgeSuccess}>
+                                  {ingreso.moneda || 'Colones'}
+                                </span>
+                              </td>
+                              <td>{formatCurrency(ingreso.honorarios || 0, ingreso.moneda)}</td>
+                              <td>{formatCurrency(ingreso.reembolso_gastos || 0, ingreso.moneda)}</td>
+                              <td><strong>{formatCurrency(ingreso.total_ingreso || 0, ingreso.moneda)}</strong></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* SIMULADOR DE FECHA */}
         {activeSection === 'fecha' && (
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
-              <h2 className={styles.sectionTitle}>Simulador de Fecha del Sistema</h2>
+              <h2 className={styles.sectionTitle}>🌎 Simulador de Fecha GLOBAL</h2>
+              <p className={styles.sectionDescription}>La fecha simulada afecta a TODOS los usuarios de la app</p>
             </div>
             <div className={styles.infoBox}>
-              <h3>Fecha Real del Sistema</h3>
+              <h3>📅 Fecha Real del Sistema (Costa Rica UTC-6)</h3>
               <p><strong>{currentRealDate}</strong></p>
             </div>
             {isDateSimulated && (
-              <div className={styles.infoBox} style={{ borderLeft: '4px solid #f57c00' }}>
-                <h3>⚠️ Fecha Simulada Activa</h3>
-                <p><strong>{simulatedDate}</strong></p>
+              <div className={styles.infoBox} style={{ borderLeft: '4px solid #f57c00', background: '#fff3cd' }}>
+                <h3>⚠️ FECHA SIMULADA ACTIVA (GLOBAL)</h3>
+                <p><strong style={{ fontSize: '1.2rem' }}>{simulatedDate}</strong></p>
+                <p style={{ fontSize: '0.85rem', marginTop: '0.5rem', color: '#856404' }}>
+                  Todos los usuarios ven esta fecha. <br/>
+                  <strong>Eliminar antes de producción.</strong>
+                </p>
               </div>
             )}
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Simular Fecha</label>
+              <label className={styles.formLabel}>Seleccionar Fecha a Simular</label>
               <input 
                 type="date"
                 className={styles.input}
                 value={simulatedDate}
                 onChange={(e) => setSimulatedDate(e.target.value)}
+                disabled={loadingDateSimulator}
               />
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-              <button className={styles.button} onClick={setSimulatedDateHandler}>
-                Activar Simulación
+              <button 
+                className={styles.button} 
+                onClick={setSimulatedDateHandler}
+                disabled={loadingDateSimulator || !simulatedDate}
+              >
+                {loadingDateSimulator ? '⏳ Guardando...' : '🕐 Activar Simulación Global'}
               </button>
-              <button className={`${styles.button} ${styles.buttonDanger}`} onClick={resetSimulatedDate}>
-                Restaurar Fecha Real
+              <button 
+                className={`${styles.button} ${styles.buttonDanger}`} 
+                onClick={resetSimulatedDate}
+                disabled={loadingDateSimulator || !isDateSimulated}
+              >
+                {loadingDateSimulator ? '⏳ Restaurando...' : '🔄 Restaurar Fecha Real'}
               </button>
+            </div>
+            
+            {/* Instrucciones para producción */}
+            <div className={styles.infoBox} style={{ marginTop: '1.5rem', borderLeft: '4px solid #dc3545' }}>
+              <h3>🚨 IMPORTANTE: Antes de Producción</h3>
+              <p style={{ fontSize: '0.9rem' }}>
+                La fecha simulada se guarda en Supabase (tabla <code>system_config</code>).
+                <br/><br/>
+                <strong>Para desactivar:</strong>
+                <br/>1. Usar el botón "Restaurar Fecha Real" arriba
+                <br/>2. O ejecutar en Supabase: <code>DELETE FROM system_config WHERE key = 'simulated_date'</code>
+                <br/><br/>
+                <strong>Para verificar:</strong>
+                <br/><code>SELECT * FROM system_config WHERE key = 'simulated_date'</code>
+              </p>
             </div>
           </div>
         )}
@@ -1160,6 +1636,11 @@ export default function DevPage() {
                 <span className={styles.syncIcon}>📚</span>
                 <span className={styles.syncLabel}>Materias</span>
               </button>
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-clicks-etapa', 'Clicks Etapa')} disabled={loading}>
+                <span className={styles.syncIcon}>🔄</span>
+                <span className={styles.syncLabel}>Clicks Etapa</span>
+              </button>
             </div>
             
             {loading && (
@@ -1176,9 +1657,220 @@ export default function DevPage() {
                   <div 
                     key={idx} 
                     className={`${styles.syncResultItem} ${result.success ? styles.success : styles.error}`}
+                    style={{ flexDirection: 'column', alignItems: 'flex-start' }}
                   >
-                    <span className={styles.syncResultIcon}>{result.success ? '✅' : '❌'}</span>
-                    <span>{result.message}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span className={styles.syncResultIcon}>{result.success ? '✅' : '❌'}</span>
+                      <span>{result.message}</span>
+                    </div>
+                    {result.details?.stats && (
+                      <div style={{ marginLeft: '1.5rem', marginTop: '0.5rem', fontSize: '0.85rem', color: '#666' }}>
+                        {result.details.stats.leidos !== undefined && <span>📊 Leídos: {result.details.stats.leidos} | </span>}
+                        {result.details.stats.procesados !== undefined && <span>Procesados: {result.details.stats.procesados} | </span>}
+                        {result.details.stats.omitidos > 0 && <span style={{color: '#f57c00'}}>⚠️ Omitidos: {result.details.stats.omitidos} | </span>}
+                        <span>✨ Nuevos: {result.details.stats.inserted || 0} | </span>
+                        <span>🔄 Actualizados: {result.details.stats.updated || 0} | </span>
+                        {result.details.stats.deleted > 0 && <span>🗑️ Eliminados: {result.details.stats.deleted} | </span>}
+                        {result.details.stats.errors > 0 && <span style={{color: '#d32f2f'}}>❌ Errores: {result.details.stats.errors}</span>}
+                      </div>
+                    )}
+                    {result.details?.details && result.details.details.length > 0 && (
+                      <div style={{ marginLeft: '1.5rem', marginTop: '0.5rem', fontSize: '0.8rem', color: '#d32f2f', maxHeight: '150px', overflow: 'auto', width: '100%' }}>
+                        <strong>Errores detallados:</strong>
+                        <ul style={{ margin: '0.25rem 0', paddingLeft: '1rem' }}>
+                          {result.details.details.slice(0, 10).map((err: any, i: number) => (
+                            <li key={i}>{err.action} - ID: {err.id} - {err.error}</li>
+                          ))}
+                          {result.details.details.length > 10 && <li>... y {result.details.details.length - 10} más</li>}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* GRUPOS DE EMPRESAS */}
+        {activeSection === 'grupos' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Grupos de Empresas</h2>
+                <p className={styles.sectionDescription}>
+                  Permite que una empresa principal vea y pague por otras empresas asociadas
+                </p>
+              </div>
+              <button className={styles.button} onClick={loadGrupos} disabled={loadingGrupos}>
+                {loadingGrupos ? 'Cargando...' : '🔄 Refrescar'}
+              </button>
+            </div>
+
+            {/* Crear nuevo grupo */}
+            <div className={styles.infoBox} style={{ marginBottom: '2rem' }}>
+              <h3>Crear Nuevo Grupo</h3>
+              <div style={{ display: 'grid', gap: '1rem', marginTop: '1rem' }}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Nombre del Grupo</label>
+                  <input
+                    type="text"
+                    className={styles.input}
+                    placeholder="Ej: Grupo Corporativo ABC"
+                    value={nuevoGrupoNombre}
+                    onChange={(e) => setNuevoGrupoNombre(e.target.value)}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Empresa Principal (la que paga por todas)</label>
+                  <select
+                    className={styles.input}
+                    value={nuevoGrupoEmpresaPrincipal}
+                    onChange={(e) => setNuevoGrupoEmpresaPrincipal(e.target.value)}
+                  >
+                    <option value="">Seleccionar empresa principal...</option>
+                    {getEmpresasLibres().map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.nombre} (IVA: {(emp.iva_perc * 100).toFixed(0)}%)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Empresas Asociadas (opcional, se pueden agregar después)</label>
+                  <select
+                    multiple
+                    className={styles.input}
+                    style={{ minHeight: '100px' }}
+                    value={nuevoGrupoEmpresas}
+                    onChange={(e) => {
+                      const selected = Array.from(e.target.selectedOptions, option => option.value)
+                      setNuevoGrupoEmpresas(selected)
+                    }}
+                  >
+                    {getEmpresasLibres()
+                      .filter(emp => emp.id !== nuevoGrupoEmpresaPrincipal)
+                      .map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.nombre} (IVA: {(emp.iva_perc * 100).toFixed(0)}%)
+                        </option>
+                      ))}
+                  </select>
+                  <small style={{ color: '#666' }}>Mantén Ctrl/Cmd para seleccionar múltiples</small>
+                </div>
+                <button
+                  className={styles.button}
+                  onClick={handleCrearGrupo}
+                  disabled={creandoGrupo || !nuevoGrupoNombre.trim() || !nuevoGrupoEmpresaPrincipal}
+                >
+                  {creandoGrupo ? 'Creando...' : '➕ Crear Grupo'}
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de grupos existentes */}
+            {loadingGrupos ? (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Cargando grupos...</p>
+              </div>
+            ) : grupos.length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>No hay grupos de empresas creados</p>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '1.5rem' }}>
+                {grupos.map((grupo) => (
+                  <div key={grupo.id} className={styles.card} style={{ padding: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{grupo.nombre}</h3>
+                        <p style={{ margin: '0.25rem 0 0', color: '#666', fontSize: '0.875rem' }}>
+                          Creado: {new Date(grupo.created_at).toLocaleDateString('es-CR')}
+                        </p>
+                      </div>
+                      <button
+                        className={styles.buttonDanger}
+                        style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+                        onClick={() => handleEliminarGrupo(grupo.id)}
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    </div>
+
+                    {/* Empresa Principal */}
+                    <div style={{ background: '#e3f2fd', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem' }}>
+                      <strong style={{ color: '#1565c0' }}>👑 Empresa Principal:</strong>
+                      <p style={{ margin: '0.5rem 0 0', fontSize: '1.1rem' }}>
+                        {grupo.empresa_principal?.nombre || grupo.empresa_principal_id}
+                      </p>
+                      <small style={{ color: '#666' }}>Esta empresa ve y paga por las demás del grupo</small>
+                    </div>
+
+                    {/* Empresas Asociadas */}
+                    <div style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '0.5rem' }}>
+                      <strong>🏢 Empresas Asociadas ({grupo.empresas_asociadas?.length || 0}):</strong>
+                      {grupo.empresas_asociadas?.length === 0 ? (
+                        <p style={{ margin: '0.5rem 0', color: '#666' }}>Sin empresas asociadas</p>
+                      ) : (
+                        <ul style={{ margin: '0.5rem 0', paddingLeft: '1.5rem' }}>
+                          {grupo.empresas_asociadas?.map((emp) => (
+                            <li key={emp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.25rem 0' }}>
+                              <span>
+                                {emp.nombre}
+                                {emp.iva_perc !== undefined && (
+                                  <span style={{ color: '#666', marginLeft: '0.5rem' }}>
+                                    (IVA: {(emp.iva_perc * 100).toFixed(0)}%)
+                                  </span>
+                                )}
+                              </span>
+                              <button
+                                onClick={() => handleQuitarEmpresaGrupo(grupo.id, emp.id)}
+                                style={{ 
+                                  background: '#ffebee', 
+                                  border: 'none', 
+                                  padding: '0.25rem 0.5rem', 
+                                  borderRadius: '0.25rem',
+                                  cursor: 'pointer',
+                                  color: '#c62828'
+                                }}
+                              >
+                                ✕ Quitar
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      {/* Agregar empresa al grupo */}
+                      {getEmpresasLibres().length > 0 && (
+                        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                          <select
+                            className={styles.input}
+                            style={{ flex: 1 }}
+                            id={`add-empresa-${grupo.id}`}
+                          >
+                            <option value="">Agregar empresa...</option>
+                            {getEmpresasLibres().map((emp) => (
+                              <option key={emp.id} value={emp.id}>
+                                {emp.nombre}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            className={styles.buttonSecondary}
+                            onClick={() => {
+                              const select = document.getElementById(`add-empresa-${grupo.id}`) as HTMLSelectElement
+                              if (select?.value) {
+                                handleAgregarEmpresaGrupo(grupo.id, select.value)
+                              }
+                            }}
+                          >
+                            ➕ Agregar
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

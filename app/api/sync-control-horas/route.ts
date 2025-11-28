@@ -1,9 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { GoogleSheetsService } from '@/lib/googleSheets'
-import { getTableMapping } from '@/lib/sync-config'
 
-export async function POST(request: NextRequest) {
+export async function GET() {
+  // Ejecutar la misma lógica de sincronización
+  return syncControlHoras()
+}
+
+export async function POST() {
+  return syncControlHoras()
+}
+
+async function syncControlHoras() {
   try {
     console.log('⏰ Iniciando sincronización de Control de Horas...')
     
@@ -187,29 +194,36 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${errors} errores`)
     
+    // Log de registros que no se procesaron (sin ID)
+    const registrosSinId = dataRows.length - transformedData.length
+    if (registrosSinId > 0) {
+      console.log(`⚠️ ${registrosSinId} registros omitidos por no tener ID_Tarea`)
+    }
+    
     return NextResponse.json({
       success: true,
-      message: 'Sincronización de Control de Horas exitosa',
-      stats: { inserted, updated, deleted, errors },
+      message: `Sincronización de Control de Horas exitosa`,
+      stats: { 
+        leidos: dataRows.length,
+        procesados: transformedData.length,
+        omitidos: registrosSinId,
+        inserted, 
+        updated, 
+        deleted, 
+        errors 
+      },
       details: errorDetails.length > 0 ? errorDetails : undefined
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Control de Horas:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       { 
-        error: 'Error al sincronizar Control de Horas',
-        details: error instanceof Error ? error.message : String(error)
+        success: false,
+        message: `Error al sincronizar Control de Horas: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     )
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    endpoint: '/api/sync-control-horas',
-    method: 'POST',
-    description: 'Sincroniza la hoja "Control_Horas" de Google Sheets con la tabla trabajos_por_hora en Supabase',
-    usage: 'POST /api/sync-control-horas'
-  })
 }

@@ -57,6 +57,7 @@ interface Gasto {
 interface DatosPago {
   success: boolean
   tipoCliente: string
+  nombreCliente: string
   darVistoBueno: boolean
   trabajosPorHora: TrabajoPorCaso[]
   solicitudesMensuales: SolicitudMensual[]
@@ -77,6 +78,35 @@ interface DatosPago {
   totalAPagar: number
   mesActual: string
   mesActualISO: string
+  // Datos de grupo
+  esGrupoPrincipal?: boolean
+  empresasDelGrupo?: DatosEmpresaGrupo[]
+  totalGrupoSubtotal?: number
+  totalGrupoIVA?: number
+  totalGrupoAPagar?: number
+  granTotalSubtotal?: number
+  granTotalIVA?: number
+  granTotalAPagar?: number
+}
+
+interface DatosEmpresaGrupo {
+  empresaId: string
+  empresaNombre: string
+  ivaPerc: number
+  trabajosPorHora: any[]
+  gastos: any[]
+  solicitudes: any[]
+  totalMinutos: number
+  totalHoras: number
+  tarifaHora: number
+  costoServicios: number
+  totalGastos: number
+  totalMensualidades: number
+  totalIVAMensualidades: number
+  subtotal: number
+  ivaServicios: number
+  montoIVA: number
+  total: number
 }
 
 export default function PagoPage() {
@@ -85,18 +115,25 @@ export default function PagoPage() {
   const [loading, setLoading] = useState(true)
   const [vistoBuenoDado, setVistoBuenoDado] = useState(false)
   const [loadingVistoBueno, setLoadingVistoBueno] = useState(false)
+  const [simulatedDate, setSimulatedDate] = useState<string | null>(null)
   const router = useRouter()
 
-  // Obtener fecha actual (simulada o real)
-  const getCurrentDate = () => {
-    if (typeof window !== 'undefined') {
-      const simulatedDate = localStorage.getItem('simulatedDate')
-      if (simulatedDate) {
-        return new Date(simulatedDate + 'T12:00:00')
+  // Cargar fecha simulada global desde API al montar
+  useEffect(() => {
+    const loadSimulatedDate = async () => {
+      try {
+        const res = await fetch('/api/simulated-date')
+        const data = await res.json()
+        if (data.simulated && data.date) {
+          setSimulatedDate(data.date)
+          console.log('📅 [pago] Fecha simulada cargada:', data.date)
+        }
+      } catch (err) {
+        console.log('📅 [pago] No hay fecha simulada activa')
       }
     }
-    return new Date()
-  }
+    loadSimulatedDate()
+  }, [])
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -108,14 +145,13 @@ export default function PagoPage() {
 
       loadDatosPago(user)
     }
-  }, [authLoading, user, router])
+  }, [authLoading, user, router, simulatedDate])
 
   const loadDatosPago = async (userData: any) => {
     setLoading(true)
     try {
-      // Enviar fecha simulada si existe
-      const now = getCurrentDate()
-      const simulatedDateParam = now ? `?simulatedDate=${now.toISOString().split('T')[0]}` : ''
+      // Enviar fecha simulada global si existe
+      const simulatedDateParam = simulatedDate ? `?simulatedDate=${simulatedDate}` : ''
       
       const response = await fetch(`/api/datos-pago${simulatedDateParam}`, {
         headers: {
@@ -163,7 +199,8 @@ export default function PagoPage() {
     try {
       // Usar el mes de las horas trabajadas
       const mes = datosPago.mesActualISO
-      const now = getCurrentDate()
+      // Usar fecha simulada si existe, sino fecha actual
+      const fechaActual = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
       
       const response = await fetch('/api/visto-bueno', {
         method: 'POST',
@@ -174,7 +211,7 @@ export default function PagoPage() {
         },
         body: JSON.stringify({ 
           mes,
-          fechaSimulada: now.toISOString()
+          fechaSimulada: fechaActual.toISOString()
         })
       })
 
@@ -419,11 +456,92 @@ export default function PagoPage() {
               
               <div className={styles.divider + ' ' + styles.dividerBold} />
               
-              {/* Total */}
+              {/* Total de esta empresa */}
               <div className={styles.costoItem + ' ' + styles.total}>
-                <span>TOTAL A PAGAR:</span>
+                <span>{datosPago.esGrupoPrincipal ? `TOTAL ${datosPago.nombreCliente?.toUpperCase() || 'EMPRESA PRINCIPAL'}:` : 'TOTAL A PAGAR:'}</span>
                 <strong>{formatMonto(datosPago.totalAPagar)}</strong>
               </div>
+            </div>
+          </section>
+        )}
+        
+        {/* Sección de Empresas del Grupo */}
+        {datosPago && datosPago.esGrupoPrincipal && datosPago.empresasDelGrupo && datosPago.empresasDelGrupo.length > 0 && (
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>📊 Empresas Asociadas al Grupo</h2>
+            <p className={styles.sectionSubtitle}>
+              Como empresa principal del grupo, también se incluyen los costos de las siguientes empresas:
+            </p>
+            
+            {datosPago.empresasDelGrupo.map((empresaGrupo) => (
+              <div key={empresaGrupo.empresaId} className={styles.empresaGrupoCard}>
+                <div className={styles.empresaGrupoHeader}>
+                  <h3 className={styles.empresaGrupoNombre}>{empresaGrupo.empresaNombre}</h3>
+                  <span className={styles.empresaGrupoIva}>IVA: {(empresaGrupo.ivaPerc * 100).toFixed(0)}%</span>
+                </div>
+                
+                <div className={styles.empresaGrupoDetalles}>
+                  {/* Trabajos por hora */}
+                  {empresaGrupo.totalHoras > 0 && (
+                    <div className={styles.costoItem}>
+                      <span>Horas trabajadas ({empresaGrupo.totalHoras.toFixed(1)}h):</span>
+                      <strong>{formatMonto(empresaGrupo.costoServicios)}</strong>
+                    </div>
+                  )}
+                  
+                  {/* Mensualidades */}
+                  {empresaGrupo.totalMensualidades > 0 && (
+                    <div className={styles.costoItem}>
+                      <span>Mensualidades:</span>
+                      <strong>{formatMonto(empresaGrupo.totalMensualidades)}</strong>
+                    </div>
+                  )}
+                  
+                  {/* Gastos */}
+                  {empresaGrupo.totalGastos > 0 && (
+                    <div className={styles.costoItem}>
+                      <span>Gastos:</span>
+                      <strong>{formatMonto(empresaGrupo.totalGastos)}</strong>
+                    </div>
+                  )}
+                  
+                  <div className={styles.divider} />
+                  
+                  {/* Subtotal de la empresa */}
+                  <div className={styles.costoItem}>
+                    <span>Subtotal:</span>
+                    <strong>{formatMonto(empresaGrupo.subtotal)}</strong>
+                  </div>
+                  
+                  {/* IVA de la empresa */}
+                  {empresaGrupo.montoIVA > 0 && (
+                    <div className={styles.costoItem}>
+                      <span>IVA ({(empresaGrupo.ivaPerc * 100).toFixed(0)}%):</span>
+                      <strong>{formatMonto(empresaGrupo.montoIVA)}</strong>
+                    </div>
+                  )}
+                  
+                  {/* Total de la empresa */}
+                  <div className={styles.costoItem + ' ' + styles.destacado}>
+                    <span>Total {empresaGrupo.empresaNombre}:</span>
+                    <strong>{formatMonto(empresaGrupo.total)}</strong>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {/* Gran Total del Grupo */}
+            <div className={styles.granTotalGrupo}>
+              <div className={styles.divider + ' ' + styles.dividerBold} />
+              <div className={styles.costoItem + ' ' + styles.total + ' ' + styles.granTotal}>
+                <span>🏢 GRAN TOTAL DEL GRUPO:</span>
+                <strong>
+                  {formatMonto(datosPago.granTotalAPagar || 0)}
+                </strong>
+              </div>
+              <p className={styles.granTotalDetalle}>
+                Incluye: {datosPago.nombreCliente} + {datosPago.empresasDelGrupo?.map(eg => eg.empresaNombre).join(' + ')}
+              </p>
             </div>
           </section>
         )}

@@ -47,9 +47,9 @@ export async function POST(request: Request) {
       .select()
 
     if (error) {
-      console.error('Error al dar visto bueno:', error)
+      console.error('Error al dar visto bueno:', error.message, error.details, error.hint)
       return NextResponse.json(
-        { error: 'Error al registrar visto bueno' },
+        { error: `Error al registrar visto bueno: ${error.message}` },
         { status: 500 }
       )
     }

@@ -188,7 +188,7 @@ export const SYNC_CONFIG: TableMapping[] = [
     ]
   },
   {
-    sheetsName: "Materias",
+    sheetsName: "Materia",
     supabaseTable: "materias",
     idColumn: "id",
     columns: [

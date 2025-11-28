@@ -18,13 +18,31 @@ export default function ComprobantePage() {
   const [loadingMonto, setLoadingMonto] = useState(true)
   const [invoiceFiles, setInvoiceFiles] = useState<Array<{name: string, created_at: string}>>([])
   const [downloadingInvoice, setDownloadingInvoice] = useState<string | null>(null)
+  const [simulatedDate, setSimulatedDate] = useState<string | null>(null)
+
+  // Cargar fecha simulada global desde API
+  useEffect(() => {
+    const loadSimulatedDate = async () => {
+      try {
+        const res = await fetch('/api/simulated-date')
+        const data = await res.json()
+        if (data.simulated && data.date) {
+          setSimulatedDate(data.date)
+          console.log('📅 [comprobante] Fecha simulada cargada:', data.date)
+        }
+      } catch (err) {
+        console.log('📅 [comprobante] No hay fecha simulada activa')
+      }
+    }
+    loadSimulatedDate()
+  }, [])
 
   // Cargar información del mes (monto e invoices opcionales)
   useEffect(() => {
     if (user) {
       loadDataAndInvoices()
     }
-  }, [user])
+  }, [user, simulatedDate])
 
   const loadDataAndInvoices = async () => {
     if (!user) return
@@ -83,7 +101,11 @@ export default function ComprobantePage() {
       }
 
       const data = await response.json()
-      setMontoPago(data.totalAPagar)
+      // Si es empresa principal de grupo, usar el gran total que incluye todas las empresas
+      const totalFinal = data.esGrupoPrincipal && data.granTotalAPagar 
+        ? data.granTotalAPagar 
+        : data.totalAPagar
+      setMontoPago(totalFinal)
     } catch (err) {
       console.error('Error fetching monto:', err)
       setError('No se pudo cargar el monto a pagar')
@@ -181,8 +203,7 @@ export default function ComprobantePage() {
         formData.append('monto', String(montoPago))
       }
       
-      // Enviar fecha simulada si está activa
-      const simulatedDate = localStorage.getItem('simulatedDate')
+      // Enviar fecha simulada global si está activa
       if (simulatedDate) {
         formData.append('simulatedDate', simulatedDate)
       }

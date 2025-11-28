@@ -1,9 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
-import { getTableMapping } from '@/lib/sync-config'
 
-export async function POST(request: NextRequest) {
+export async function GET() {
+  return syncCasos()
+}
+
+export async function POST() {
+  return syncCasos()
+}
+
+async function syncCasos() {
   try {
     console.log('📁 Iniciando sincronización de Casos...')
     
@@ -147,27 +154,27 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({
       success: true,
-      message: 'Sincronización de Casos exitosa',
-      stats: { inserted, updated, deleted, errors },
+      message: `Sincronización de Casos exitosa`,
+      stats: { 
+        leidos: rows.length,
+        procesados: transformedData.length,
+        inserted, 
+        updated, 
+        deleted, 
+        errors 
+      },
       details: errorDetails.length > 0 ? errorDetails : undefined
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Casos:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
       { 
-        error: 'Error al sincronizar Casos',
-        details: error instanceof Error ? error.message : String(error)
+        success: false,
+        message: `Error al sincronizar Casos: ${errorMessage}`,
+        error: errorMessage
       },
       { status: 500 }
     )
   }
-}
-
-export async function GET() {
-  return NextResponse.json({
-    endpoint: '/api/sync-casos',
-    method: 'POST',
-    description: 'Sincroniza la hoja "Caso" de Google Sheets con la tabla casos en Supabase',
-    usage: 'POST /api/sync-casos'
-  })
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { GoogleSheetsService } from '@/lib/googleSheets'
 
 /**
  * GET - Obtener todos los comprobantes pendientes y usuarios con modoPago=true
@@ -91,6 +92,7 @@ export async function PATCH(request: NextRequest) {
 
     const userId = (receipt as any).user_id
     const tipoCliente = (receipt as any).tipo_cliente
+    const mesPago = (receipt as any).mes_pago // Mover aquí para uso en grupos
 
     if (action === 'aprobar') {
       // Aprobar: Actualizar estado y desactivar modoPago
@@ -125,6 +127,101 @@ export async function PATCH(request: NextRequest) {
           { error: 'Error al desactivar modo pago' },
           { status: 500 }
         )
+      }
+
+      // Si es empresa, verificar si es empresa principal de un grupo
+      // y desactivar modoPago de las empresas asociadas
+      if (tipoCliente === 'empresa') {
+        try {
+          // Buscar si esta empresa es principal de algún grupo
+          const { data: grupo, error: grupoError } = await supabase
+            .from('grupos_empresas' as any)
+            .select('id, nombre')
+            .eq('empresa_principal_id', userId)
+            .maybeSingle()
+
+          if (!grupoError && grupo) {
+            console.log('🏢 Empresa es principal del grupo:', (grupo as any).nombre)
+            
+            // Obtener las empresas miembros del grupo
+            const { data: miembros, error: miembrosError } = await supabase
+              .from('grupos_empresas_miembros' as any)
+              .select('empresa_id')
+              .eq('grupo_id', (grupo as any).id)
+
+            if (!miembrosError && miembros && miembros.length > 0) {
+              const empresaIds = (miembros as any[]).map((m: any) => m.empresa_id)
+              console.log('🏢 Desactivando modoPago de empresas asociadas:', empresaIds)
+
+              // Desactivar modoPago de todas las empresas asociadas
+              const { error: updateGrupoError } = await supabase
+                .from('empresas' as any)
+                .update({ modoPago: false } as any)
+                .in('id', empresaIds)
+
+              if (updateGrupoError) {
+                console.error('❌ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
+              } else {
+                console.log('✅ modoPago desactivado para', empresaIds.length, 'empresas del grupo')
+              }
+
+              // También actualizar las solicitudes mensualidades de las empresas del grupo
+              for (const empresaId of empresaIds) {
+                const { data: solicitudesEmpresa, error: solError } = await supabase
+                  .from('solicitudes')
+                  .select('*')
+                  .eq('id_cliente', empresaId)
+                  .ilike('modalidad_pago', 'mensualidad')
+
+                if (!solError && solicitudesEmpresa && solicitudesEmpresa.length > 0) {
+                  console.log(`📋 Actualizando ${solicitudesEmpresa.length} solicitudes de empresa ${empresaId}`)
+                  for (const solicitud of solicitudesEmpresa) {
+                    const montoCuota = solicitud.monto_por_cuota || 0
+                    const pagoRealizado = montoCuota
+                    const nuevoMontoPagado = (solicitud.monto_pagado || 0) + pagoRealizado
+                    const costoNeto = solicitud.costo_neto || 0
+                    let iva = 0
+                    if (solicitud.se_cobra_iva) {
+                      iva = solicitud.monto_iva || (costoNeto * 0.13)
+                    }
+                    const totalAPagar = costoNeto + iva
+                    const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
+
+                    await supabase
+                      .from('solicitudes')
+                      .update({
+                        monto_pagado: nuevoMontoPagado,
+                        saldo_pendiente: nuevoSaldoPendiente,
+                        updated_at: fechaAprobacion
+                      })
+                      .eq('id', solicitud.id)
+                  }
+                }
+              }
+
+              // Marcar facturas de empresas del grupo como pagadas
+              if (mesPago) {
+                for (const empresaId of empresaIds) {
+                  const { error: facturaError } = await supabase
+                    .from('invoice_payment_deadlines' as any)
+                    .update({
+                      estado_pago: 'pagado',
+                      fecha_pago: fechaAprobacion
+                    })
+                    .eq('mes_factura', mesPago)
+                    .eq('client_id', empresaId)
+                    .eq('client_type', 'empresa')
+
+                  if (!facturaError) {
+                    console.log(`✅ Factura de empresa ${empresaId} marcada como pagada`)
+                  }
+                }
+              }
+            }
+          }
+        } catch (grupoErr) {
+          console.error('❌ Error al procesar grupo de empresas:', grupoErr)
+        }
       }
 
       // Actualizar solicitudes con modalidad mensual
@@ -192,7 +289,6 @@ export async function PATCH(request: NextRequest) {
       }
 
       // Marcar factura como pagada directamente en la base de datos
-      const mesPago = (receipt as any).mes_pago
       console.log('🔍 Intentando actualizar factura con mes_pago:', mesPago, 'userId:', userId, 'tipoCliente:', tipoCliente)
       
       if (mesPago) {
@@ -241,6 +337,126 @@ export async function PATCH(request: NextRequest) {
         }
       } else {
         console.warn('⚠️ El comprobante no tiene mes_pago asociado')
+      }
+
+      // ===== ESCRIBIR EN HOJA "Ingresos" DE GOOGLE SHEETS =====
+      try {
+        console.log('📝 Preparando registro de ingreso para Google Sheets...')
+        
+        // Obtener datos del cliente
+        const tablaCliente = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
+        const { data: clienteData } = await supabase
+          .from(tablaCliente as any)
+          .select('nombre, esDolar')
+          .eq('id', userId)
+          .single()
+        
+        // Obtener solicitudes del cliente para calcular honorarios
+        const { data: solicitudes } = await supabase
+          .from('solicitudes')
+          .select('modalidad_pago, monto_por_cuota, costo_neto')
+          .eq('id_cliente', userId)
+        
+        // Calcular honorarios (suma de cuotas o costos según modalidad)
+        let honorarios = 0
+        let modalidadPago = 'Mensualidad' // default
+        
+        if (solicitudes && solicitudes.length > 0) {
+          for (const sol of solicitudes) {
+            if (sol.modalidad_pago?.toLowerCase().includes('mensualidad')) {
+              honorarios += sol.monto_por_cuota || 0
+              modalidadPago = 'Mensualidad'
+            } else if (sol.modalidad_pago?.toLowerCase().includes('hora')) {
+              modalidadPago = 'Cobro por hora'
+            } else if (sol.modalidad_pago?.toLowerCase().includes('etapa')) {
+              modalidadPago = 'Etapa finalizada'
+            }
+          }
+        }
+        
+        // Si no hay honorarios de solicitudes, usar el monto declarado
+        if (honorarios === 0) {
+          honorarios = (receipt as any).monto_declarado || 0
+        }
+        
+        // Obtener gastos pendientes del mes anterior
+        const { data: gastosPendientes } = await supabase
+          .from('gastos')
+          .select('monto')
+          .eq('id_cliente', userId)
+          .eq('pagado', false)
+        
+        let reembolsoGastos = 0
+        if (gastosPendientes) {
+          reembolsoGastos = gastosPendientes.reduce((sum: number, g: any) => sum + (parseFloat(g.monto) || 0), 0)
+        }
+        
+        // Moneda del cliente
+        const moneda = (clienteData as any)?.esDolar ? 'Dólares' : 'Colones'
+        
+        // Servicios (por ahora 0, se implementará después)
+        const servicios = 0
+        
+        // Total del ingreso
+        const totalIngreso = honorarios + servicios + reembolsoGastos
+        
+        // Generar ID único para el ingreso
+        const ingresoId = `ING-${Date.now()}-${userId.slice(-4)}`
+        
+        // Formatear fechas
+        const fechaPago = new Date((receipt as any).uploaded_at).toLocaleDateString('es-CR')
+        const fechaAprobacionFormateada = new Date(fechaAprobacion).toLocaleDateString('es-CR')
+        
+        // Preparar fila para Sheets
+        // Columnas: A=ID_Ingreso, B=Fecha_Pago, C=Fecha_Aprobacion, D=Cliente, E=Modalidad_Pago, F=Moneda, G=Honorarios, H=Servicios, I=Reembolso_Gastos, J=Total_Ingreso
+        const rowData = [
+          ingresoId,                    // A: ID_Ingreso
+          fechaPago,                    // B: Fecha_Pago
+          fechaAprobacionFormateada,    // C: Fecha_Aprobacion
+          userId,                       // D: Cliente (ID)
+          modalidadPago,                // E: Modalidad_Pago
+          moneda,                       // F: Moneda
+          honorarios,                   // G: Honorarios
+          servicios,                    // H: Servicios
+          reembolsoGastos,              // I: Reembolso_Gastos
+          totalIngreso                  // J: Total_Ingreso
+        ]
+        
+        console.log('📊 Datos del ingreso:', {
+          id: ingresoId,
+          cliente: userId,
+          moneda,
+          honorarios,
+          gastos: reembolsoGastos,
+          total: totalIngreso
+        })
+        
+        // Escribir en Google Sheets
+        await GoogleSheetsService.appendRow('Ingresos', rowData)
+        console.log('✅ Ingreso registrado en Google Sheets')
+        
+        // También guardar en Supabase para consultas rápidas
+        await (supabase as any)
+          .from('ingresos')
+          .upsert({
+            id: ingresoId,
+            fecha_pago: (receipt as any).uploaded_at,
+            fecha_aprobacion: fechaAprobacion,
+            id_cliente: userId,
+            tipo_cliente: tipoCliente,
+            modalidad_pago: modalidadPago,
+            moneda: moneda.toLowerCase(),
+            honorarios,
+            servicios,
+            reembolso_gastos: reembolsoGastos,
+            total_ingreso: totalIngreso
+          }, { onConflict: 'id' })
+        
+        console.log('✅ Ingreso guardado en Supabase')
+        
+      } catch (ingresosError) {
+        // No fallar la aprobación si falla el registro de ingresos
+        console.error('❌ Error registrando ingreso (no crítico):', ingresosError)
       }
 
       return NextResponse.json({
