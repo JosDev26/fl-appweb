@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import styles from './dev-new.module.css'
+import styles from './dev.module.css'
 
 // ===== INTERFACES =====
 interface SyncResult {
@@ -27,11 +27,11 @@ interface PaymentReceipt {
 
 interface ClienteModoPago {
   id: string
-  id_sheets: string | null
+  id_sheets?: string | null
   nombre: string
   cedula: string | number
   correo: string | null
-  modo_pago: boolean
+  modoPago: boolean  // camelCase como viene del API
   tipo: 'cliente' | 'empresa'
 }
 
@@ -135,16 +135,16 @@ export default function DevPage() {
   const loadPaymentData = async () => {
     setLoadingReceipts(true)
     try {
-      const [receiptsRes, clientesRes] = await Promise.all([
-        fetch('/api/payment-receipts?admin=true'),
-        fetch('/api/client?modo_pago=all')
-      ])
+      // Endpoint original sin parámetros extra
+      const response = await fetch('/api/payment-receipts')
+      const data = await response.json()
       
-      const receiptsData = await receiptsRes.json()
-      const clientesData = await clientesRes.json()
+      console.log('Payment receipts response:', data)
       
-      if (receiptsData.success) setReceipts(receiptsData.receipts)
-      if (clientesData.success) setClientesModoPago(clientesData.clients)
+      if (data.success && data.data) {
+        setReceipts(data.data.receipts || [])
+        setClientesModoPago(data.data.clientesConModoPago || [])
+      }
     } catch (error) {
       console.error('Error cargando datos:', error)
     } finally {
@@ -153,19 +153,21 @@ export default function DevPage() {
   }
 
   const handleApproveReceipt = async (receiptId: string) => {
+    if (!confirm('¿Aprobar este comprobante y desactivar modo pago?')) return
+    
     setReviewingReceipt(receiptId)
     try {
       const res = await fetch('/api/payment-receipts', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiptId, estado: 'aprobado' })
+        body: JSON.stringify({ receiptId, action: 'aprobar' })
       })
       const data = await res.json()
       if (data.success) {
-        alert('Comprobante aprobado')
+        alert('Comprobante aprobado exitosamente')
         await loadPaymentData()
       } else {
-        alert('Error: ' + data.error)
+        alert('Error: ' + (data.error || 'Error al aprobar'))
       }
     } catch (error) {
       alert('Error aprobando comprobante')
@@ -203,11 +205,19 @@ export default function DevPage() {
 
   // FACTURAS
   const loadMonthInvoices = async () => {
-    if (!selectedInvoiceMonth) return
     setLoadingInvoices(true)
     try {
-      const res = await fetch(`/api/upload-invoice?month=${selectedInvoiceMonth}&admin=true`)
-      const data = await res.json()
+      // Usar el endpoint original que carga todas las facturas del mes actual
+      const simulatedDateStr = typeof window !== 'undefined' ? localStorage.getItem('simulatedDate') : null
+      const url = simulatedDateStr 
+        ? `/api/upload-invoice?getAllMonth=true&simulatedDate=${simulatedDateStr}`
+        : '/api/upload-invoice?getAllMonth=true'
+      
+      const response = await fetch(url)
+      const data = await response.json()
+      
+      console.log('Respuesta facturas:', data)
+      
       if (data.success) {
         setMonthInvoices(data.invoices || [])
       }
@@ -262,11 +272,28 @@ export default function DevPage() {
   const loadInvoiceDeadlines = async () => {
     setLoadingDeadlines(true)
     try {
-      const res = await fetch('/api/admin/invoice-deadlines')
-      const data = await res.json()
-      if (data.success) {
-        setInvoiceDeadlines(data.deadlines || [])
-      }
+      // Calcular plazos basados en clientes con modoPago activo
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = now.getMonth()
+      const mesAnterior = new Date(year, month - 1, 1)
+      const mesPago = mesAnterior.toISOString().slice(0, 7)
+      const finMes = new Date(year, month, 15) // 15 días del mes siguiente
+      
+      const clientesConModoPago = (clientesModoPago || []).filter(c => c.modoPago)
+      
+      const deadlines = clientesConModoPago.map(cliente => {
+        const diasRestantes = Math.ceil((finMes.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+        return {
+          nombre: cliente.nombre,
+          tipo: cliente.tipo,
+          mes_pago: mesPago,
+          dias_restantes: diasRestantes,
+          tiene_factura: false // TODO: consultar si existe factura
+        }
+      })
+      
+      setInvoiceDeadlines(deadlines)
     } catch (error) {
       console.error('Error cargando plazos:', error)
     } finally {
@@ -278,15 +305,22 @@ export default function DevPage() {
   const loadClientesVistoBueno = async () => {
     setLoadingVistoBueno(true)
     try {
+      // Usar los endpoints originales que funcionan
       const [usuariosRes, empresasRes] = await Promise.all([
-        fetch('/api/client?tipo=cliente'),
-        fetch('/api/client?tipo=empresa')
+        fetch('/api/client?getAll=true'),
+        fetch('/api/client?getAllEmpresas=true')
       ])
       const usuariosData = await usuariosRes.json()
       const empresasData = await empresasRes.json()
+      
+      console.log('Usuarios response:', usuariosData)
+      console.log('Empresas response:', empresasData)
+      
       const allClientes: ClientVistoBueno[] = []
-      if (usuariosData.success) {
-        allClientes.push(...usuariosData.clients.map((c: any) => ({
+      
+      // La respuesta original usa "clientes" no "clients"
+      if (usuariosData.success && usuariosData.clientes) {
+        allClientes.push(...usuariosData.clientes.map((c: any) => ({
           id: c.id,
           nombre: c.nombre,
           cedula: c.cedula,
@@ -294,8 +328,10 @@ export default function DevPage() {
           tipo: 'cliente' as const
         })))
       }
-      if (empresasData.success) {
-        allClientes.push(...empresasData.clients.map((e: any) => ({
+      
+      // La respuesta original usa "empresas" no "clients"
+      if (empresasData.success && empresasData.empresas) {
+        allClientes.push(...empresasData.empresas.map((e: any) => ({
           id: e.id,
           nombre: e.nombre,
           cedula: e.cedula,
@@ -303,6 +339,15 @@ export default function DevPage() {
           tipo: 'empresa' as const
         })))
       }
+      
+      // Ordenar: primero los que tienen darVistoBueno activo, luego por nombre
+      allClientes.sort((a, b) => {
+        if (a.darVistoBueno !== b.darVistoBueno) {
+          return b.darVistoBueno ? 1 : -1
+        }
+        return a.nombre.localeCompare(b.nombre)
+      })
+      
       setClientesVistoBueno(allClientes)
     } catch (error) {
       console.error('Error cargando clientes:', error)
@@ -340,8 +385,14 @@ export default function DevPage() {
   const loadInvitationCodes = async () => {
     setLoadingCodes(true)
     try {
-      const res = await fetch('/api/invitation-codes')
-      const data = await res.json()
+      // El endpoint original usa DELETE para obtener códigos con filtros
+      const response = await fetch('/api/invitation-codes?includeUsed=true&includeExpired=true', {
+        method: 'DELETE'
+      })
+      const data = await response.json()
+      
+      console.log('Invitation codes response:', data)
+      
       if (data.success) {
         setInvitationCodes(data.codes || [])
       }
@@ -361,17 +412,19 @@ export default function DevPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: newCodeType,
-          expiryHours: parseInt(newCodeExpiry),
+          expiresInHours: parseInt(newCodeExpiry),
           maxUses: parseInt(newCodeMaxUses),
           notes: newCodeNotes || null
         })
       })
       const data = await res.json()
       if (data.success) {
-        setGeneratedCode(data.code.code)
+        setGeneratedCode(data.code)
+        alert('Código generado exitosamente')
         await loadInvitationCodes()
+        setNewCodeNotes('')
       } else {
-        alert('Error: ' + data.error)
+        alert('Error: ' + (data.error || 'Error al generar código'))
       }
     } catch (error) {
       alert('Error generando código')
@@ -463,34 +516,18 @@ export default function DevPage() {
       alert('Selecciona una fecha')
       return
     }
-    try {
-      const res = await fetch('/api/admin/simulate-date', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: simulatedDate })
-      })
-      const data = await res.json()
-      if (data.success) {
-        setIsDateSimulated(true)
-        alert(`Fecha simulada: ${simulatedDate}`)
-      }
-    } catch (error) {
-      alert('Error simulando fecha')
-    }
+    // TODO: Implementar API /api/admin/simulate-date
+    // Por ahora solo simula localmente
+    setIsDateSimulated(true)
+    alert(`⚠️ Simulación de fecha solo local\nFecha simulada: ${simulatedDate}\n\nNOTA: Necesitas implementar /api/admin/simulate-date para que funcione en el servidor`)
   }
 
   const resetSimulatedDate = async () => {
-    try {
-      const res = await fetch('/api/admin/simulate-date', { method: 'DELETE' })
-      const data = await res.json()
-      if (data.success) {
-        setIsDateSimulated(false)
-        setSimulatedDate('')
-        alert('Fecha real restaurada')
-      }
-    } catch (error) {
-      alert('Error restaurando fecha')
-    }
+    // TODO: Implementar API /api/admin/simulate-date DELETE
+    // Por ahora solo resetea localmente
+    setIsDateSimulated(false)
+    setSimulatedDate('')
+    alert('Fecha real restaurada (solo local)')
   }
 
   // CONFIGURACIÓN
@@ -602,7 +639,7 @@ export default function DevPage() {
             </div>
             {loadingReceipts ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando comprobantes...</p></div>
-            ) : receipts.length === 0 ? (
+            ) : !receipts || receipts.length === 0 ? (
               <div className={styles.emptyState}>No hay comprobantes pendientes</div>
             ) : (
               <div className={styles.table}>
@@ -618,25 +655,34 @@ export default function DevPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {receipts.map((receipt) => (
-                      <tr key={receipt.id}>
-                        <td>{receipt.user_id}</td>
-                        <td>{receipt.mes_pago}</td>
-                        <td>₡{receipt.monto_declarado?.toLocaleString()}</td>
-                        <td>
-                          <span className={`${styles.badge} ${
-                            receipt.estado === 'pendiente' ? styles.badgeWarning :
-                            receipt.estado === 'aprobado' ? styles.badgeSuccess : styles.badgeDanger
-                          }`}>
-                            {receipt.estado}
-                          </span>
-                        </td>
-                        <td>
-                          <a href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/payment-receipts/${receipt.file_path}`} target="_blank" rel="noopener noreferrer">
-                            Ver archivo
-                          </a>
-                        </td>
-                        <td>
+                    {receipts.map((receipt) => {
+                      // Buscar el nombre del cliente en clientesModoPago
+                      const cliente = clientesModoPago.find(c => c.id === receipt.user_id && c.tipo === receipt.tipo_cliente)
+                      const nombreCliente = cliente ? `${cliente.nombre} (${cliente.cedula})` : receipt.user_id
+                      
+                      return (
+                        <tr key={receipt.id}>
+                          <td>
+                            {nombreCliente}
+                            <br />
+                            <small style={{ color: '#999' }}>{receipt.tipo_cliente}</small>
+                          </td>
+                          <td>{receipt.mes_pago}</td>
+                          <td>₡{receipt.monto_declarado?.toLocaleString()}</td>
+                          <td>
+                            <span className={`${styles.badge} ${
+                              receipt.estado === 'pendiente' ? styles.badgeWarning :
+                              receipt.estado === 'aprobado' ? styles.badgeSuccess : styles.badgeDanger
+                            }`}>
+                              {receipt.estado}
+                            </span>
+                          </td>
+                          <td>
+                            <a href={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/payment-receipts/${receipt.file_path}`} target="_blank" rel="noopener noreferrer">
+                              Ver archivo
+                            </a>
+                          </td>
+                          <td>
                           {receipt.estado === 'pendiente' && (
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                               <button 
@@ -663,7 +709,8 @@ export default function DevPage() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -699,7 +746,7 @@ export default function DevPage() {
             </div>
             {loadingInvoices ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando facturas...</p></div>
-            ) : monthInvoices.length === 0 ? (
+            ) : !monthInvoices || monthInvoices.length === 0 ? (
               <div className={styles.emptyState}>No hay facturas para este mes</div>
             ) : (
               <div className={styles.table}>
@@ -744,7 +791,7 @@ export default function DevPage() {
             </div>
             {loadingDeadlines ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando plazos...</p></div>
-            ) : invoiceDeadlines.length === 0 ? (
+            ) : !invoiceDeadlines || invoiceDeadlines.length === 0 ? (
               <div className={styles.emptyState}>No hay clientes con modoPago activo</div>
             ) : (
               <div className={styles.table}>
@@ -797,7 +844,7 @@ export default function DevPage() {
             </div>
             {loadingVistoBueno ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando clientes...</p></div>
-            ) : clientesVistoBueno.length === 0 ? (
+            ) : !clientesVistoBueno || clientesVistoBueno.length === 0 ? (
               <div className={styles.emptyState}>No hay clientes registrados</div>
             ) : (
               <div className={styles.table}>
@@ -888,7 +935,7 @@ export default function DevPage() {
             </div>
             {loadingCodes ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando códigos...</p></div>
-            ) : invitationCodes.length === 0 ? (
+            ) : !invitationCodes || invitationCodes.length === 0 ? (
               <div className={styles.emptyState}>No hay códigos generados</div>
             ) : (
               <div className={styles.table}>
@@ -993,55 +1040,94 @@ export default function DevPage() {
                 <p className={styles.sectionDescription}>Sincroniza datos desde Google Sheets hacia Supabase</p>
               </div>
             </div>
-            <div className={styles.buttonGrid}>
-              <button className={styles.button} onClick={handleSyncAll} disabled={loading}>
-                Sincronizar Todo
+            
+            <div className={styles.syncGrid}>
+              {/* Botón principal - Sincronizar Todo */}
+              <button 
+                className={`${styles.syncCard} ${styles.syncCardPrimary}`} 
+                onClick={handleSyncAll} 
+                disabled={loading}
+              >
+                <span className={styles.syncIcon}>🔄</span>
+                <span className={styles.syncLabel}>Sincronizar Todo</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-usuarios', 'Usuarios')} disabled={loading}>
-                Usuarios
+              
+              {/* Tarjetas individuales */}
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-usuarios', 'Usuarios')} disabled={loading}>
+                <span className={styles.syncIcon}>👤</span>
+                <span className={styles.syncLabel}>Usuarios</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-empresas', 'Empresas')} disabled={loading}>
-                Empresas
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-empresas', 'Empresas')} disabled={loading}>
+                <span className={styles.syncIcon}>🏢</span>
+                <span className={styles.syncLabel}>Empresas</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-casos', 'Casos')} disabled={loading}>
-                Casos
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-casos', 'Casos')} disabled={loading}>
+                <span className={styles.syncIcon}>📁</span>
+                <span className={styles.syncLabel}>Casos</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-contactos', 'Contactos')} disabled={loading}>
-                Contactos
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-contactos', 'Contactos')} disabled={loading}>
+                <span className={styles.syncIcon}>📇</span>
+                <span className={styles.syncLabel}>Contactos</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-funcionarios', 'Funcionarios')} disabled={loading}>
-                Funcionarios
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-funcionarios', 'Funcionarios')} disabled={loading}>
+                <span className={styles.syncIcon}>👥</span>
+                <span className={styles.syncLabel}>Funcionarios</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-control-horas', 'Control de Horas')} disabled={loading}>
-                Control Horas
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-control-horas', 'Control de Horas')} disabled={loading}>
+                <span className={styles.syncIcon}>⏱️</span>
+                <span className={styles.syncLabel}>Control Horas</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-gastos', 'Gastos')} disabled={loading}>
-                Gastos
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-gastos', 'Gastos')} disabled={loading}>
+                <span className={styles.syncIcon}>💰</span>
+                <span className={styles.syncLabel}>Gastos</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-solicitudes', 'Solicitudes')} disabled={loading}>
-                Solicitudes
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-solicitudes', 'Solicitudes')} disabled={loading}>
+                <span className={styles.syncIcon}>📝</span>
+                <span className={styles.syncLabel}>Solicitudes</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-actualizaciones', 'Actualizaciones')} disabled={loading}>
-                Actualizaciones
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-actualizaciones', 'Actualizaciones')} disabled={loading}>
+                <span className={styles.syncIcon}>📰</span>
+                <span className={styles.syncLabel}>Actualizaciones</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-historial-reportes', 'Historial Reportes')} disabled={loading}>
-                Historial Reportes
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-historial-reportes', 'Historial Reportes')} disabled={loading}>
+                <span className={styles.syncIcon}>📊</span>
+                <span className={styles.syncLabel}>Historial Reportes</span>
               </button>
-              <button className={styles.buttonSecondary} onClick={() => handleSync('/api/sync-materias', 'Materias')} disabled={loading}>
-                Materias
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-materias', 'Materias')} disabled={loading}>
+                <span className={styles.syncIcon}>📚</span>
+                <span className={styles.syncLabel}>Materias</span>
               </button>
             </div>
-            {loading && <div className={styles.loadingState}><div className={styles.spinner}></div><p>Sincronizando...</p></div>}
+            
+            {loading && (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Sincronizando...</p>
+              </div>
+            )}
+            
             {results.length > 0 && (
-              <div className={styles.infoBox}>
-                <h3>Resultados de Sincronización</h3>
-                <ul>
-                  {results.map((result, idx) => (
-                    <li key={idx} style={{ color: result.success ? '#388e3c' : '#d32f2f' }}>
-                      {result.message}
-                    </li>
-                  ))}
-                </ul>
+              <div className={styles.syncResults}>
+                <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem', fontWeight: 600 }}>Resultados</h3>
+                {results.map((result, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`${styles.syncResultItem} ${result.success ? styles.success : styles.error}`}
+                  >
+                    <span className={styles.syncResultIcon}>{result.success ? '✅' : '❌'}</span>
+                    <span>{result.message}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1101,7 +1187,7 @@ export default function DevPage() {
                   }}
                 >
                   <option value="">Seleccionar cliente...</option>
-                  {clientesModoPago.filter(c => c.modo_pago).map((cliente) => (
+                  {(clientesModoPago || []).filter(c => c.modoPago).map((cliente) => (
                     <option key={cliente.id} value={cliente.id}>
                       {cliente.nombre} ({cliente.cedula}) - {cliente.tipo}
                     </option>

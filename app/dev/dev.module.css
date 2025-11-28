@@ -544,6 +544,103 @@
   border-top: 1px solid #e0e0e0;
 }
 
+/* Tarjetas de sincronización */
+.syncGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.syncCard {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.syncCard:hover:not(:disabled) {
+  border-color: #1976d2;
+  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.15);
+  transform: translateY(-2px);
+}
+
+.syncCard:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.syncCard.syncCardPrimary {
+  background: #1976d2;
+  border-color: #1976d2;
+  color: white;
+  grid-column: 1 / -1;
+}
+
+.syncCard.syncCardPrimary:hover:not(:disabled) {
+  background: #1565c0;
+  border-color: #1565c0;
+  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+}
+
+.syncIcon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.syncCardPrimary .syncIcon {
+  font-size: 2.5rem;
+}
+
+.syncLabel {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.syncCardPrimary .syncLabel {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+/* Resultados de sync con iconos */
+.syncResults {
+  margin-top: 1.5rem;
+}
+
+.syncResultItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #f5f5f5;
+  border-radius: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.syncResultItem.success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.syncResultItem.error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.syncResultIcon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
 /* Responsive: Sidebar automático en pantallas pequeñas */
 @container (max-width: 768px) {
   .sidebar:not(.collapsed) {

@@ -12,6 +12,75 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const getAll = searchParams.get('getAll') === 'true'
     const getAllEmpresas = searchParams.get('getAllEmpresas') === 'true'
+    const modoPago = searchParams.get('modo_pago')
+    const tipo = searchParams.get('tipo')
+
+    // Nuevo: Obtener clientes con filtro de modo_pago (usuarios + empresas combinados)
+    if (modoPago === 'all') {
+      const [usuariosRes, empresasRes] = await Promise.all([
+        supabase
+          .from('usuarios')
+          .select('id, id_sheets, nombre, cedula, correo, modoPago, darVistoBueno')
+          .order('nombre', { ascending: true }),
+        supabase
+          .from('empresas')
+          .select('id, id_sheets, nombre, cedula, correo, modoPago, darVistoBueno')
+          .order('nombre', { ascending: true })
+      ])
+
+      if (usuariosRes.error) {
+        console.error('Error al obtener usuarios:', usuariosRes.error)
+        return NextResponse.json({ error: 'Error al obtener clientes' }, { status: 500 })
+      }
+      if (empresasRes.error) {
+        console.error('Error al obtener empresas:', empresasRes.error)
+        return NextResponse.json({ error: 'Error al obtener empresas' }, { status: 500 })
+      }
+
+      const usuariosConTipo = (usuariosRes.data || []).map(u => ({ ...u, tipo: 'cliente' as const }))
+      const empresasConTipo = (empresasRes.data || []).map(e => ({ ...e, tipo: 'empresa' as const }))
+      const allClients = [...usuariosConTipo, ...empresasConTipo]
+
+      return NextResponse.json({
+        success: true,
+        clients: allClients
+      })
+    }
+
+    // Nuevo: Obtener solo usuarios o solo empresas según tipo
+    if (tipo === 'cliente') {
+      const { data: usuarios, error } = await supabase
+        .from('usuarios')
+        .select('id, id_sheets, nombre, cedula, correo, modoPago, darVistoBueno')
+        .order('nombre', { ascending: true })
+
+      if (error) {
+        console.error('Error al obtener usuarios:', error)
+        return NextResponse.json({ error: 'Error al obtener clientes' }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        clients: (usuarios || []).map(u => ({ ...u, tipo: 'cliente' as const }))
+      })
+    }
+
+    if (tipo === 'empresa') {
+      const { data: empresas, error } = await supabase
+        .from('empresas')
+        .select('id, id_sheets, nombre, cedula, correo, modoPago, darVistoBueno')
+        .order('nombre', { ascending: true })
+
+      if (error) {
+        console.error('Error al obtener empresas:', error)
+        return NextResponse.json({ error: 'Error al obtener empresas' }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        success: true,
+        clients: (empresas || []).map(e => ({ ...e, tipo: 'empresa' as const }))
+      })
+    }
 
     // Obtener todos los usuarios (clientes)
     if (getAll) {
@@ -57,12 +126,57 @@ export async function GET(request: Request) {
 
     // Si no se especifica ningún parámetro
     return NextResponse.json(
-      { error: 'Parámetro requerido: getAll o getAllEmpresas' },
+      { error: 'Parámetro requerido: getAll, getAllEmpresas, modo_pago, o tipo' },
       { status: 400 }
     )
 
   } catch (error) {
     console.error('Error en GET /api/client:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor' },
+      { status: 500 }
+    )
+  }
+}
+
+// Actualizar darVistoBueno de un cliente o empresa
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json()
+    const { clientId, tipo, darVistoBueno } = body
+
+    if (!clientId || !tipo || typeof darVistoBueno !== 'boolean') {
+      return NextResponse.json(
+        { error: 'Parámetros requeridos: clientId, tipo, darVistoBueno' },
+        { status: 400 }
+      )
+    }
+
+    const table = tipo === 'cliente' ? 'usuarios' : 'empresas'
+
+    const { data, error } = await supabase
+      .from(table)
+      .update({ darVistoBueno })
+      .eq('id', clientId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error(`Error actualizando ${tipo}:`, error)
+      return NextResponse.json(
+        { error: `Error actualizando ${tipo}` },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `${tipo} actualizado correctamente`,
+      data
+    })
+
+  } catch (error) {
+    console.error('Error en PATCH /api/client:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }
