@@ -479,6 +479,122 @@ export interface Database {
         }
         Relationships: []
       }
+      dev_admins: {
+        Row: {
+          id: string
+          email: string
+          password_hash: string
+          name: string
+          is_active: boolean
+          created_at: string
+          updated_at: string
+          last_login: string | null
+        }
+        Insert: {
+          id?: string
+          email: string
+          password_hash: string
+          name: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          last_login?: string | null
+        }
+        Update: {
+          id?: string
+          email?: string
+          password_hash?: string
+          name?: string
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          last_login?: string | null
+        }
+        Relationships: []
+      }
+      dev_auth_codes: {
+        Row: {
+          id: string
+          admin_id: string
+          code: string
+          created_at: string
+          expires_at: string
+          used_at: string | null
+          ip_address: string | null
+          user_agent: string | null
+          is_active: boolean
+        }
+        Insert: {
+          id?: string
+          admin_id: string
+          code: string
+          created_at?: string
+          expires_at: string
+          used_at?: string | null
+          ip_address?: string | null
+          user_agent?: string | null
+          is_active?: boolean
+        }
+        Update: {
+          id?: string
+          admin_id?: string
+          code?: string
+          created_at?: string
+          expires_at?: string
+          used_at?: string | null
+          ip_address?: string | null
+          user_agent?: string | null
+          is_active?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_auth_codes_admin_id_fkey"
+            columns: ["admin_id"]
+            referencedRelation: "dev_admins"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      dev_sessions: {
+        Row: {
+          id: string
+          admin_id: string
+          session_token: string
+          created_at: string
+          expires_at: string
+          ip_address: string | null
+          user_agent: string | null
+          is_active: boolean
+        }
+        Insert: {
+          id?: string
+          admin_id: string
+          session_token: string
+          created_at?: string
+          expires_at: string
+          ip_address?: string | null
+          user_agent?: string | null
+          is_active?: boolean
+        }
+        Update: {
+          id?: string
+          admin_id?: string
+          session_token?: string
+          created_at?: string
+          expires_at?: string
+          ip_address?: string | null
+          user_agent?: string | null
+          is_active?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_sessions_admin_id_fkey"
+            columns: ["admin_id"]
+            referencedRelation: "dev_admins"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never

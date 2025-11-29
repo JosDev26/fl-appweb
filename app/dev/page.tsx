@@ -186,7 +186,28 @@ export default function DevPage() {
       const response = await fetch('/api/payment-receipts')
       const data = await response.json()
       
+<<<<<<< Updated upstream
       console.log('Payment receipts response:', data)
+=======
+      // Verificar que las respuestas sean válidas
+      if (!receiptsRes.ok || !clientesRes.ok) {
+        console.error('Error en las respuestas de la API')
+        return
+      }
+
+      // Verificar que el content-type sea JSON
+      const receiptsContentType = receiptsRes.headers.get('content-type')
+      const clientesContentType = clientesRes.headers.get('content-type')
+      
+      if (!receiptsContentType?.includes('application/json') || 
+          !clientesContentType?.includes('application/json')) {
+        console.error('Las respuestas no son JSON válido')
+        return
+      }
+      
+      const receiptsData = await receiptsRes.json()
+      const clientesData = await clientesRes.json()
+>>>>>>> Stashed changes
       
       if (data.success && data.data) {
         setReceipts(data.data.receipts || [])
@@ -698,6 +719,7 @@ export default function DevPage() {
     }
   }
 
+<<<<<<< Updated upstream
   // GRUPOS DE EMPRESAS
   const loadGrupos = async () => {
     setLoadingGrupos(true)
@@ -850,6 +872,32 @@ export default function DevPage() {
     return empresasDisponibles.filter(e => !empresasEnGrupos.has(e.id))
   }
 
+=======
+  const handleLogout = async () => {
+    if (!confirm('¿Cerrar sesión del panel de administración?')) {
+      return
+    }
+
+    try {
+      const res = await fetch('/api/dev-auth/logout', { 
+        method: 'POST',
+        credentials: 'include' // Asegurar que se envíen las cookies
+      })
+      const data = await res.json()
+
+      if (data.success) {
+        // Usar replace para limpiar historial y forzar recarga completa
+        window.location.replace('/dev/login')
+      } else {
+        alert('Error al cerrar sesión')
+      }
+    } catch (error) {
+      console.error('Error cerrando sesión:', error)
+      alert('Error al cerrar sesión')
+    }
+  }
+
+>>>>>>> Stashed changes
   // ===== RENDERIZADO =====
 
   if (!isMounted) {
@@ -1883,13 +1931,44 @@ export default function DevPage() {
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
               <div>
-                <h2 className={styles.sectionTitle}>Validación de Configuración</h2>
-                <p className={styles.sectionDescription}>Verifica que todas las variables de entorno estén configuradas</p>
+                <h2 className={styles.sectionTitle}>Configuración del Sistema</h2>
+                <p className={styles.sectionDescription}>Validación de variables de entorno y gestión de sesión</p>
               </div>
             </div>
-            <button className={styles.button} onClick={validateConfig} disabled={loading}>
-              Validar Configuración
-            </button>
+
+            {/* Validación de Configuración */}
+            <div className={styles.card} style={{ marginBottom: '2rem' }}>
+              <h3 style={{ marginBottom: '1rem', fontSize: '1.25rem' }}>🔍 Validación de Configuración</h3>
+              <p style={{ color: '#666', marginBottom: '1rem' }}>Verifica que todas las variables de entorno estén configuradas correctamente</p>
+              <button className={styles.button} onClick={validateConfig} disabled={loading}>
+                Validar Configuración
+              </button>
+            </div>
+
+            {/* Gestión de Sesión */}
+            <div className={styles.card} style={{ marginBottom: '2rem', borderLeft: '4px solid #d32f2f' }}>
+              <h3 style={{ marginBottom: '1rem', fontSize: '1.25rem' }}>🚪 Gestión de Sesión</h3>
+              <p style={{ color: '#666', marginBottom: '1rem' }}>Cerrar sesión del panel de administración</p>
+              <button 
+                className={styles.deleteButton} 
+                onClick={handleLogout}
+                style={{ 
+                  background: '#d32f2f',
+                  color: 'white',
+                  padding: '12px 24px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  transition: 'all 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#b71c1c'}
+                onMouseOut={(e) => e.currentTarget.style.background = '#d32f2f'}
+              >
+                🔒 Cerrar Sesión
+              </button>
+            </div>
             {loading && <div className={styles.loadingState}><div className={styles.spinner}></div><p>Validando...</p></div>}
             {results.length > 0 && (
               <div className={styles.infoBox}>

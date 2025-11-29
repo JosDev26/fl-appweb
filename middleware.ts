@@ -11,6 +11,72 @@ const publicRoutes = ['/login', '/crearcuenta', '/']
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
+  // ========== PROTECCIÓN PARA /DEV ==========
+  // Captura /dev, /dev/, /dev/config, etc. pero NO /dev/login
+  if (path === '/dev' || path.startsWith('/dev/')) {
+    // Permitir acceso a login y API de autenticación
+    if (path === '/dev/login' || path.startsWith('/api/dev-auth')) {
+      return NextResponse.next()
+    }
+
+    // Verificar cookies de autenticación de admin
+    const devAuth = request.cookies.get('dev-auth')?.value
+    const adminId = request.cookies.get('dev-admin-id')?.value
+
+    if (!devAuth || !adminId) {
+      return NextResponse.redirect(new URL('/dev/login', request.url))
+    }
+
+    // Verificar sesión en la base de datos
+    try {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+
+      const { data: session, error } = await supabase
+        .from('dev_sessions')
+        .select('id, is_active, expires_at')
+        .eq('session_token', devAuth)
+        .eq('admin_id', adminId)
+        .eq('is_active', true)
+        .single()
+
+      if (error || !session) {
+        const response = NextResponse.redirect(new URL('/dev/login', request.url))
+        // Eliminar cookies con los mismos atributos con los que fueron creadas
+        response.cookies.set('dev-auth', '', { path: '/dev', maxAge: 0 })
+        response.cookies.set('dev-admin-id', '', { path: '/dev', maxAge: 0 })
+        response.cookies.set('dev-admin-name', '', { path: '/dev', maxAge: 0 })
+        return response
+      }
+
+      // Verificar expiración
+      const now = new Date()
+      const expiresAt = new Date(session.expires_at)
+
+      if (now > expiresAt) {
+        await supabase
+          .from('dev_sessions')
+          .update({ is_active: false })
+          .eq('id', session.id)
+
+        const response = NextResponse.redirect(new URL('/dev/login', request.url))
+        // Eliminar cookies con los mismos atributos con los que fueron creadas
+        response.cookies.set('dev-auth', '', { path: '/dev', maxAge: 0 })
+        response.cookies.set('dev-admin-id', '', { path: '/dev', maxAge: 0 })
+        response.cookies.set('dev-admin-name', '', { path: '/dev', maxAge: 0 })
+        return response
+      }
+    } catch (error) {
+      console.error('Error verificando sesión de admin:', error)
+      return NextResponse.redirect(new URL('/dev/login', request.url))
+    }
+
+    return NextResponse.next()
+  }
+
+  // ========== PROTECCIÓN PARA RUTAS NORMALES ==========
   // Verificar si la ruta necesita protección
   const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route))
   const isPublicRoute = publicRoutes.some(route => path === route || path.startsWith(route + '/'))
