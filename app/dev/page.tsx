@@ -205,6 +205,22 @@ export default function DevPage() {
         return
       }
       
+      // Verificar que las respuestas sean válidas
+      if (!receiptsRes.ok || !clientesRes.ok) {
+        console.error('Error en las respuestas de la API')
+        return
+      }
+
+      // Verificar que el content-type sea JSON
+      const receiptsContentType = receiptsRes.headers.get('content-type')
+      const clientesContentType = clientesRes.headers.get('content-type')
+      
+      if (!receiptsContentType?.includes('application/json') || 
+          !clientesContentType?.includes('application/json')) {
+        console.error('Las respuestas no son JSON válido')
+        return
+      }
+      
       const receiptsData = await receiptsRes.json()
       const clientesData = await clientesRes.json()
 >>>>>>> Stashed changes
@@ -720,6 +736,7 @@ export default function DevPage() {
   }
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   // GRUPOS DE EMPRESAS
   const loadGrupos = async () => {
     setLoadingGrupos(true)
@@ -873,6 +890,8 @@ export default function DevPage() {
   }
 
 =======
+=======
+>>>>>>> Stashed changes
   const handleLogout = async () => {
     if (!confirm('¿Cerrar sesión del panel de administración?')) {
       return
@@ -897,6 +916,9 @@ export default function DevPage() {
     }
   }
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
   // ===== RENDERIZADO =====
 
