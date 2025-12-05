@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 interface User {
   id: string
   nombre: string
-  cedula: number
+  cedula: string
   tipo: 'cliente' | 'empresa'
   modoPago?: boolean
   tarifa_hora?: number

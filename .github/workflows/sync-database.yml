@@ -1,0 +1,35 @@
+name: Sincronizar Base de Datos
+
+on:
+  schedule:
+    # Cada 15 minutos - seguro dentro del límite gratis de GitHub Actions
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Permite ejecutar manualmente desde GitHub
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Sincronizar BD
+        run: |
+          echo "🔄 Iniciando sincronización..."
+          
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.PRODUCTION_URL }}/api/sync/auto" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+            echo "✅ Sincronización exitosa"
+          else
+            echo "❌ Error en sincronización"
+            exit 1
+          fi

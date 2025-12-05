@@ -136,6 +136,12 @@ export default function Login() {
             </div>
           )}
 
+          <div style={{ textAlign: 'right', marginBottom: '1rem' }}>
+            <Link href="/recuperar-password" className={styles.forgotLink}>
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
+
           <button
             type="submit"
             disabled={loading}

@@ -29,7 +29,7 @@ interface ClienteModoPago {
   id: string
   id_sheets?: string | null
   nombre: string
-  cedula: string | number
+  cedula: string
   correo: string | null
   modoPago: boolean  // camelCase como viene del API
   tipo: 'cliente' | 'empresa'
@@ -57,14 +57,14 @@ interface InvoiceFile {
   clientId: string
   clientType: 'cliente' | 'empresa'
   clientName: string
-  clientCedula: string | number
+  clientCedula: string
   path: string
 }
 
 interface ClientVistoBueno {
   id: string
   nombre: string
-  cedula: string | number
+  cedula: string
   darVistoBueno: boolean
   tipo: 'cliente' | 'empresa'
 }
@@ -84,7 +84,62 @@ interface EmpresaDisponible {
   iva_perc: number
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos'
+interface DeudaCliente {
+  id: string
+  nombre: string
+  cedula: string
+  tipo: 'usuario' | 'empresa'
+  grupoId?: string
+  grupoNombre?: string
+  esGrupoPrincipal?: boolean
+  tarifa_hora: number
+  iva_perc: number
+  mesAnterior: {
+    mes: string
+    totalHoras: number
+    montoHoras: number
+    totalGastos: number
+    totalMensualidades: number
+    subtotal: number
+    iva: number
+    total: number
+  }
+  mesActual: {
+    mes: string
+    totalHoras: number
+    montoHoras: number
+    totalGastos: number
+    totalMensualidades: number
+    subtotal: number
+    iva: number
+    total: number
+  }
+}
+
+interface TotalesDeudas {
+  mesAnterior: {
+    mes: string
+    totalHoras: number
+    montoHoras: number
+    totalGastos: number
+    totalMensualidades: number
+    subtotal: number
+    iva: number
+    total: number
+  }
+  mesActual: {
+    mes: string
+    totalHoras: number
+    montoHoras: number
+    totalGastos: number
+    totalMensualidades: number
+    subtotal: number
+    iva: number
+    total: number
+  }
+}
+
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas'
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -153,6 +208,13 @@ export default function DevPage() {
   const [nuevoGrupoEmpresaPrincipal, setNuevoGrupoEmpresaPrincipal] = useState('')
   const [nuevoGrupoEmpresas, setNuevoGrupoEmpresas] = useState<string[]>([])
   const [creandoGrupo, setCreandoGrupo] = useState(false)
+
+  // Estados para deudas de clientes
+  const [deudas, setDeudas] = useState<DeudaCliente[]>([])
+  const [totalesDeudas, setTotalesDeudas] = useState<TotalesDeudas | null>(null)
+  const [loadingDeudas, setLoadingDeudas] = useState(false)
+  const [filtroDeudas, setFiltroDeudas] = useState<'todos' | 'empresas' | 'usuarios'>('todos')
+  const [vistaDeudas, setVistaDeudas] = useState<'mesAnterior' | 'mesActual'>('mesAnterior')
 
   // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
@@ -850,6 +912,76 @@ export default function DevPage() {
     return empresasDisponibles.filter(e => !empresasEnGrupos.has(e.id))
   }
 
+  // DEUDAS DE CLIENTES
+  const loadDeudas = async () => {
+    setLoadingDeudas(true)
+    try {
+      const url = isDateSimulated && simulatedDate 
+        ? `/api/deudas-clientes?simulatedDate=${simulatedDate}`
+        : '/api/deudas-clientes'
+      const res = await fetch(url)
+      const data = await res.json()
+      
+      if (data.success) {
+        setDeudas(data.deudas || [])
+        setTotalesDeudas(data.totales || null)
+      } else {
+        console.error('Error cargando deudas:', data.error)
+      }
+    } catch (error) {
+      console.error('Error cargando deudas:', error)
+    } finally {
+      setLoadingDeudas(false)
+    }
+  }
+
+  // Filtrar deudas según el filtro seleccionado
+  const getDeudasFiltradas = () => {
+    if (filtroDeudas === 'todos') return deudas
+    return deudas.filter(d => d.tipo === (filtroDeudas === 'empresas' ? 'empresa' : 'usuario'))
+  }
+
+  // Calcular totales por grupo
+  const getTotalesPorGrupo = () => {
+    const grupos: { [grupoId: string]: { nombre: string; total: number; totalHoras: number; cantidad: number } } = {}
+    const deudasFiltradas = getDeudasFiltradas()
+    
+    deudasFiltradas.forEach(deuda => {
+      if (deuda.grupoId) {
+        const datos = vistaDeudas === 'mesAnterior' ? deuda.mesAnterior : deuda.mesActual
+        if (!grupos[deuda.grupoId]) {
+          grupos[deuda.grupoId] = { 
+            nombre: deuda.grupoNombre || '', 
+            total: 0, 
+            totalHoras: 0,
+            cantidad: 0
+          }
+        }
+        grupos[deuda.grupoId].cantidad += 1
+        // Redondear a 2 decimales para evitar errores de punto flotante
+        grupos[deuda.grupoId].total = Math.round((grupos[deuda.grupoId].total + datos.total) * 100) / 100
+        grupos[deuda.grupoId].totalHoras = Math.round((grupos[deuda.grupoId].totalHoras + datos.totalHoras) * 100) / 100
+      }
+    })
+    
+    return grupos
+  }
+
+  // Formatear horas
+  const formatHoras = (horas: number) => {
+    const h = Math.floor(horas)
+    const m = Math.round((horas - h) * 60)
+    return m > 0 ? `${h}h ${m}m` : `${h}h`
+  }
+
+  // Nombre del mes
+  const getNombreMes = (mesStr: string) => {
+    const [year, month] = mesStr.split('-')
+    const meses = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    return `${meses[parseInt(month)]} ${year}`
+  }
+
   const handleLogout = async () => {
     if (!confirm('¿Cerrar sesión del panel de administración?')) {
       return
@@ -934,6 +1066,13 @@ export default function DevPage() {
           >
             <span className={styles.navIcon}>🏢</span>
             <span className={styles.navLabel}>Grupos Empresas</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'deudas' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('deudas'); loadDeudas() }}
+          >
+            <span className={styles.navIcon}>💰</span>
+            <span className={styles.navLabel}>Deudas Clientes</span>
           </button>
           <button 
             className={`${styles.navItem} ${activeSection === 'fecha' ? styles.active : ''}`}
@@ -1897,6 +2036,220 @@ export default function DevPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DEUDAS DE CLIENTES */}
+        {activeSection === 'deudas' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Deudas de Clientes</h2>
+                <p className={styles.sectionDescription}>
+                  Montos pendientes de pago por empresas y usuarios
+                </p>
+              </div>
+              <button className={styles.button} onClick={loadDeudas} disabled={loadingDeudas}>
+                {loadingDeudas ? 'Cargando...' : 'Refrescar'}
+              </button>
+            </div>
+
+            {/* Filtros y vista */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Ver mes:</label>
+                <select
+                  className={styles.input}
+                  value={vistaDeudas}
+                  onChange={(e) => setVistaDeudas(e.target.value as 'mesAnterior' | 'mesActual')}
+                  style={{ minWidth: '200px' }}
+                >
+                  <option value="mesAnterior">
+                    {totalesDeudas?.mesAnterior.mes ? getNombreMes(totalesDeudas.mesAnterior.mes) : 'Mes Anterior'} (Reportado)
+                  </option>
+                  <option value="mesActual">
+                    {totalesDeudas?.mesActual.mes ? getNombreMes(totalesDeudas.mesActual.mes) : 'Mes Actual'} (En curso)
+                  </option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Filtrar por:</label>
+                <select
+                  className={styles.input}
+                  value={filtroDeudas}
+                  onChange={(e) => setFiltroDeudas(e.target.value as 'todos' | 'empresas' | 'usuarios')}
+                  style={{ minWidth: '150px' }}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="empresas">Solo Empresas</option>
+                  <option value="usuarios">Solo Usuarios</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Resumen de totales */}
+            {totalesDeudas && (
+              <div className={styles.deudasResumen}>
+                <h3 className={styles.deudasResumenTitle}>
+                  Total {vistaDeudas === 'mesAnterior' ? getNombreMes(totalesDeudas.mesAnterior.mes) : getNombreMes(totalesDeudas.mesActual.mes)}
+                </h3>
+                <div className={styles.deudasResumenGrid}>
+                  <div>
+                    <strong>Horas:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatHoras(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.totalHoras : totalesDeudas.mesActual.totalHoras)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Monto Horas:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.montoHoras : totalesDeudas.mesActual.montoHoras)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Gastos:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.totalGastos : totalesDeudas.mesActual.totalGastos)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Mensualidades:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.totalMensualidades : totalesDeudas.mesActual.totalMensualidades)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Subtotal:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.subtotal : totalesDeudas.mesActual.subtotal)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>IVA:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.iva : totalesDeudas.mesActual.iva)}
+                    </p>
+                  </div>
+                  <div className={styles.deudasResumenTotal}>
+                    <strong>TOTAL A COBRAR:</strong>
+                    <p className={styles.deudasResumenTotalValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.total : totalesDeudas.mesActual.total)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Lista de deudas */}
+            {loadingDeudas ? (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Cargando deudas...</p>
+              </div>
+            ) : getDeudasFiltradas().length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>No hay deudas pendientes para el período seleccionado</p>
+              </div>
+            ) : (
+              <div className={styles.table}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Tipo</th>
+                      <th>Grupo</th>
+                      <th style={{ textAlign: 'right' }}>Horas</th>
+                      <th style={{ textAlign: 'right' }}>Monto Horas</th>
+                      <th style={{ textAlign: 'right' }}>Gastos</th>
+                      <th style={{ textAlign: 'right' }}>Mensualidades</th>
+                      <th style={{ textAlign: 'right' }}>Subtotal</th>
+                      <th style={{ textAlign: 'right' }}>IVA</th>
+                      <th style={{ textAlign: 'right' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const deudasFiltradas = getDeudasFiltradas()
+                      const totalesPorGrupo = getTotalesPorGrupo()
+                      const gruposYaMostrados = new Set<string>()
+                      const filas: React.ReactNode[] = []
+                      
+                      deudasFiltradas.forEach((deuda, index) => {
+                        const datos = vistaDeudas === 'mesAnterior' ? deuda.mesAnterior : deuda.mesActual
+                        
+                        // Agregar fila de la deuda
+                        filas.push(
+                          <tr 
+                            key={deuda.id} 
+                            className={deuda.esGrupoPrincipal ? styles.rowGrupoPrincipal : (deuda.grupoId ? styles.rowGrupoAsociado : '')}
+                          >
+                            <td>
+                              <strong>{deuda.nombre}</strong>
+                              <br />
+                              <small className={styles.textMuted}>{deuda.cedula}</small>
+                            </td>
+                            <td>
+                              <span className={`${styles.badge} ${deuda.tipo === 'empresa' ? styles.badgeInfo : styles.badgeWarning}`}>
+                                {deuda.tipo === 'empresa' ? 'Empresa' : 'Usuario'}
+                              </span>
+                            </td>
+                            <td>
+                              {deuda.grupoNombre ? (
+                                <span style={{ fontSize: '0.875rem' }}>
+                                  {deuda.esGrupoPrincipal ? '* ' : '  '}
+                                  {deuda.grupoNombre}
+                                </span>
+                              ) : (
+                                <span className={styles.textMuted}>—</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'right' }}>{formatHoras(datos.totalHoras)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.montoHoras)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalGastos)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalMensualidades)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.subtotal)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.iva)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 600 }} className={styles.textSuccess}>
+                              {formatCurrency(datos.total)}
+                            </td>
+                          </tr>
+                        )
+                        
+                        // Si es el último del grupo, agregar fila de subtotal
+                        if (deuda.grupoId && !gruposYaMostrados.has(deuda.grupoId)) {
+                          // Verificar si es el último elemento del grupo
+                          const siguienteDeuda = deudasFiltradas[index + 1]
+                          const esUltimoDelGrupo = !siguienteDeuda || siguienteDeuda.grupoId !== deuda.grupoId
+                          
+                          if (esUltimoDelGrupo) {
+                            gruposYaMostrados.add(deuda.grupoId)
+                            const grupoTotal = totalesPorGrupo[deuda.grupoId]
+                            if (grupoTotal) {
+                              filas.push(
+                                <tr key={`grupo-total-${deuda.grupoId}`} className={styles.rowGrupoTotal}>
+                                  <td colSpan={3} style={{ textAlign: 'right', fontWeight: 600 }}>
+                                    Total {grupoTotal.nombre} ({grupoTotal.cantidad} empresas):
+                                  </td>
+                                  <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                    {formatHoras(grupoTotal.totalHoras)}
+                                  </td>
+                                  <td colSpan={5}></td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700 }} className={styles.textSuccess}>
+                                    {formatCurrency(grupoTotal.total)}
+                                  </td>
+                                </tr>
+                              )
+                            }
+                          }
+                        }
+                      })
+                      
+                      return filas
+                    })()}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

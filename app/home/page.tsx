@@ -8,7 +8,7 @@ import styles from './home.module.css'
 interface User {
   id: string
   nombre: string
-  cedula: number
+  cedula: string
   tipo?: 'cliente' | 'empresa'
   modoPago?: boolean
 }

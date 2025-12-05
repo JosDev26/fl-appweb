@@ -19,6 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Fusión Legal",
   description: "Aplicación de gestión legal integrada con AppSheet y Google Sheets",
+  themeColor: "#19304B",
 };
 
 export default function RootLayout({
@@ -28,6 +29,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
+      <head>
+        <meta name="color-scheme" content="light dark" />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <InitialLoader />
         <DateSimulatorIndicator />

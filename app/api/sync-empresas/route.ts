@@ -25,9 +25,13 @@ async function syncEmpresas() {
     const empresasData = await GoogleSheetsService.readEmpresas()
     
     console.log(`📊 Datos leídos de Google Sheets:`, empresasData.length, 'registros')
-    if (empresasData.length > 0) {
-      console.log(`📋 Primer registro:`, empresasData[0])
-    }
+    
+    // DEBUG: Mostrar TODOS los IDs y nombres de Sheets
+    console.log('📋 === EMPRESAS EN GOOGLE SHEETS ===')
+    empresasData.forEach((emp: any, i: number) => {
+      console.log(`  [${i}] ID="${emp.id}" | Nombre="${emp.nombre}"`)
+    })
+    console.log('📋 === FIN LISTA SHEETS ===')
     
     // Los datos ya vienen transformados desde readEmpresas
     const transformedData = empresasData
@@ -39,26 +43,47 @@ async function syncEmpresas() {
 
     if (fetchError) throw fetchError
 
+    // DEBUG: Mostrar TODOS los IDs y nombres de Supabase
+    console.log('📋 === EMPRESAS EN SUPABASE ===')
+    ;(existingEmpresas || []).forEach((emp: any, i: number) => {
+      console.log(`  [${i}] ID="${emp.id}" | Nombre="${emp.nombre}"`)
+    })
+    console.log('📋 === FIN LISTA SUPABASE ===')
+
     // Crear mapas para comparación
     const existingMap = new Map((existingEmpresas || []).map((emp: any) => [emp.id, emp]))
     const newIdSet = new Set(transformedData.map((emp: any) => emp.id))
     
-    let inserted = 0, updated = 0, deleted = 0, errors = 0
+    // DEBUG: Log de IDs para detectar discrepancias
+    console.log('🔍 IDs en Supabase:', Array.from(existingMap.keys()).slice(0, 10), '... total:', existingMap.size)
+    console.log('🔍 IDs en Sheets:', Array.from(newIdSet).slice(0, 10), '... total:', newIdSet.size)
+    
+    let inserted = 0, updated = 0, deleted = 0, skippedDeletes = 0, errors = 0
     const errorDetails: any[] = []
 
-    // Eliminar registros que ya no están en Sheets
+    // ⚠️ DESHABILITADO: Eliminar registros que ya no están en Sheets
+    // Esto evita eliminaciones accidentales por diferencias en IDs
+    // Para habilitar, cambiar ENABLE_DELETE a true
+    const ENABLE_DELETE = false
+    
     for (const existing of existingEmpresas || []) {
       if (existing.id && !newIdSet.has(existing.id)) {
-        const { error } = await supabase
-          .from('empresas')
-          .delete()
-          .eq('id', existing.id)
-        
-        if (error) {
-          errors++
-          errorDetails.push({ action: 'delete', id: existing.id, error: error.message })
+        if (ENABLE_DELETE) {
+          const { error } = await supabase
+            .from('empresas')
+            .delete()
+            .eq('id', existing.id)
+          
+          if (error) {
+            errors++
+            errorDetails.push({ action: 'delete', id: existing.id, error: error.message })
+          } else {
+            deleted++
+            console.log(`🗑️ Eliminado: ${existing.id} (${existing.nombre})`)
+          }
         } else {
-          deleted++
+          skippedDeletes++
+          console.log(`⚠️ NO eliminado (protección activa): ${existing.id} (${existing.nombre}) - No encontrado en Sheets`)
         }
       }
     }
@@ -98,12 +123,12 @@ async function syncEmpresas() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${inserted} insertadas, ${updated} actualizadas, ${deleted} eliminadas, ${errors} errores`)
+    console.log(`✅ Sincronización completada: ${inserted} insertadas, ${updated} actualizadas, ${deleted} eliminadas, ${skippedDeletes} protegidas, ${errors} errores`)
     
     return NextResponse.json({
       success: true,
       message: 'Sincronización de Empresas exitosa',
-      stats: { inserted, updated, deleted, errors },
+      stats: { inserted, updated, deleted, skippedDeletes, errors },
       details: errorDetails.length > 0 ? errorDetails : undefined
     })
   } catch (error) {

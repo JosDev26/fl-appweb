@@ -80,11 +80,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Actualizar la empresa en nuestra tabla (solo marcar como registrado)
+    // El correo interno solo existe en Supabase Auth, no se guarda en la tabla
     const { error: updateError } = await supabase
       .from('empresas')
       .update({ 
         estaRegistrado: true,
-        correo: emailInterno,
         updated_at: new Date().toISOString()
       })
       .eq('cedula', identificacion)

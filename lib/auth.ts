@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 export interface UsuarioData {
   id: string
   nombre: string
-  cedula: number
+  cedula: string
   modoPago: boolean
   tipo: 'cliente'
   correo?: string
@@ -13,7 +13,7 @@ export interface UsuarioData {
 export interface EmpresaData {
   id: string
   nombre: string
-  cedula: number
+  cedula: string
   tipo: 'empresa'
   modoPago?: boolean
   tarifa_hora?: number
@@ -58,7 +58,7 @@ export async function getCurrentUser(accessToken: string): Promise<UsuarioData |
       return {
         id: usuario.id,
         nombre: usuario.nombre,
-        cedula: usuario.cedula || 0,
+        cedula: usuario.cedula || '',
         modoPago: usuario.modoPago || false,
         correo: usuario.correo || undefined,
         tipo: 'cliente'
@@ -78,7 +78,7 @@ export async function getCurrentUser(accessToken: string): Promise<UsuarioData |
       return {
         id: empresa.id,
         nombre: empresa.nombre,
-        cedula: empresa.cedula || 0,
+        cedula: empresa.cedula || '',
         modoPago: empresa.modoPago || false,
         tarifa_hora: empresa.tarifa_hora || undefined,
         iva_perc: empresa.iva_perc || undefined,

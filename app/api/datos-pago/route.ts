@@ -298,6 +298,13 @@ export async function GET(request: NextRequest) {
       totalMinutosGlobal += caso.totalMinutos;
     });
 
+    // DEBUG: Log detallado de trabajos
+    console.log('🔍 [DEBUG] EMPRESA PRINCIPAL trabajos:', trabajosPorHora.length);
+    console.log('🔍 [DEBUG] EMPRESA PRINCIPAL minutos totales:', totalMinutosGlobal);
+    trabajosPorHora.forEach((t: any, i: number) => {
+      console.log(`  [${i}] fecha=${t.fecha}, duracion=${t.duracion}, caso=${t.caso_asignado}`);
+    });
+
     // Calcular totales de servicios profesionales
     // Cálculo correcto: minutos / 60 para obtener horas decimales
     const totalHorasDecimal = totalMinutosGlobal / 60;
@@ -349,6 +356,12 @@ export async function GET(request: NextRequest) {
       
       for (const empresaAsociada of empresasDelGrupo) {
         const datosEmp = await getDatosEmpresa(empresaAsociada.id, inicioMesStr, finMesStr);
+        
+        // DEBUG: Log de empresa asociada
+        console.log(`🔍 [DEBUG] EMPRESA ASOCIADA: ${empresaAsociada.nombre} trabajos:`, datosEmp.trabajosPorHora.length);
+        datosEmp.trabajosPorHora.forEach((t: any, i: number) => {
+          console.log(`    [${i}] fecha=${t.fecha}, duracion=${t.duracion}`);
+        });
         
         // Calcular totales para esta empresa
         let empTotalMinutos = 0;
@@ -441,6 +454,24 @@ export async function GET(request: NextRequest) {
     if (esGrupoPrincipal) {
       console.log('  🏢 GRUPO - Total asociadas:', totalGrupoAPagar);
       console.log('  🏢 GRUPO - Gran total:', granTotalAPagar);
+      // DEBUG DETALLADO
+      console.log('🔍 [DEBUG FINAL] ===================');
+      console.log('  EMPRESA PRINCIPAL:');
+      console.log('    - Minutos:', totalMinutosGlobal);
+      console.log('    - Horas decimal:', totalHorasDecimal);
+      console.log('    - Tarifa:', tarifaHora);
+      console.log('    - Costo servicios:', costoServiciosTarifa);
+      console.log('    - Total principal (con IVA):', totalAPagar);
+      datosEmpresasGrupo.forEach(e => {
+        console.log(`  ASOCIADA ${e.empresaNombre}:`);
+        console.log(`    - Minutos: ${e.totalMinutos}`);
+        console.log(`    - Horas decimal: ${e.totalHoras}`);
+        console.log(`    - Tarifa: ${e.tarifaHora}`);
+        console.log(`    - Costo servicios: ${e.costoServicios}`);
+        console.log(`    - Total (con IVA): ${e.total}`);
+      });
+      console.log('  GRAN TOTAL:', granTotalAPagar);
+      console.log('🔍 [DEBUG FINAL] ===================');
     }
 
     return NextResponse.json({

@@ -114,7 +114,7 @@ export interface Database {
         Row: {
           id: string
           nombre: string
-          cedula: number | null
+          cedula: string | null
           esDolar: boolean | null
           iva_perc: number | null
           tarifa_hora: number | null
@@ -127,7 +127,7 @@ export interface Database {
         Insert: {
           id: string
           nombre: string
-          cedula?: number | null
+          cedula?: string | null
           esDolar?: boolean | null
           iva_perc?: number | null
           tarifa_hora?: number | null
@@ -140,7 +140,7 @@ export interface Database {
         Update: {
           id?: string
           nombre?: string
-          cedula?: number | null
+          cedula?: string | null
           esDolar?: boolean | null
           iva_perc?: number | null
           tarifa_hora?: number | null
@@ -442,7 +442,7 @@ export interface Database {
           id: string
           nombre: string
           tipo_cedula: string | null
-          cedula: number | null
+          cedula: string | null
           telefono: string | null
           correo: string | null
           esDolar: boolean | null
@@ -455,7 +455,7 @@ export interface Database {
           id: string
           nombre: string
           tipo_cedula?: string | null
-          cedula?: number | null
+          cedula?: string | null
           telefono?: string | null
           correo?: string | null
           esDolar?: boolean | null
@@ -468,7 +468,7 @@ export interface Database {
           id?: string
           nombre?: string
           tipo_cedula?: string | null
-          cedula?: number | null
+          cedula?: string | null
           telefono?: string | null
           correo?: string | null
           esDolar?: boolean | null

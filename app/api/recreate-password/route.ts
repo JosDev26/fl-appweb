@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const { data: registro, error: selectError } = await supabase
       .from(tabla)
       .select('id, nombre, cedula')
-      .eq('cedula', parseInt(identificacion))
+      .eq('cedula', identificacion)
       .single()
 
     if (selectError || !registro) {
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
       password: password,
       email_confirm: true,
       user_metadata: {
-        cedula: parseInt(identificacion),
+        cedula: identificacion,
         nombre: registro.nombre,
         tipo: tipo,
         user_id: registro.id
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         estaRegistrado: true,
         updated_at: new Date().toISOString()
       })
-      .eq('cedula', parseInt(identificacion))
+      .eq('cedula', identificacion)
 
     if (updateError) {
       console.error('Error actualizando registro:', updateError)

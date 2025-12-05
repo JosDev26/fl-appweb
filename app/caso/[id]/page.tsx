@@ -44,7 +44,7 @@ interface Gasto {
 interface User {
   id: string
   nombre: string
-  cedula?: number
+  cedula?: string
   tipo: 'cliente' | 'empresa'
 }
 

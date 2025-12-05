@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const { data: user, error } = await supabase
       .from('usuarios')
       .select('id, cedula, nombre, estaRegistrado, modoPago')
-      .eq('cedula', parseInt(identificacion))
+      .eq('cedula', identificacion)
       .single()
 
     if (error || !user) {

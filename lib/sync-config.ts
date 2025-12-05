@@ -69,9 +69,8 @@ export const SYNC_CONFIG: TableMapping[] = [
         supabaseColumn: "cedula",
         transform: (value) => {
           if (!value || value === '') return null;
-          // Extraer solo números para la base de datos
-          const cedula = String(value).replace(/[^\d]/g, '');
-          return cedula ? parseInt(cedula) : null;
+          // Mantener como texto para soportar DIMEX y otros formatos
+          return String(value).trim();
         }
       },
       {
@@ -125,9 +124,16 @@ export const SYNC_CONFIG: TableMapping[] = [
         supabaseColumn: "cedula",
         transform: (value) => {
           if (!value || value === '') return null;
-          // Extraer solo números para la base de datos
-          const cedula = String(value).replace(/[^\d]/g, '');
-          return cedula ? parseInt(cedula) : null;
+          // Mantener como texto para soportar formatos especiales
+          return String(value).trim();
+        }
+      },
+      {
+        sheetsColumn: "Correo",            // Columna E
+        supabaseColumn: "correo",
+        transform: (value) => {
+          const email = String(value || '').toLowerCase().trim();
+          return email === '' ? null : email;
         }
       },
       {
@@ -161,6 +167,14 @@ export const SYNC_CONFIG: TableMapping[] = [
           const numStr = String(value).replace(/[₡$,]/g, '').trim();
           const num = parseFloat(numStr);
           return isNaN(num) ? null : num;
+        }
+      },
+      {
+        sheetsColumn: "Correo_Reportes",   // Columna K
+        supabaseColumn: "correo_reportes",
+        transform: (value) => {
+          const email = String(value || '').toLowerCase().trim();
+          return email === '' ? null : email;
         }
       }
       // Nota: estaRegistrado ya no se sincroniza con Google Sheets

@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     const { data: usuario, error: searchError } = await supabase
       .from('usuarios')
       .select('id, cedula, nombre, estaRegistrado, password')
-      .eq('cedula', parseInt(identificacion))
+      .eq('cedula', identificacion)
       .single()
 
     if (searchError || !usuario) {
@@ -112,11 +112,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Actualizar el usuario en nuestra tabla (solo marcar como registrado)
+    // NO sobrescribir el correo - los usuarios ya tienen su correo real
     const { error: updateError } = await supabase
       .from('usuarios')
       .update({
-        estaRegistrado: true,
-        correo: emailInterno // Guardar el email interno
+        estaRegistrado: true
       })
       .eq('id', usuario.id)
 

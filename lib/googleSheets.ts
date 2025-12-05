@@ -46,26 +46,53 @@ export class GoogleSheetsService {
 
       console.log(`📖 Leyendo datos de la hoja ${sheetName}...`);
       
+      // Usar rango explícito hasta fila 1000 para evitar que se corte la lectura
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `${sheetName}!A:Z`, // Leer todas las columnas
+        range: `${sheetName}!A1:Z1000`, // Leer hasta fila 1000 explícitamente
       });
 
       const rows = response.data.values || [];
+      console.log(`📊 Total filas RAW leídas de ${sheetName}: ${rows.length} (incluyendo header)`);
+      
       if (rows.length === 0) return [];
 
       const headers = rows[0];
       const dataRows = rows.slice(1);
+      
+      console.log(`📊 Filas de datos (sin header): ${dataRows.length}`);
+      
+      // DEBUG: Mostrar las primeras 15 filas raw para ver qué IDs tienen
+      console.log(`📋 Primeras 15 filas RAW (columna A - ID):`);
+      dataRows.slice(0, 15).forEach((row, i) => {
+        console.log(`  Fila ${i + 2}: ID="${row[0]}" | Nombre="${row[1]}"`);
+      });
 
       console.log(`📋 Headers encontrados en ${sheetName}:`, headers);
+      
+      // Crear mapa de headers normalizados (sin espacios, minúsculas)
+      const normalizeHeader = (h: string) => String(h || '').trim().toLowerCase().replace(/\s+/g, '_');
+      const headerIndexMap = new Map<string, number>();
+      headers.forEach((h: string, idx: number) => {
+        headerIndexMap.set(normalizeHeader(h), idx);
+      });
 
       // Transformar datos usando la configuración
       const transformedData = dataRows.map((row, index) => {
         const item: any = {};
         
         config.columns.forEach(colConfig => {
-          const sheetsIndex = headers.indexOf(colConfig.sheetsColumn);
-          if (sheetsIndex !== -1) {
+          // Buscar header de forma flexible (normalizado)
+          const normalizedConfigHeader = normalizeHeader(colConfig.sheetsColumn);
+          let sheetsIndex = headerIndexMap.get(normalizedConfigHeader);
+          
+          // Si no lo encuentra normalizado, intentar búsqueda exacta
+          if (sheetsIndex === undefined) {
+            sheetsIndex = headers.indexOf(colConfig.sheetsColumn);
+            if (sheetsIndex === -1) sheetsIndex = undefined;
+          }
+          
+          if (sheetsIndex !== undefined) {
             let value = row[sheetsIndex];
             
             // Aplicar transformación si existe
