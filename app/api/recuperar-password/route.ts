@@ -92,10 +92,12 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Construir URL de reset - IMPORTANTE: usar variable de entorno
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    // Construir URL de reset - usar la URL del request o variable de entorno
+    const requestUrl = new URL(request.url)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${requestUrl.protocol}//${requestUrl.host}`
+    
     if (!baseUrl) {
-      console.error('ERROR: NEXT_PUBLIC_APP_URL no está configurada')
+      console.error('ERROR: No se pudo determinar la URL base')
       return NextResponse.json({
         success: true,
         message: 'Si el correo está registrado, recibirás un enlace de recuperación.'
@@ -106,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Enviar email
     try {
       await resend.emails.send({
-        from: 'Fusion Legal <no-reply@verificaciones.fusionlegalcr.com>',
+        from: 'Fusion Legal <noreply@verificaciones.fusionlegalcr.com>',
         to: registro.correo_destino,
         subject: 'Recuperación de contraseña - Fusion Legal',
         html: `
