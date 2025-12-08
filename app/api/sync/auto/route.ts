@@ -17,7 +17,13 @@ export async function POST(request: NextRequest) {
 
     console.log('🕐 Ejecutando sincronización automática programada');
     
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+    // Obtener la URL base desde el request o desde variables de entorno
+    const host = request.headers.get('host')
+    const protocol = request.headers.get('x-forwarded-proto') || 'https'
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `${protocol}://${host}`
+    
+    console.log(`📍 Base URL: ${baseUrl}`)
+    
     const results: any = {
       timestamp: new Date().toISOString(),
       syncs: []
