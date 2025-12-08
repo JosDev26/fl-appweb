@@ -2,8 +2,10 @@ name: Sincronizar Base de Datos
 
 on:
   schedule:
-    # Cada hora en punto
-    - cron: '0 * * * *'
+    # Cada hora de 5 AM a 11 PM (UTC-6, Costa Rica)
+    # En UTC esto es 11:00 a 05:00 del día siguiente
+    - cron: '0 11-23 * * *'  # 5 AM - 11 PM (11:00-23:59 UTC)
+    - cron: '0 0-5 * * *'     # 12 AM - 5 AM del día siguiente (00:00-05:59 UTC)
   workflow_dispatch: # Permite ejecutar manualmente desde GitHub
 
 jobs:
