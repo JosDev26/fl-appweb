@@ -8,7 +8,7 @@ const protectedRoutes = ['/home', '/caso', '/admin', '/pago', '/solicitud']
 // Rutas públicas (no requieren autenticación)
 const publicRoutes = ['/login', '/crearcuenta', '/']
 
-export async function middleware(request: NextRequest) {
+export default async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // ========== PROTECCIÓN PARA /DEV ==========
@@ -125,16 +125,14 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next()
 }
 
-// Configurar las rutas donde el middleware debe ejecutarse
-export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
-  ],
-}
+// Configurar las rutas donde el proxy debe ejecutarse
+export const matcher = [
+  /*
+   * Match all request paths except for the ones starting with:
+   * - api (API routes)
+   * - _next/static (static files)
+   * - _next/image (image optimization files)
+   * - favicon.ico (favicon file)
+   */
+  '/((?!api|_next/static|_next/image|favicon.ico).*)',
+]

@@ -259,11 +259,5 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Configuración de Next.js para aumentar límite de body
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '6mb',
-    },
-  },
-}
+// Nota: En Next.js 15+, el límite de body se configura automáticamente.
+// La ruta maneja multipart/form-data con límites en el cliente.
