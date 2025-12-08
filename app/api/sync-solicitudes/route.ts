@@ -20,8 +20,9 @@ async function syncSolicitudes() {
     if (!allColumnsData || allColumnsData.length < 2) {
       return NextResponse.json({ 
         success: true, 
-        message: 'No hay datos para sincronizar',
-        stats: { inserted: 0, updated: 0, deleted: 0, errors: 0 }
+        message: 'Solicitudes: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       })
     }
 
@@ -206,13 +207,15 @@ async function syncSolicitudes() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${errors} errores`)
+    const omitidos = deleted
+    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${omitidos} omitidos, ${errors} errores`)
     
     return NextResponse.json({
       success: true,
-      message: 'Sincronización de Solicitudes exitosa',
-      stats: { inserted, updated, deleted, errors },
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      message: `Solicitudes: ${transformedData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${omitidos} omitidos, ${errors} errores`,
+      stats: { leidos: transformedData.length, inserted, updated, omitidos, errors },
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Solicitudes:', error)
@@ -220,8 +223,9 @@ async function syncSolicitudes() {
     return NextResponse.json(
       { 
         success: false,
-        message: `Error al sincronizar Solicitudes: ${errorMessage}`,
-        error: errorMessage
+        message: `Solicitudes: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

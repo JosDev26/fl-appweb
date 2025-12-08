@@ -236,6 +236,9 @@ export default function DevPage() {
       }
     }
     loadGlobalSimulatedDate()
+    
+    // Auto-cargar datos de la primera sección (comprobantes)
+    loadPaymentData()
   }, [])
 
   // ===== FUNCIONES DE CARGA POR SECCIÓN =====
@@ -671,18 +674,25 @@ export default function DevPage() {
   const handleSyncAll = async () => {
     setLoading(true)
     setResults([])
+    // Orden correcto respetando dependencias (Foreign Keys)
     const endpoints = [
+      // 1. Tablas base sin dependencias
       { url: '/api/sync-usuarios', label: 'Usuarios' },
       { url: '/api/sync-empresas', label: 'Empresas' },
-      { url: '/api/sync-casos', label: 'Casos' },
       { url: '/api/sync-contactos', label: 'Contactos' },
+      { url: '/api/sync-materias', label: 'Materias' },
       { url: '/api/sync-funcionarios', label: 'Funcionarios' },
+      { url: '/api/sync-historial-reportes', label: 'Historial Reportes' },
+      
+      // 2. Tablas que dependen de usuarios/empresas
+      { url: '/api/sync-casos', label: 'Casos' },
+      { url: '/api/sync-solicitudes', label: 'Solicitudes' },
+      { url: '/api/sync-ingresos', label: 'Ingresos' },
+      
+      // 3. Tablas que dependen de casos/solicitudes
       { url: '/api/sync-control-horas', label: 'Control de Horas' },
       { url: '/api/sync-gastos', label: 'Gastos' },
-      { url: '/api/sync-solicitudes', label: 'Solicitudes' },
       { url: '/api/sync-actualizaciones', label: 'Actualizaciones' },
-      { url: '/api/sync-historial-reportes', label: 'Historial Reportes' },
-      { url: '/api/sync-materias', label: 'Materias' },
       { url: '/api/sync-clicks-etapa', label: 'Clicks Etapa' }
     ]
     const syncResults: SyncResult[] = []
@@ -1448,7 +1458,7 @@ export default function DevPage() {
                       return (
                         <tr key={code.id}>
                           <td>
-                            <code style={{ background: '#f5f5f5', padding: '0.25rem 0.5rem', borderRadius: '0.25rem' }}>
+                            <code className={styles.codeBox}>
                               {code.code}
                             </code>
                           </td>
@@ -1962,19 +1972,19 @@ export default function DevPage() {
                     </div>
 
                     {/* Empresa Principal */}
-                    <div style={{ background: '#e3f2fd', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem' }}>
-                      <strong style={{ color: '#1565c0' }}>👑 Empresa Principal:</strong>
-                      <p style={{ margin: '0.5rem 0 0', fontSize: '1.1rem' }}>
+                    <div className={styles.empresaPrincipalBox}>
+                      <strong className={styles.empresaPrincipalLabel}>👑 Empresa Principal:</strong>
+                      <p className={styles.empresaPrincipalNombre}>
                         {grupo.empresa_principal?.nombre || grupo.empresa_principal_id}
                       </p>
-                      <small style={{ color: '#666' }}>Esta empresa ve y paga por las demás del grupo</small>
+                      <small className={styles.textMuted}>Esta empresa ve y paga por las demás del grupo</small>
                     </div>
 
                     {/* Empresas Asociadas */}
-                    <div style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '0.5rem' }}>
+                    <div className={styles.empresasAsociadasBox}>
                       <strong>🏢 Empresas Asociadas ({grupo.empresas_asociadas?.length || 0}):</strong>
                       {grupo.empresas_asociadas?.length === 0 ? (
-                        <p style={{ margin: '0.5rem 0', color: '#666' }}>Sin empresas asociadas</p>
+                        <p className={styles.textMuted} style={{ margin: '0.5rem 0' }}>Sin empresas asociadas</p>
                       ) : (
                         <ul style={{ margin: '0.5rem 0', paddingLeft: '1.5rem' }}>
                           {grupo.empresas_asociadas?.map((emp) => (

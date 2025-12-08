@@ -28,10 +28,9 @@ export default function ComprobantePage() {
         const data = await res.json()
         if (data.simulated && data.date) {
           setSimulatedDate(data.date)
-          console.log('📅 [comprobante] Fecha simulada cargada:', data.date)
         }
       } catch (err) {
-        console.log('📅 [comprobante] No hay fecha simulada activa')
+        // No hay fecha simulada activa
       }
     }
     loadSimulatedDate()
@@ -74,10 +73,9 @@ export default function ComprobantePage() {
         }
       } catch (err) {
         // No bloquear si falla la carga de facturas
-        console.log('No hay facturas disponibles (opcional)')
       }
     } catch (err) {
-      console.error('Error loading data:', err)
+      // Error loading data
       setError('No se pudo cargar la información. Por favor, intente más tarde.')
     } finally {
       setLoadingMonto(false)
@@ -107,7 +105,6 @@ export default function ComprobantePage() {
         : data.totalAPagar
       setMontoPago(totalFinal)
     } catch (err) {
-      console.error('Error fetching monto:', err)
       setError('No se pudo cargar el monto a pagar')
     } finally {
       setLoadingMonto(false)
@@ -227,7 +224,6 @@ export default function ComprobantePage() {
       router.push('/home?fromUpload=true')
 
     } catch (err: any) {
-      console.error('Error uploading:', err)
       setError(err.message || 'Error al subir el comprobante')
     } finally {
       setUploading(false)
@@ -264,7 +260,6 @@ export default function ComprobantePage() {
         URL.revokeObjectURL(url)
       }
     } catch (error) {
-      console.error('Error downloading invoice:', error)
       alert('Error al descargar la factura')
     } finally {
       setDownloadingInvoice(null)

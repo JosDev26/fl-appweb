@@ -28,10 +28,9 @@ async function syncHistorialReportes() {
       console.log('No se encontraron datos en la hoja');
       return NextResponse.json({
         success: true,
-        message: "No hay datos para sincronizar",
-        inserted: 0,
-        updated: 0,
-        deleted: 0,
+        message: "Historial Reportes: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores",
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       });
     }
 
@@ -233,12 +232,15 @@ async function syncHistorialReportes() {
 
     return NextResponse.json({
       success: true,
-      message: "Sincronización de Historial Reportes completada",
+      message: `Historial Reportes: ${transformedData.length} leídos, ${insertCount} insertados, ${updateCount} actualizados, ${deleteCount} omitidos, 0 errores`,
       stats: {
+        leidos: transformedData.length,
         inserted: insertCount,
         updated: updateCount,
-        deleted: deleteCount,
-      }
+        omitidos: deleteCount,
+        errors: 0
+      },
+      code: 200
     });
 
   } catch (error: any) {
@@ -247,8 +249,9 @@ async function syncHistorialReportes() {
     return NextResponse.json(
       {
         success: false,
-        message: `Error al sincronizar Historial Reportes: ${errorMessage}`,
+        message: `Historial Reportes: Error - ${errorMessage}`,
         error: errorMessage,
+        code: 500
       },
       { status: 500 }
     );

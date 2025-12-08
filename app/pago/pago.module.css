@@ -303,66 +303,99 @@
   box-shadow: 0 12px 40px rgba(250, 208, 44, 0.5);
 }
 
-.vistoBuenoButton {
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  color: white;
-  border: none;
-  padding: clamp(1rem, 2.5vw, 1.25rem) clamp(2rem, 4vw, 3rem);
-  border-radius: 16px;
-  font-size: clamp(1rem, 2vw, 1.25rem);
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 8px 30px rgba(34, 197, 94, 0.4);
+/* Contenedor de botones de visto bueno en row */
+.vistoBuenoContainer {
+  display: flex;
+  gap: 1rem;
   width: 100%;
-  max-width: 500px;
+  max-width: 600px;
 }
 
-.vistoBuenoButton:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 12px 40px rgba(34, 197, 94, 0.5);
-}
-
-.vistoBuenoButton:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.vistoBuenoConfirmado {
-  background: rgba(34, 197, 94, 0.1);
-  border: 2px solid rgba(34, 197, 94, 0.3);
-  border-radius: 16px;
-  padding: clamp(1.5rem, 3vw, 2rem);
-  margin-bottom: clamp(1rem, 2vw, 1.5rem);
-  text-align: center;
-}
-
-.checkIcon {
-  font-size: clamp(2rem, 4vw, 3rem);
-  display: block;
-  margin-bottom: 0.5rem;
-}
-
-.confirmadoText {
+.vistoBuenoButtonConfirm {
+  flex: 1;
+  background: #22c55e;
   color: white;
-  font-size: clamp(1rem, 2vw, 1.25rem);
-  font-weight: 700;
-  margin: 0 0 0.5rem 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.facturaText {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: clamp(0.875rem, 1.5vw, 1rem);
-  margin: 0;
-  font-style: italic;
+.vistoBuenoButtonConfirm:hover:not(:disabled) {
+  background: #16a34a;
+  transform: translateY(-2px);
 }
 
-.nota {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: clamp(0.875rem, 1.5vw, 1rem);
-  margin: 1rem 0 0 0;
-  font-style: italic;
+.vistoBuenoButtonConfirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.vistoBuenoButtonCancel {
+  flex: 1;
+  background: transparent;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.vistoBuenoButtonCancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.vistoBuenoButtonCancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Toast notification */
+.toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Responsive para móviles */
+@media (max-width: 640px) {
+  .vistoBuenoContainer {
+    flex-direction: column;
+  }
+  
+  .vistoBuenoButtonConfirm,
+  .vistoBuenoButtonCancel {
+    width: 100%;
+  }
 }
 
 .loadingState,

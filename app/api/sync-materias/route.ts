@@ -21,8 +21,9 @@ async function syncMaterias() {
     if (materiasSheets.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'No hay datos para sincronizar en la hoja Materia',
-        stats: { leidos: 0, insertados: 0, actualizados: 0, errores: 0 }
+        message: 'Materias: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, insertados: 0, actualizados: 0, omitidos: 0, errores: 0 },
+        code: 200
       });
     }
 
@@ -85,7 +86,7 @@ async function syncMaterias() {
       }
     }
 
-    const mensaje = `Sincronización de Materias completada: ${insertados} insertados, ${actualizados} actualizados, ${errores} errores`;
+    const mensaje = `Materias: ${materiasSheets.length} leídos, ${insertados} insertados, ${actualizados} actualizados, 0 omitidos, ${errores} errores`;
     console.log(`✅ ${mensaje}`);
 
     return NextResponse.json({
@@ -95,18 +96,21 @@ async function syncMaterias() {
         leidos: materiasSheets.length,
         insertados,
         actualizados,
+        omitidos: 0,
         errores
-      }
+      },
+      code: 200
     });
 
   } catch (error) {
-    console.error('❌ Error en sincronización de Materias:', error);
+    console.error('❌ Error al sincronizar Materias:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
       {
         success: false,
-        message: `Error al sincronizar materias: ${errorMessage}`,
-        error: errorMessage
+        message: `Materias: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     );

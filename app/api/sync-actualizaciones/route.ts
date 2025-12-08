@@ -22,8 +22,9 @@ async function syncActualizaciones() {
       console.log('⚠️ No hay datos en la hoja de actualizaciones')
       return NextResponse.json({
         success: true,
-        message: 'No hay datos para sincronizar',
-        synced: 0
+        message: 'Actualizaciones: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       })
     }
 
@@ -135,10 +136,15 @@ async function syncActualizaciones() {
 
     return NextResponse.json({
       success: true,
-      message: 'Sincronización de actualizaciones completada',
-      synced: syncedCount,
-      errors: errorCount,
-      total: sheetData.length
+      message: `Actualizaciones: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, 0 omitidos, ${errorCount} errores`,
+      stats: {
+        leidos: sheetData.length,
+        inserted: syncedCount,
+        updated: 0,
+        omitidos: 0,
+        errors: errorCount
+      },
+      code: 200
     })
 
   } catch (error) {
@@ -147,8 +153,9 @@ async function syncActualizaciones() {
     return NextResponse.json(
       {
         success: false,
-        message: `Error al sincronizar Actualizaciones: ${errorMessage}`,
-        error: errorMessage
+        message: `Actualizaciones: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

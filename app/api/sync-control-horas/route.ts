@@ -37,8 +37,9 @@ async function syncControlHoras() {
     if (rows.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'No hay datos para sincronizar',
-        stats: { inserted: 0, updated: 0, deleted: 0, errors: 0 }
+        message: 'Trabajos por Hora: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       });
     }
 
@@ -202,17 +203,16 @@ async function syncControlHoras() {
     
     return NextResponse.json({
       success: true,
-      message: `Sincronización de Control de Horas exitosa`,
+      message: `Trabajos por Hora: ${transformedData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${registrosSinId} omitidos, ${errors} errores`,
       stats: { 
-        leidos: dataRows.length,
-        procesados: transformedData.length,
-        omitidos: registrosSinId,
+        leidos: transformedData.length,
         inserted, 
         updated, 
-        deleted, 
+        omitidos: registrosSinId, 
         errors 
       },
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Control de Horas:', error)
@@ -220,8 +220,9 @@ async function syncControlHoras() {
     return NextResponse.json(
       { 
         success: false,
-        message: `Error al sincronizar Control de Horas: ${errorMessage}`,
-        error: errorMessage
+        message: `Trabajos por Hora: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

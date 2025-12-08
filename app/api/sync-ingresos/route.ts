@@ -21,18 +21,24 @@ export async function GET() {
     
     return NextResponse.json({
       success: true,
-      message: `${count || 0} ingresos registrados en la base de datos`,
+      message: `Ingresos: ${count || 0} leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores (sincronización automática)`,
       stats: {
-        total: count || 0,
+        leidos: count || 0,
+        inserted: 0,
+        updated: 0,
+        omitidos: 0,
+        errors: 0,
         nota: 'Los ingresos se registran automáticamente al aprobar comprobantes'
-      }
+      },
+      code: 200
     })
     
   } catch (error) {
     return NextResponse.json({ 
       success: false, 
-      message: error instanceof Error ? error.message : 'Error consultando ingresos',
-      error: error instanceof Error ? error.message : String(error)
+      message: `Ingresos: Error - ${error instanceof Error ? error.message : 'Error consultando ingresos'}`,
+      error: error instanceof Error ? error.message : String(error),
+      code: 500
     }, { status: 500 })
   }
 }
@@ -41,7 +47,9 @@ export async function POST() {
   // No hay sync desde Sheets, solo retorna info
   return NextResponse.json({
     success: true,
-    message: 'Los ingresos se registran automáticamente al aprobar comprobantes. No requiere sincronización manual.',
-    nota: 'Este endpoint no sincroniza desde Sheets. Los datos se escriben en Sheets cuando se aprueba un comprobante.'
+    message: 'Ingresos: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores (sincronización automática)',
+    stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+    nota: 'Este endpoint no sincroniza desde Sheets. Los datos se escriben en Sheets cuando se aprueba un comprobante.',
+    code: 200
   })
 }

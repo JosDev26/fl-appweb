@@ -116,6 +116,8 @@ export default function PagoPage() {
   const [vistoBuenoDado, setVistoBuenoDado] = useState(false)
   const [loadingVistoBueno, setLoadingVistoBueno] = useState(false)
   const [simulatedDate, setSimulatedDate] = useState<string | null>(null)
+  const [showToast, setShowToast] = useState(false)
+  const [toastMessage, setToastMessage] = useState('')
   const router = useRouter()
 
   // Cargar fecha simulada global desde API al montar
@@ -126,10 +128,9 @@ export default function PagoPage() {
         const data = await res.json()
         if (data.simulated && data.date) {
           setSimulatedDate(data.date)
-          console.log('📅 [pago] Fecha simulada cargada:', data.date)
         }
       } catch (err) {
-        console.log('📅 [pago] No hay fecha simulada activa')
+        // No hay fecha simulada activa
       }
     }
     loadSimulatedDate()
@@ -185,7 +186,6 @@ export default function PagoPage() {
         }
       }
     } catch (error) {
-      console.error('Error al cargar datos de pago:', error)
       alert('Error al cargar los datos de pago')
     } finally {
       setLoading(false)
@@ -222,11 +222,14 @@ export default function PagoPage() {
       const data = await response.json()
       if (data.success) {
         setVistoBuenoDado(true)
-        alert('✅ Visto bueno registrado. La factura electrónica se enviará próximamente.')
+        setToastMessage('Visto bueno registrado correctamente')
+        setShowToast(true)
+        setTimeout(() => setShowToast(false), 3000)
       }
     } catch (error) {
-      console.error('Error al dar visto bueno:', error)
-      alert('Error al registrar el visto bueno')
+      setToastMessage('Error al registrar el visto bueno')
+      setShowToast(true)
+      setTimeout(() => setShowToast(false), 3000)
     } finally {
       setLoadingVistoBueno(false)
     }
@@ -624,48 +627,37 @@ export default function PagoPage() {
         {(tieneTrabajosHora || tieneMensualidades) && (
           <div className={styles.actionSection}>
             {datosPago?.darVistoBueno && !vistoBuenoDado ? (
-              <>
+              <div className={styles.vistoBuenoContainer}>
                 <button 
-                  className={styles.vistoBuenoButton}
+                  className={styles.vistoBuenoButtonConfirm}
                   onClick={handleDarVistoBueno}
                   disabled={loadingVistoBueno}
                 >
-                  {loadingVistoBueno ? '⏳ Procesando...' : '✅ Dar Visto Bueno a las Horas del Mes'}
+                  {loadingVistoBueno ? 'Procesando...' : 'Confirmar Horas'}
                 </button>
-                <p className={styles.nota}>
-                  * Al dar visto bueno, confirmas las horas trabajadas este mes. La factura electrónica se enviará próximamente.
-                </p>
-              </>
-            ) : datosPago?.darVistoBueno && vistoBuenoDado ? (
-              <>
-                <div className={styles.vistoBuenoConfirmado}>
-                  <span className={styles.checkIcon}>✅</span>
-                  <p className={styles.confirmadoText}>Visto bueno confirmado para este mes</p>
-                  <p className={styles.facturaText}>La factura electrónica se enviará próximamente</p>
-                </div>
                 <button 
-                  className={styles.pagarButton}
-                  onClick={() => router.push('/pago/comprobante')}
+                  className={styles.vistoBuenoButtonCancel}
+                  onClick={() => router.push('/home')}
+                  disabled={loadingVistoBueno}
                 >
-                  Proceder al Pago
+                  No Confirmar
                 </button>
-                <p className={styles.nota}>
-                  * Los trabajos por hora serán facturados según la tarifa acordada
-                </p>
-              </>
+              </div>
             ) : (
-              <>
-                <button 
-                  className={styles.pagarButton}
-                  onClick={() => router.push('/pago/comprobante')}
-                >
-                  Proceder al Pago
-                </button>
-                <p className={styles.nota}>
-                  * Los trabajos por hora serán facturados según la tarifa acordada
-                </p>
-              </>
+              <button 
+                className={styles.pagarButton}
+                onClick={() => router.push('/pago/comprobante')}
+              >
+                Proceder al Pago
+              </button>
             )}
+          </div>
+        )}
+
+        {/* Toast Notification */}
+        {showToast && (
+          <div className={styles.toast}>
+            {toastMessage}
           </div>
         )}
       </main>

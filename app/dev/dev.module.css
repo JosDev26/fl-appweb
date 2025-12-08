@@ -1118,3 +1118,70 @@
     border-top: 2px solid rgba(250, 208, 44, 0.3);
   }
 }
+
+/* Estilo para códigos de invitación */
+.codeBox {
+  background: #f5f5f5;
+  color: #333;
+  padding: 0.25rem 0.5rem;
+  borderRadius: 0.25rem;
+  font-family: 'Courier New', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  .codeBox {
+    background: rgba(250, 208, 44, 0.15);
+    color: #FAD02C;
+    border: 1px solid rgba(250, 208, 44, 0.3);
+  }
+}
+
+/* Estilos para grupos de empresas */
+.empresaPrincipalBox {
+  background: #e3f2fd;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empresaPrincipalBox {
+    background: rgba(33, 150, 243, 0.15);
+    border: 1px solid rgba(33, 150, 243, 0.3);
+  }
+}
+
+.empresaPrincipalLabel {
+  color: #1565c0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empresaPrincipalLabel {
+    color: #64b5f6;
+  }
+}
+
+.empresaPrincipalNombre {
+  margin: 0.5rem 0 0;
+  fontSize: 1.1rem;
+  color: #333;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empresaPrincipalNombre {
+    color: #fff;
+  }
+}
+
+.empresasAsociadasBox {
+  background: #f5f5f5;
+  padding: 1rem;
+  border-radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .empresasAsociadasBox {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}

@@ -29,11 +29,9 @@ export async function GET(request: Request) {
       ])
 
       if (usuariosRes.error) {
-        console.error('Error al obtener usuarios:', usuariosRes.error)
         return NextResponse.json({ error: 'Error al obtener clientes' }, { status: 500 })
       }
       if (empresasRes.error) {
-        console.error('Error al obtener empresas:', empresasRes.error)
         return NextResponse.json({ error: 'Error al obtener empresas' }, { status: 500 })
       }
 
@@ -55,7 +53,6 @@ export async function GET(request: Request) {
         .order('nombre', { ascending: true })
 
       if (error) {
-        console.error('Error al obtener usuarios:', error)
         return NextResponse.json({ error: 'Error al obtener clientes' }, { status: 500 })
       }
 
@@ -74,7 +71,6 @@ export async function GET(request: Request) {
         .order('nombre', { ascending: true })
 
       if (error) {
-        console.error('Error al obtener empresas:', error)
         return NextResponse.json({ error: 'Error al obtener empresas' }, { status: 500 })
       }
 
@@ -93,7 +89,6 @@ export async function GET(request: Request) {
         .order('nombre', { ascending: true })
 
       if (error) {
-        console.error('Error al obtener usuarios:', error)
         return NextResponse.json(
           { error: 'Error al obtener clientes' },
           { status: 500 }
@@ -114,7 +109,6 @@ export async function GET(request: Request) {
         .order('nombre', { ascending: true })
 
       if (error) {
-        console.error('Error al obtener empresas:', error)
         return NextResponse.json(
           { error: 'Error al obtener empresas' },
           { status: 500 }
@@ -134,7 +128,6 @@ export async function GET(request: Request) {
     )
 
   } catch (error) {
-    console.error('Error en GET /api/client:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }
@@ -164,7 +157,6 @@ export async function PATCH(request: Request) {
       ])
 
       if (usuariosRes.error) {
-        console.error('Error reseteando usuarios:', usuariosRes.error)
         return NextResponse.json(
           { error: 'Error reseteando modoPago de usuarios' },
           { status: 500 }
@@ -172,7 +164,6 @@ export async function PATCH(request: Request) {
       }
 
       if (empresasRes.error) {
-        console.error('Error reseteando empresas:', empresasRes.error)
         return NextResponse.json(
           { error: 'Error reseteando modoPago de empresas' },
           { status: 500 }
@@ -208,7 +199,6 @@ export async function PATCH(request: Request) {
       .single()
 
     if (error) {
-      console.error(`Error actualizando ${tipo}:`, error)
       return NextResponse.json(
         { error: `Error actualizando ${tipo}` },
         { status: 500 }
@@ -222,7 +212,6 @@ export async function PATCH(request: Request) {
     })
 
   } catch (error) {
-    console.error('Error en PATCH /api/client:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }

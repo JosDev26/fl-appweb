@@ -230,77 +230,62 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // Procesar usuarios
-    for (const usuario of (usuarios || [])) {
-      const tarifaHora = 90000; // Tarifa estándar para usuarios
-      const ivaPerc = usuario.iva_perc || 0.13;
-      
-      const datosAnterior = await getDatosClienteMes(
-        usuario.id, 'usuario', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc
-      );
-      
-      const datosActual = await getDatosClienteMes(
-        usuario.id, 'usuario', inicioMesActual, finMesActual, tarifaHora, ivaPerc
-      );
-      
-      // Solo agregar si tiene alguna deuda
-      if (datosAnterior.total > 0 || datosActual.total > 0) {
-        deudas.push({
-          id: usuario.id,
-          nombre: usuario.nombre,
-          cedula: usuario.cedula || '',
-          tipo: 'usuario',
-          tarifa_hora: tarifaHora,
-          iva_perc: ivaPerc,
-          mesAnterior: {
-            mes: mesPago,
-            ...datosAnterior
-          },
-          mesActual: {
-            mes: mesActualStr,
-            ...datosActual
-          }
-        });
-      }
-    }
+    // Procesar usuarios y empresas EN PARALELO para mejorar performance
+    const clientesPromises = [
+      ...(usuarios || []).map(async (usuario) => {
+        const tarifaHora = 90000;
+        const ivaPerc = usuario.iva_perc || 0.13;
+        
+        const [datosAnterior, datosActual] = await Promise.all([
+          getDatosClienteMes(usuario.id, 'usuario', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc),
+          getDatosClienteMes(usuario.id, 'usuario', inicioMesActual, finMesActual, tarifaHora, ivaPerc)
+        ]);
+        
+        if (datosAnterior.total > 0 || datosActual.total > 0) {
+          return {
+            id: usuario.id,
+            nombre: usuario.nombre,
+            cedula: usuario.cedula || '',
+            tipo: 'usuario' as const,
+            tarifa_hora: tarifaHora,
+            iva_perc: ivaPerc,
+            mesAnterior: { mes: mesPago, ...datosAnterior },
+            mesActual: { mes: mesActualStr, ...datosActual }
+          };
+        }
+        return null;
+      }),
+      ...(empresas || []).map(async (empresa) => {
+        const tarifaHora = (empresa as any).tarifa_hora || 90000;
+        const ivaPerc = (empresa as any).iva_perc || 0.13;
+        const grupoInfo = empresaGrupoMap.get(empresa.id);
+        
+        const [datosAnterior, datosActual] = await Promise.all([
+          getDatosClienteMes(empresa.id, 'empresa', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc),
+          getDatosClienteMes(empresa.id, 'empresa', inicioMesActual, finMesActual, tarifaHora, ivaPerc)
+        ]);
+        
+        if (datosAnterior.total > 0 || datosActual.total > 0) {
+          return {
+            id: empresa.id,
+            nombre: (empresa as any).nombre,
+            cedula: (empresa as any).cedula || '',
+            tipo: 'empresa' as const,
+            grupoId: grupoInfo?.grupoId,
+            grupoNombre: grupoInfo?.grupoNombre,
+            esGrupoPrincipal: grupoInfo?.esPrincipal,
+            tarifa_hora: tarifaHora,
+            iva_perc: ivaPerc,
+            mesAnterior: { mes: mesPago, ...datosAnterior },
+            mesActual: { mes: mesActualStr, ...datosActual }
+          };
+        }
+        return null;
+      })
+    ];
     
-    // Procesar empresas
-    for (const empresa of (empresas || [])) {
-      const tarifaHora = (empresa as any).tarifa_hora || 90000;
-      const ivaPerc = (empresa as any).iva_perc || 0.13;
-      const grupoInfo = empresaGrupoMap.get(empresa.id);
-      
-      const datosAnterior = await getDatosClienteMes(
-        empresa.id, 'empresa', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc
-      );
-      
-      const datosActual = await getDatosClienteMes(
-        empresa.id, 'empresa', inicioMesActual, finMesActual, tarifaHora, ivaPerc
-      );
-      
-      // Solo agregar si tiene alguna deuda
-      if (datosAnterior.total > 0 || datosActual.total > 0) {
-        deudas.push({
-          id: empresa.id,
-          nombre: (empresa as any).nombre,
-          cedula: (empresa as any).cedula || '',
-          tipo: 'empresa',
-          grupoId: grupoInfo?.grupoId,
-          grupoNombre: grupoInfo?.grupoNombre,
-          esGrupoPrincipal: grupoInfo?.esPrincipal,
-          tarifa_hora: tarifaHora,
-          iva_perc: ivaPerc,
-          mesAnterior: {
-            mes: mesPago,
-            ...datosAnterior
-          },
-          mesActual: {
-            mes: mesActualStr,
-            ...datosActual
-          }
-        });
-      }
-    }
+    const resultados = await Promise.all(clientesPromises);
+    deudas.push(...resultados.filter(d => d !== null) as DeudaCliente[]);
     
     // Ordenar: primero grupos (por nombre de grupo), luego empresas sin grupo, luego usuarios
     deudas.sort((a, b) => {

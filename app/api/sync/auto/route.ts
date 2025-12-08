@@ -23,15 +23,27 @@ export async function POST(request: NextRequest) {
       syncs: []
     }
 
-    // Lista de endpoints a sincronizar en orden
+    // Lista de endpoints a sincronizar en orden (respetando dependencias FK)
+    // Orden: tablas sin dependencias primero, luego las que dependen de ellas
     const syncEndpoints = [
-      { name: 'Clientes', url: `${baseUrl}/api/sync-clientes` },
+      // 1. Tablas base sin dependencias
+      { name: 'Usuarios', url: `${baseUrl}/api/sync-usuarios` },
       { name: 'Empresas', url: `${baseUrl}/api/sync-empresas` },
       { name: 'Contactos', url: `${baseUrl}/api/sync-contactos` },
       { name: 'Materias', url: `${baseUrl}/api/sync-materias` },
       { name: 'Funcionarios', url: `${baseUrl}/api/sync-funcionarios` },
-      { name: 'Casos', url: `${baseUrl}/api/sync-casos` },
-      { name: 'Control_Horas', url: `${baseUrl}/api/sync-control-horas` }
+      { name: 'Historial_Reportes', url: `${baseUrl}/api/sync-historial-reportes` },
+      
+      // 2. Tablas que dependen de usuarios/empresas
+      { name: 'Casos', url: `${baseUrl}/api/sync-casos` }, // FK: id_cliente, materia
+      { name: 'Solicitudes', url: `${baseUrl}/api/sync-solicitudes` }, // FK: id_cliente, materia
+      { name: 'Ingresos', url: `${baseUrl}/api/sync-ingresos` }, // FK: id_cliente
+      
+      // 3. Tablas que dependen de casos/solicitudes
+      { name: 'Trabajos_Por_Hora', url: `${baseUrl}/api/sync-control-horas` }, // FK: caso_asignado, responsable, solicitante
+      { name: 'Gastos', url: `${baseUrl}/api/sync-gastos` }, // FK: id_cliente, id_responsable, id_caso
+      { name: 'Actualizaciones', url: `${baseUrl}/api/sync-actualizaciones` }, // FK: id_solicitud
+      { name: 'Clicks_Etapa', url: `${baseUrl}/api/sync-clicks-etapa` } // FK: id_solicitud
     ]
 
     // Ejecutar sincronizaciones secuencialmente

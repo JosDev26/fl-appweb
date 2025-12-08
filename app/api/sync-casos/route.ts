@@ -20,8 +20,9 @@ async function syncCasos() {
     if (!allColumnsData || allColumnsData.length < 2) {
       return NextResponse.json({ 
         success: true, 
-        message: 'No hay datos para sincronizar',
-        stats: { inserted: 0, updated: 0, deleted: 0, errors: 0 }
+        message: 'Casos: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       })
     }
 
@@ -150,20 +151,21 @@ async function syncCasos() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${errors} errores`)
+    const omitidos = deleted
+    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${omitidos} omitidos, ${errors} errores`)
     
     return NextResponse.json({
       success: true,
-      message: `Sincronización de Casos exitosa`,
+      message: `Casos: ${transformedData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${omitidos} omitidos, ${errors} errores`,
       stats: { 
-        leidos: rows.length,
-        procesados: transformedData.length,
+        leidos: transformedData.length,
         inserted, 
         updated, 
-        deleted, 
+        omitidos, 
         errors 
       },
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Casos:', error)
@@ -171,8 +173,9 @@ async function syncCasos() {
     return NextResponse.json(
       { 
         success: false,
-        message: `Error al sincronizar Casos: ${errorMessage}`,
-        error: errorMessage
+        message: `Casos: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

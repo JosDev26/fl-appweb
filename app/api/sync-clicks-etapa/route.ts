@@ -81,8 +81,9 @@ async function syncClicksEtapa() {
     if (rows.length <= 1) {
       return {
         success: true,
-        message: 'No hay datos para sincronizar',
-        stats: { total: 0, processed: 0, errors: 0 }
+        message: 'Clicks Etapa: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       }
     }
     
@@ -158,13 +159,16 @@ async function syncClicksEtapa() {
     
     return {
       success: true,
-      message: `Sincronización completada: ${processed} registros procesados${errors > 0 ? `, ${errors} errores` : ''}`,
+      message: `Clicks Etapa: ${dataRows.length} leídos, ${processed} insertados, 0 actualizados, 0 omitidos, ${errors} errores`,
       stats: {
-        total: dataRows.length,
-        processed,
-        errors,
-        errorDetails: errorDetails.slice(0, 10) // Limitar a 10 errores
-      }
+        leidos: dataRows.length,
+        inserted: processed,
+        updated: 0,
+        omitidos: 0,
+        errors
+      },
+      details: errorDetails.length > 0 ? errorDetails.slice(0, 10) : undefined,
+      code: 200
     }
     
   } catch (error) {
@@ -183,8 +187,9 @@ export async function GET() {
     return NextResponse.json(
       { 
         success: false, 
-        message: `Error al sincronizar Clicks Etapa: ${errorMessage}`,
-        error: errorMessage
+        message: `Clicks Etapa: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )
@@ -201,8 +206,9 @@ export async function POST() {
     return NextResponse.json(
       { 
         success: false, 
-        message: `Error al sincronizar Clicks Etapa: ${errorMessage}`,
-        error: errorMessage
+        message: `Clicks Etapa: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

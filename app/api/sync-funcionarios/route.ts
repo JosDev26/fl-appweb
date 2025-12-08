@@ -99,13 +99,15 @@ async function syncFuncionarios() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${errors} errores`)
+    const omitidos = deleted
+    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${omitidos} omitidos, ${errors} errores`)
     
     return NextResponse.json({
       success: true,
-      message: 'Sincronización de Funcionarios exitosa',
-      stats: { inserted, updated, deleted, errors },
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      message: `Funcionarios: ${funcionariosData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${omitidos} omitidos, ${errors} errores`,
+      stats: { leidos: funcionariosData.length, inserted, updated, omitidos, errors },
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Funcionarios:', error)
@@ -113,8 +115,9 @@ async function syncFuncionarios() {
     return NextResponse.json(
       { 
         success: false,
-        message: `Error al sincronizar Funcionarios: ${errorMessage}`,
-        error: errorMessage
+        message: `Funcionarios: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

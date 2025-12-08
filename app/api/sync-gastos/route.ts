@@ -22,8 +22,9 @@ async function syncGastos() {
       console.log('⚠️ No hay datos en la hoja de gastos')
       return NextResponse.json({
         success: true,
-        message: 'No hay datos para sincronizar',
-        synced: 0
+        message: 'Gastos: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
+        stats: { leidos: 0, inserted: 0, updated: 0, omitidos: 0, errors: 0 },
+        code: 200
       })
     }
 
@@ -166,11 +167,16 @@ async function syncGastos() {
 
     return NextResponse.json({
       success: errorCount === 0,
-      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} sincronizados, ${errorCount} errores`,
-      synced: syncedCount,
-      errors: errorCount,
-      total: sheetData.length,
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, 0 omitidos, ${errorCount} errores`,
+      stats: {
+        leidos: sheetData.length,
+        inserted: syncedCount,
+        updated: 0,
+        omitidos: 0,
+        errors: errorCount
+      },
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
 
   } catch (error) {
@@ -179,8 +185,9 @@ async function syncGastos() {
     return NextResponse.json(
       {
         success: false,
-        message: `Error al sincronizar Gastos: ${errorMessage}`,
-        error: errorMessage
+        message: `Gastos: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

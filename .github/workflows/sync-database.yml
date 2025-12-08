@@ -2,8 +2,8 @@ name: Sincronizar Base de Datos
 
 on:
   schedule:
-    # Cada 15 minutos - seguro dentro del límite gratis de GitHub Actions
-    - cron: '*/15 * * * *'
+    # Cada hora en punto
+    - cron: '0 * * * *'
   workflow_dispatch: # Permite ejecutar manualmente desde GitHub
 
 jobs:

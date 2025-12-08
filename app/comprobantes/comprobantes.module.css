@@ -4,6 +4,12 @@
   padding-bottom: 2rem;
 }
 
+@media (prefers-color-scheme: dark) {
+  .container {
+    background: linear-gradient(135deg, #19304B 0%, #0f1419 100%);
+  }
+}
+
 .header {
   background: linear-gradient(135deg, #19304B 0%, #0f1419 100%);
   padding: 2rem;
@@ -79,13 +85,27 @@
 }
 
 .filterSelect {
-  padding: 0.75rem;
-  border: 2px solid #cbd5e1;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e5e7eb;
   border-radius: 8px;
   font-size: 1rem;
   background: white;
+  color: #333;
   cursor: pointer;
   transition: all 0.3s;
+}
+
+@media (prefers-color-scheme: dark) {
+  .filterSelect {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-color: rgba(250, 208, 44, 0.3);
+  }
+  
+  .filterSelect option {
+    background: #19304B;
+    color: white;
+  }
 }
 
 .filterSelect:focus {
@@ -130,6 +150,13 @@
   transition: all 0.3s;
 }
 
+@media (prefers-color-scheme: dark) {
+  .summaryCard {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(250, 208, 44, 0.2);
+  }
+}
+
 .summaryCard:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
@@ -157,10 +184,22 @@
   margin-bottom: 0.25rem;
 }
 
+@media (prefers-color-scheme: dark) {
+  .summaryNumber {
+    color: #FAD02C;
+  }
+}
+
 .summaryLabel {
   font-size: 0.9rem;
   color: #64748b;
   font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .summaryLabel {
+    color: rgba(255, 255, 255, 0.7);
+  }
 }
 
 .comprobantesGrid {
@@ -175,6 +214,16 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   transition: all 0.3s;
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .comprobanteCard {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(250, 208, 44, 0.2);
+  }
 }
 
 .comprobanteCard:hover {
@@ -193,6 +242,13 @@
   border-bottom: 2px solid #cbd5e1;
 }
 
+@media (prefers-color-scheme: dark) {
+  .cardHeader {
+    background: rgba(250, 208, 44, 0.1);
+    border-bottom-color: rgba(250, 208, 44, 0.2);
+  }
+}
+
 .estadoBadge {
   padding: 0.5rem 1rem;
   border-radius: 20px;
@@ -206,14 +262,38 @@
   color: #92400e;
 }
 
+@media (prefers-color-scheme: dark) {
+  .estadoPendiente {
+    background: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+  }
+}
+
 .estadoAprobado {
   background: #d1fae5;
   color: #065f46;
 }
 
+@media (prefers-color-scheme: dark) {
+  .estadoAprobado {
+    background: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+  }
+}
+
 .estadoRechazado {
   background: #fee2e2;
   color: #991b1b;
+}
+
+@media (prefers-color-scheme: dark) {
+  .estadoRechazado {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
 }
 
 .mesBadge {
@@ -226,8 +306,19 @@
   white-space: nowrap;
 }
 
+@media (prefers-color-scheme: dark) {
+  .mesBadge {
+    background: rgba(250, 208, 44, 0.2);
+    color: #FAD02C;
+    border: 1px solid rgba(250, 208, 44, 0.3);
+  }
+}
+
 .cardBody {
   padding: 1.5rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .cardField {
@@ -253,11 +344,23 @@
   white-space: nowrap;
 }
 
+@media (prefers-color-scheme: dark) {
+  .fieldLabel {
+    color: rgba(255, 255, 255, 0.6);
+  }
+}
+
 .fieldValue {
   color: #1f2937;
   font-size: 0.9rem;
   text-align: right;
   word-break: break-word;
+}
+
+@media (prefers-color-scheme: dark) {
+  .fieldValue {
+    color: rgba(255, 255, 255, 0.9);
+  }
 }
 
 .nota {
@@ -266,6 +369,13 @@
   background: #fef3c7;
   border-left: 4px solid #f59e0b;
   border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .nota {
+    background: rgba(245, 158, 11, 0.15);
+    border-left-color: #fbbf24;
+  }
 }
 
 .nota strong {

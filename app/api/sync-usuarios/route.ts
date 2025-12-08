@@ -112,10 +112,11 @@ async function syncUsuarios() {
         leidos: clientesData.length,
         inserted, 
         updated, 
-        skipped, 
+        omitidos: skipped,
         errors 
       },
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Usuarios:', error)
@@ -123,8 +124,9 @@ async function syncUsuarios() {
     return NextResponse.json(
       { 
         success: false,
-        message: `Error al sincronizar Usuarios: ${errorMessage}`,
-        error: errorMessage
+        message: `Usuarios: Error - ${errorMessage}`,
+        error: errorMessage,
+        code: 500
       },
       { status: 500 }
     )

@@ -127,9 +127,16 @@ async function syncEmpresas() {
     
     return NextResponse.json({
       success: true,
-      message: 'Sincronización de Empresas exitosa',
-      stats: { inserted, updated, deleted, skippedDeletes, errors },
-      details: errorDetails.length > 0 ? errorDetails : undefined
+      message: `Empresas: ${empresasData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${deleted + skippedDeletes} omitidos, ${errors} errores`,
+      stats: { 
+        leidos: empresasData.length,
+        inserted, 
+        updated, 
+        omitidos: deleted + skippedDeletes,
+        errors 
+      },
+      details: errorDetails.length > 0 ? errorDetails : undefined,
+      code: 200
     })
   } catch (error) {
     console.error('❌ Error al sincronizar Empresas:', error)
@@ -137,7 +144,8 @@ async function syncEmpresas() {
     return NextResponse.json(
       { 
         success: false,
-        message: `Error al sincronizar Empresas: ${errorMessage}`,
+        message: `Empresas: Error - ${errorMessage}`,
+        code: 500,
         error: errorMessage
       },
       { status: 500 }
