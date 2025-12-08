@@ -40,8 +40,26 @@ async function syncUsuarios() {
     const existingMap = new Map((existingUsuarios || []).map((u: any) => [u.id, u]))
     const newIdSet = new Set(clientesData.map((c: any) => c.id))
     
-    let inserted = 0, updated = 0, skipped = 0, errors = 0
+    let inserted = 0, updated = 0, skipped = 0, deleted = 0, errors = 0
     const errorDetails: any[] = []
+
+    // Eliminar usuarios que ya no están en Sheets
+    for (const existing of existingUsuarios || []) {
+      if (existing.id && !newIdSet.has(existing.id)) {
+        const { error: deleteError } = await supabase
+          .from('usuarios')
+          .delete()
+          .eq('id', existing.id)
+        
+        if (deleteError) {
+          errors++
+          errorDetails.push({ action: 'delete', id: existing.id, error: deleteError.message })
+        } else {
+          deleted++
+          console.log(`🗑️ Usuario eliminado: ${existing.id}`)
+        }
+      }
+    }
 
     // Procesar cada registro de Sheets
     for (const cliente of clientesData) {
@@ -103,16 +121,16 @@ async function syncUsuarios() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${skipped} omitidos, ${errors} errores`)
+    console.log(`✅ Sincronización completada: ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${skipped} omitidos, ${errors} errores`)
     
     return NextResponse.json({
       success: true,
-      message: `Usuarios: ${clientesData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${skipped} omitidos, ${errors} errores`,
+      message: `Usuarios: ${clientesData.length} leídos, ${inserted} insertados, ${updated} actualizados, ${deleted} eliminados, ${errors} errores`,
       stats: { 
         leidos: clientesData.length,
         inserted, 
         updated, 
-        omitidos: skipped,
+        omitidos: deleted,
         errors 
       },
       details: errorDetails.length > 0 ? errorDetails : undefined,

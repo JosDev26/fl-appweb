@@ -30,6 +30,36 @@ async function syncGastos() {
 
     console.log(`📊 Encontrados ${sheetData.length} registros en Sheets`)
 
+    // 1.1 Obtener gastos existentes en Supabase
+    const { data: existingGastos, error: fetchError } = await supabase
+      .from('gastos' as any)
+      .select('id')
+
+    if (fetchError) throw fetchError
+
+    // Crear set de IDs de Sheets
+    const sheetsIdSet = new Set<string>()
+    for (const row of sheetData) {
+      const id = row[0]?.toString().trim()
+      if (id) sheetsIdSet.add(id)
+    }
+
+    // 1.2 Eliminar de Supabase los que no están en Sheets
+    let deletedCount = 0
+    for (const existing of (existingGastos || []) as any[]) {
+      if (existing.id && !sheetsIdSet.has(existing.id)) {
+        const { error: deleteError } = await supabase
+          .from('gastos' as any)
+          .delete()
+          .eq('id', existing.id)
+        
+        if (!deleteError) {
+          deletedCount++
+          console.log(`🗑️ Gasto eliminado: ${existing.id}`)
+        }
+      }
+    }
+
     // 2. Procesar cada fila
     let syncedCount = 0
     let errorCount = 0
@@ -163,16 +193,16 @@ async function syncGastos() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${syncedCount} exitosos, ${errorCount} errores`)
+    console.log(`✅ Sincronización completada: ${syncedCount} exitosos, ${deletedCount} eliminados, ${errorCount} errores`)
 
     return NextResponse.json({
       success: errorCount === 0,
-      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, 0 omitidos, ${errorCount} errores`,
+      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, ${deletedCount} eliminados, ${errorCount} errores`,
       stats: {
         leidos: sheetData.length,
         inserted: syncedCount,
         updated: 0,
-        omitidos: 0,
+        omitidos: deletedCount,
         errors: errorCount
       },
       details: errorDetails.length > 0 ? errorDetails : undefined,

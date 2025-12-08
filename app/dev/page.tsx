@@ -1790,6 +1790,11 @@ export default function DevPage() {
                 <span className={styles.syncLabel}>Gastos</span>
               </button>
               
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-ingresos', 'Ingresos')} disabled={loading}>
+                <span className={styles.syncIcon}>💵</span>
+                <span className={styles.syncLabel}>Ingresos</span>
+              </button>
+              
               <button className={styles.syncCard} onClick={() => handleSync('/api/sync-solicitudes', 'Solicitudes')} disabled={loading}>
                 <span className={styles.syncIcon}>📝</span>
                 <span className={styles.syncLabel}>Solicitudes</span>

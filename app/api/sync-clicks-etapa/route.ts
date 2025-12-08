@@ -87,6 +87,36 @@ async function syncClicksEtapa() {
       }
     }
     
+    // 1.5 Obtener clicks existentes en Supabase y eliminar los que no están en Sheets
+    const { data: existingClicks, error: fetchError } = await (supabase as any)
+      .from('clicks_etapa')
+      .select('id')
+
+    if (fetchError) throw new Error(`Error leyendo clicks: ${fetchError.message}`)
+
+    // Crear set de IDs de Sheets
+    const sheetsIdSet = new Set<string>()
+    for (const row of rows.slice(1)) {
+      const id = row[0]?.toString().trim()
+      if (id) sheetsIdSet.add(id)
+    }
+
+    // Eliminar de Supabase los que no están en Sheets
+    let deletedCount = 0
+    for (const existing of existingClicks || []) {
+      if (existing.id && !sheetsIdSet.has(existing.id)) {
+        const { error: deleteError } = await (supabase as any)
+          .from('clicks_etapa')
+          .delete()
+          .eq('id', existing.id)
+        
+        if (!deleteError) {
+          deletedCount++
+          console.log(`🗑️ Click eliminado: ${existing.id}`)
+        }
+      }
+    }
+    
     // 2. Procesar filas (saltamos la primera que es el header)
     const dataRows = rows.slice(1)
     let processed = 0
@@ -155,16 +185,16 @@ async function syncClicksEtapa() {
       }
     }
     
-    console.log(`✅ Sincronización completada: ${processed} procesados, ${errors} errores`)
+    console.log(`✅ Sincronización completada: ${processed} procesados, ${deletedCount} eliminados, ${errors} errores`)
     
     return {
       success: true,
-      message: `Clicks Etapa: ${dataRows.length} leídos, ${processed} insertados, 0 actualizados, 0 omitidos, ${errors} errores`,
+      message: `Clicks Etapa: ${dataRows.length} leídos, ${processed} insertados, 0 actualizados, ${deletedCount} eliminados, ${errors} errores`,
       stats: {
         leidos: dataRows.length,
         inserted: processed,
         updated: 0,
-        omitidos: 0,
+        omitidos: deletedCount,
         errors
       },
       details: errorDetails.length > 0 ? errorDetails.slice(0, 10) : undefined,

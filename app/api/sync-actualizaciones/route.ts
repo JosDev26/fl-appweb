@@ -30,6 +30,36 @@ async function syncActualizaciones() {
 
     console.log(`📊 Encontrados ${sheetData.length} registros en Sheets`)
 
+    // 1.1 Obtener actualizaciones existentes en Supabase
+    const { data: existingActualizaciones, error: fetchError } = await supabase
+      .from('actualizaciones')
+      .select('id')
+
+    if (fetchError) throw fetchError
+
+    // Crear set de IDs de Sheets
+    const sheetsIdSet = new Set<string>()
+    for (const row of sheetData) {
+      const id = row[0]?.toString().trim()
+      if (id) sheetsIdSet.add(id)
+    }
+
+    // 1.2 Eliminar de Supabase los que no están en Sheets
+    let deletedCount = 0
+    for (const existing of existingActualizaciones || []) {
+      if (existing.id && !sheetsIdSet.has(existing.id)) {
+        const { error: deleteError } = await supabase
+          .from('actualizaciones')
+          .delete()
+          .eq('id', existing.id)
+        
+        if (!deleteError) {
+          deletedCount++
+          console.log(`🗑️ Actualización eliminada: ${existing.id}`)
+        }
+      }
+    }
+
     // 2. Leer headers para debugging
     const headers = await GoogleSheetsService.getSheetData(SHEET_NAME, 'A1:Z1')
     console.log('📋 Headers de la hoja:', headers[0])
@@ -132,16 +162,16 @@ async function syncActualizaciones() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${syncedCount} exitosos, ${errorCount} errores`)
+    console.log(`✅ Sincronización completada: ${syncedCount} exitosos, ${deletedCount} eliminados, ${errorCount} errores`)
 
     return NextResponse.json({
       success: true,
-      message: `Actualizaciones: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, 0 omitidos, ${errorCount} errores`,
+      message: `Actualizaciones: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, ${deletedCount} eliminados, ${errorCount} errores`,
       stats: {
         leidos: sheetData.length,
         inserted: syncedCount,
         updated: 0,
-        omitidos: 0,
+        omitidos: deletedCount,
         errors: errorCount
       },
       code: 200

@@ -18,11 +18,37 @@ async function syncMaterias() {
     const materiasSheets = await GoogleSheetsService.readMaterias();
     console.log(`📖 Leídos ${materiasSheets.length} registros de la hoja Materia`);
 
+    // 1.1 Obtener materias existentes en Supabase
+    const { data: existingMaterias, error: fetchError } = await supabase
+      .from('materias')
+      .select('id')
+
+    if (fetchError) throw fetchError
+
+    // Crear set de IDs de Sheets
+    const sheetsIdSet = new Set(materiasSheets.map((m: any) => m.id))
+
+    // 1.2 Eliminar de Supabase los que no están en Sheets
+    let eliminados = 0
+    for (const existing of existingMaterias || []) {
+      if (existing.id && !sheetsIdSet.has(existing.id)) {
+        const { error: deleteError } = await supabase
+          .from('materias')
+          .delete()
+          .eq('id', existing.id)
+        
+        if (!deleteError) {
+          eliminados++
+          console.log(`🗑️ Materia eliminada: ${existing.id}`)
+        }
+      }
+    }
+
     if (materiasSheets.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'Materias: 0 leídos, 0 insertados, 0 actualizados, 0 omitidos, 0 errores',
-        stats: { leidos: 0, insertados: 0, actualizados: 0, omitidos: 0, errores: 0 },
+        message: `Materias: 0 leídos, 0 insertados, 0 actualizados, ${eliminados} eliminados, 0 errores`,
+        stats: { leidos: 0, insertados: 0, actualizados: 0, omitidos: eliminados, errores: 0 },
         code: 200
       });
     }
@@ -86,7 +112,7 @@ async function syncMaterias() {
       }
     }
 
-    const mensaje = `Materias: ${materiasSheets.length} leídos, ${insertados} insertados, ${actualizados} actualizados, 0 omitidos, ${errores} errores`;
+    const mensaje = `Materias: ${materiasSheets.length} leídos, ${insertados} insertados, ${actualizados} actualizados, ${eliminados} eliminados, ${errores} errores`;
     console.log(`✅ ${mensaje}`);
 
     return NextResponse.json({
@@ -96,7 +122,7 @@ async function syncMaterias() {
         leidos: materiasSheets.length,
         insertados,
         actualizados,
-        omitidos: 0,
+        omitidos: eliminados,
         errores
       },
       code: 200

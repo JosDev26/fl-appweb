@@ -15,6 +15,17 @@ jobs:
       - name: Sincronizar BD
         run: |
           echo "🔄 Iniciando sincronización..."
+          echo "URL: ${{ secrets.PRODUCTION_URL }}/api/sync/auto"
+          
+          if [ -z "${{ secrets.PRODUCTION_URL }}" ]; then
+            echo "❌ ERROR: PRODUCTION_URL no está configurado"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.CRON_SECRET_TOKEN }}" ]; then
+            echo "❌ ERROR: CRON_SECRET_TOKEN no está configurado"
+            exit 1
+          fi
           
           response=$(curl -s -w "\n%{http_code}" -X POST \
             "${{ secrets.PRODUCTION_URL }}/api/sync/auto" \
@@ -25,11 +36,12 @@ jobs:
           body=$(echo "$response" | sed '$d')
           
           echo "HTTP Status: $http_code"
-          echo "Response: $body"
+          echo "Response Body:"
+          echo "$body"
           
           if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
             echo "✅ Sincronización exitosa"
           else
-            echo "❌ Error en sincronización"
+            echo "❌ Error en sincronización (HTTP $http_code)"
             exit 1
           fi
