@@ -27,7 +27,7 @@ jobs:
             exit 1
           fi
           
-          response=$(curl -s -w "\n%{http_code}" -X POST \
+          response=$(curl -L -s -w "\n%{http_code}" -X POST \
             "${{ secrets.PRODUCTION_URL }}/api/sync/auto" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET_TOKEN }}")
