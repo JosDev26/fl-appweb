@@ -139,7 +139,7 @@ interface TotalesDeudas {
   }
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas'
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado'
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -215,6 +215,15 @@ export default function DevPage() {
   const [loadingDeudas, setLoadingDeudas] = useState(false)
   const [filtroDeudas, setFiltroDeudas] = useState<'todos' | 'empresas' | 'usuarios'>('todos')
   const [vistaDeudas, setVistaDeudas] = useState<'mesAnterior' | 'mesActual'>('mesAnterior')
+
+  // Estados para gestión de estado de gastos
+  const [gastosEstado, setGastosEstado] = useState<any[]>([])
+  const [loadingGastosEstado, setLoadingGastosEstado] = useState(false)
+  const [filtroEstadoGasto, setFiltroEstadoGasto] = useState<string>('todos')
+  const [filtroMesGasto, setFiltroMesGasto] = useState<string>('')
+  const [filtroClienteGasto, setFiltroClienteGasto] = useState<string>('')
+  const [selectedGastos, setSelectedGastos] = useState<string[]>([])
+  const [nuevoEstadoGasto, setNuevoEstadoGasto] = useState<string>('pendiente')
 
   // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
@@ -945,6 +954,109 @@ export default function DevPage() {
     }
   }
 
+  // GASTOS - ESTADO DE PAGO
+  const loadGastosEstado = async () => {
+    setLoadingGastosEstado(true)
+    try {
+      const params = new URLSearchParams()
+      if (filtroEstadoGasto && filtroEstadoGasto !== 'todos') {
+        params.append('estado', filtroEstadoGasto)
+      }
+      if (filtroMesGasto) {
+        params.append('mes', filtroMesGasto)
+      }
+      if (filtroClienteGasto) {
+        params.append('cliente', filtroClienteGasto)
+      }
+      
+      const url = `/api/gastos-estado${params.toString() ? '?' + params.toString() : ''}`
+      const res = await fetch(url)
+      const data = await res.json()
+      
+      if (data.success) {
+        setGastosEstado(data.gastos || [])
+      } else {
+        console.error('Error cargando gastos:', data.error)
+        alert('Error cargando gastos: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error cargando gastos:', error)
+      alert('Error de conexión al cargar gastos')
+    } finally {
+      setLoadingGastosEstado(false)
+    }
+  }
+
+  // Actualizar estado de un gasto individual
+  const updateGastoEstado = async (id: string, nuevoEstado: string) => {
+    try {
+      const res = await fetch('/api/gastos-estado', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, estado: nuevoEstado })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        // Actualizar el estado local
+        setGastosEstado(prev => prev.map(g => 
+          g.id === id ? { ...g, estado_pago: nuevoEstado } : g
+        ))
+      } else {
+        alert('Error actualizando estado: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error de conexión')
+    }
+  }
+
+  // Actualizar estado de múltiples gastos
+  const updateGastosEstadoBulk = async () => {
+    if (selectedGastos.length === 0) {
+      alert('Selecciona al menos un gasto')
+      return
+    }
+    
+    try {
+      const res = await fetch('/api/gastos-estado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedGastos, estado: nuevoEstadoGasto })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        alert(`${data.updated} gastos actualizados`)
+        setSelectedGastos([])
+        loadGastosEstado()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error de conexión')
+    }
+  }
+
+  // Toggle selección de gasto
+  const toggleGastoSelection = (id: string) => {
+    setSelectedGastos(prev => 
+      prev.includes(id) 
+        ? prev.filter(g => g !== id)
+        : [...prev, id]
+    )
+  }
+
+  // Seleccionar/deseleccionar todos
+  const toggleAllGastos = () => {
+    if (selectedGastos.length === gastosEstado.length) {
+      setSelectedGastos([])
+    } else {
+      setSelectedGastos(gastosEstado.map(g => g.id))
+    }
+  }
+
   // Filtrar deudas según el filtro seleccionado
   const getDeudasFiltradas = () => {
     if (filtroDeudas === 'todos') return deudas
@@ -1083,6 +1195,13 @@ export default function DevPage() {
           >
             <span className={styles.navIcon}>💰</span>
             <span className={styles.navLabel}>Deudas Clientes</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'gastos-estado' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('gastos-estado'); loadGastosEstado() }}
+          >
+            <span className={styles.navIcon}>💳</span>
+            <span className={styles.navLabel}>Estado Gastos</span>
           </button>
           <button 
             className={`${styles.navItem} ${activeSection === 'fecha' ? styles.active : ''}`}
@@ -2267,6 +2386,222 @@ export default function DevPage() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ESTADO DE GASTOS */}
+        {activeSection === 'gastos-estado' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Estado de Pago de Gastos</h2>
+                <p className={styles.sectionDescription}>
+                  Gestiona manualmente el estado de pago de los gastos registrados
+                </p>
+              </div>
+              <button className={styles.button} onClick={loadGastosEstado} disabled={loadingGastosEstado}>
+                {loadingGastosEstado ? 'Cargando...' : 'Refrescar'}
+              </button>
+            </div>
+
+            {/* Filtros */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Estado:</label>
+                <select
+                  className={styles.input}
+                  value={filtroEstadoGasto}
+                  onChange={(e) => setFiltroEstadoGasto(e.target.value)}
+                  style={{ minWidth: '180px' }}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="pagado">Pagado</option>
+                  <option value="pendiente_mes_actual">Pendiente (Mes Actual)</option>
+                  <option value="pendiente_anterior">Pendiente (Mes Anterior)</option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Mes:</label>
+                <input
+                  type="month"
+                  className={styles.input}
+                  value={filtroMesGasto}
+                  onChange={(e) => setFiltroMesGasto(e.target.value)}
+                  style={{ minWidth: '150px' }}
+                />
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Cliente (ID):</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  value={filtroClienteGasto}
+                  onChange={(e) => setFiltroClienteGasto(e.target.value)}
+                  placeholder="ID cliente..."
+                  style={{ minWidth: '150px' }}
+                />
+              </div>
+              <button 
+                className={styles.button} 
+                onClick={loadGastosEstado}
+                disabled={loadingGastosEstado}
+              >
+                Buscar
+              </button>
+              <button 
+                className={styles.buttonSecondary} 
+                onClick={() => {
+                  setFiltroEstadoGasto('todos')
+                  setFiltroMesGasto('')
+                  setFiltroClienteGasto('')
+                }}
+              >
+                Limpiar
+              </button>
+            </div>
+
+            {/* Acciones en lote */}
+            {gastosEstado.length > 0 && (
+              <div className={styles.bulkActions}>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selectedGastos.length === gastosEstado.length && gastosEstado.length > 0}
+                    onChange={toggleAllGastos}
+                  />
+                  Seleccionar todos ({selectedGastos.length}/{gastosEstado.length})
+                </label>
+                <div className={styles.bulkActionsRight}>
+                  <span>Cambiar a:</span>
+                  <select
+                    className={styles.input}
+                    value={nuevoEstadoGasto}
+                    onChange={(e) => setNuevoEstadoGasto(e.target.value)}
+                    style={{ minWidth: '180px' }}
+                  >
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagado">Pagado</option>
+                    <option value="pendiente_mes_actual">Pendiente (Mes Actual)</option>
+                    <option value="pendiente_anterior">Pendiente (Mes Anterior)</option>
+                  </select>
+                  <button 
+                    className={styles.button}
+                    onClick={updateGastosEstadoBulk}
+                    disabled={selectedGastos.length === 0}
+                  >
+                    Aplicar ({selectedGastos.length})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Lista de gastos */}
+            {loadingGastosEstado ? (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Cargando gastos...</p>
+              </div>
+            ) : gastosEstado.length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>No hay gastos que coincidan con los filtros</p>
+                <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                  Ajusta los filtros o haz clic en &quot;Buscar&quot; para cargar gastos
+                </p>
+              </div>
+            ) : (
+              <div className={styles.table}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedGastos.length === gastosEstado.length && gastosEstado.length > 0}
+                          onChange={toggleAllGastos}
+                        />
+                      </th>
+                      <th>ID</th>
+                      <th>Producto</th>
+                      <th>Cliente</th>
+                      <th style={{ textAlign: 'right' }}>Monto</th>
+                      <th>Fecha</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gastosEstado.map((gasto) => (
+                      <tr key={gasto.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedGastos.includes(gasto.id)}
+                            onChange={() => toggleGastoSelection(gasto.id)}
+                          />
+                        </td>
+                        <td>
+                          <small className={styles.textMuted}>{gasto.id.substring(0, 8)}...</small>
+                        </td>
+                        <td>
+                          <strong>{gasto.producto || 'Sin producto'}</strong>
+                          {gasto.id_caso && (
+                            <><br /><small className={styles.textMuted}>Caso: {gasto.id_caso}</small></>
+                          )}
+                        </td>
+                        <td>
+                          {gasto.cliente_nombre || (
+                            <span className={styles.textMuted}>—</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                          {formatCurrency(gasto.total_cobro || 0)}
+                        </td>
+                        <td>
+                          {gasto.fecha ? new Date(gasto.fecha).toLocaleDateString('es-CR') : '—'}
+                        </td>
+                        <td>
+                          <span className={`${styles.badge} ${
+                            gasto.estado_pago === 'pagado' ? styles.badgeSuccess :
+                            gasto.estado_pago === 'pendiente_anterior' ? styles.badgeDanger :
+                            styles.badgeWarning
+                          }`}>
+                            {gasto.estado_pago === 'pagado' ? '✓ Pagado' :
+                             gasto.estado_pago === 'pendiente_anterior' ? '⚠ Pend. Anterior' :
+                             gasto.estado_pago === 'pendiente_mes_actual' ? '⏳ Pend. Mes Actual' :
+                             '⏳ Pendiente'}
+                          </span>
+                        </td>
+                        <td>
+                          <select
+                            className={styles.input}
+                            value={gasto.estado_pago || 'pendiente'}
+                            onChange={(e) => updateGastoEstado(gasto.id, e.target.value)}
+                            style={{ minWidth: '140px', fontSize: '0.875rem', padding: '0.25rem 0.5rem' }}
+                          >
+                            <option value="pendiente">Pendiente</option>
+                            <option value="pagado">Pagado</option>
+                            <option value="pendiente_mes_actual">Pend. Mes Actual</option>
+                            <option value="pendiente_anterior">Pend. Anterior</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Info */}
+            <div className={styles.infoBox} style={{ marginTop: '1.5rem' }}>
+              <h4 style={{ marginBottom: '0.5rem' }}>ℹ️ Estados de Pago</h4>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                <li><strong>Pendiente:</strong> Gasto registrado pero aún no pagado</li>
+                <li><strong>Pagado:</strong> Gasto ya incluido en un comprobante de pago aprobado</li>
+                <li><strong>Pendiente (Mes Actual):</strong> Gasto del mes en curso, pendiente de cobro</li>
+                <li><strong>Pendiente (Mes Anterior):</strong> Gasto de meses anteriores que no ha sido cobrado</li>
+              </ul>
+            </div>
           </div>
         )}
 

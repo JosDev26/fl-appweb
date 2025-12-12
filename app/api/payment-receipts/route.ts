@@ -288,6 +288,37 @@ export async function PATCH(request: NextRequest) {
         console.error('❌ Error al actualizar solicitudes:', err)
       }
 
+      // Marcar gastos del mes como pagados
+      if (mesPago) {
+        try {
+          // Parsear mes_pago (formato: "YYYY-MM")
+          const [year, month] = mesPago.split('-')
+          const startDate = `${year}-${month}-01`
+          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0] // Último día del mes
+          
+          console.log(`💰 Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
+          
+          // Marcar gastos del mes como pagados
+          const { error: gastosError } = await supabase
+            .from('gastos' as any)
+            .update({ 
+              estado_pago: 'pagado',
+              updated_at: fechaAprobacion
+            })
+            .eq('id_cliente', userId)
+            .gte('fecha', startDate)
+            .lte('fecha', endDate)
+          
+          if (gastosError) {
+            console.error('❌ Error al marcar gastos como pagados:', gastosError)
+          } else {
+            console.log(`✅ Gastos del mes ${mesPago} marcados como pagados`)
+          }
+        } catch (err) {
+          console.error('❌ Error al procesar gastos:', err)
+        }
+      }
+
       // Marcar factura como pagada directamente en la base de datos
       console.log('🔍 Intentando actualizar factura con mes_pago:', mesPago, 'userId:', userId, 'tipoCliente:', tipoCliente)
       

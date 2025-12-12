@@ -163,6 +163,7 @@ async function syncGastos() {
           fecha: fecha,
           producto: producto || null,
           total_cobro: totalCobro,
+          estado_pago: 'pendiente', // Por defecto los gastos nuevos están pendientes
           updated_at: new Date().toISOString()
         }
 

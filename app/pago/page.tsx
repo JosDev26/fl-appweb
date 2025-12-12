@@ -49,6 +49,7 @@ interface Gasto {
   producto: string | null
   fecha: string | null
   total_cobro: number | null
+  estado_pago?: string | null
   funcionarios?: {
     nombre: string | null
   } | null

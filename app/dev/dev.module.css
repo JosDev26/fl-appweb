@@ -1185,3 +1185,50 @@
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 }
+
+/* Bulk Actions - Estado de Gastos */
+.bulkActions {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f5f5f5;
+  border-radius: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  border: 1px solid #e0e0e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bulkActions {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(250, 208, 44, 0.2);
+  }
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: #333;
+}
+
+@media (prefers-color-scheme: dark) {
+  .checkboxLabel {
+    color: #e0e0e0;
+  }
+}
+
+.bulkActionsRight {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #333;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bulkActionsRight {
+    color: #e0e0e0;
+  }
+}

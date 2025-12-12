@@ -62,7 +62,17 @@ export async function GET(
     }
 
     // Agregar estado de pago a cada gasto
+    // Usamos la columna estado_pago de la BD si existe, sino calculamos dinámicamente
     const gastosConEstado = (gastos || []).map((gasto: any) => {
+      // Si ya tiene estado_pago en la BD, usarlo directamente
+      if (gasto.estado_pago && gasto.estado_pago !== 'pendiente') {
+        return {
+          ...gasto,
+          mes_gasto: gasto.fecha ? `${new Date(gasto.fecha).getFullYear()}-${String(new Date(gasto.fecha).getMonth() + 1).padStart(2, '0')}` : null
+        }
+      }
+      
+      // Fallback: calcular dinámicamente basado en comprobantes aprobados
       const fechaGasto = gasto.fecha ? new Date(gasto.fecha) : null
       const mesGasto = fechaGasto ? `${fechaGasto.getFullYear()}-${String(fechaGasto.getMonth() + 1).padStart(2, '0')}` : null
       
