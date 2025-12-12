@@ -63,6 +63,7 @@ async function syncGastos() {
     // 2. Procesar cada fila
     let syncedCount = 0
     let errorCount = 0
+    let skippedCount = 0
     const errorDetails: any[] = []
 
     for (const row of sheetData) {
@@ -82,6 +83,7 @@ async function syncGastos() {
         // Validar que tenga al menos el ID
         if (!id) {
           console.log('⚠️ Registro sin ID, saltando...')
+          skippedCount++
           continue
         }
 
@@ -193,16 +195,17 @@ async function syncGastos() {
       }
     }
 
-    console.log(`✅ Sincronización completada: ${syncedCount} exitosos, ${deletedCount} eliminados, ${errorCount} errores`)
+    console.log(`✅ Sincronización completada: ${syncedCount} exitosos, ${deletedCount} eliminados, ${skippedCount} omitidos (sin ID), ${errorCount} errores`)
 
     return NextResponse.json({
       success: errorCount === 0,
-      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} insertados, 0 actualizados, ${deletedCount} eliminados, ${errorCount} errores`,
+      message: `Gastos: ${sheetData.length} leídos, ${syncedCount} sincronizados, ${deletedCount} eliminados, ${skippedCount} omitidos, ${errorCount} errores`,
       stats: {
         leidos: sheetData.length,
         inserted: syncedCount,
         updated: 0,
-        omitidos: deletedCount,
+        omitidos: skippedCount,
+        deleted: deletedCount,
         errors: errorCount
       },
       details: errorDetails.length > 0 ? errorDetails : undefined,
