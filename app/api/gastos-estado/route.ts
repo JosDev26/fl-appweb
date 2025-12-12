@@ -5,10 +5,31 @@ import { supabase } from '@/lib/supabase'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const clienteId = searchParams.get('cliente') || searchParams.get('clienteId')
+    const cedulaCliente = searchParams.get('cedula') || searchParams.get('cliente')
     const estado = searchParams.get('estado')
     const mes = searchParams.get('mes') // Formato: YYYY-MM
     const limit = parseInt(searchParams.get('limit') || '100')
+
+    // Si hay cédula, buscar el ID del cliente primero
+    let clienteIds: string[] = []
+    if (cedulaCliente) {
+      // Buscar en usuarios por cédula
+      const { data: usuarios } = await supabase
+        .from('usuarios')
+        .select('id')
+        .ilike('cedula', `%${cedulaCliente}%`)
+      
+      // Buscar en empresas por cédula
+      const { data: empresas } = await supabase
+        .from('empresas')
+        .select('id')
+        .ilike('cedula', `%${cedulaCliente}%`)
+      
+      clienteIds = [
+        ...(usuarios || []).map((u: any) => u.id),
+        ...(empresas || []).map((e: any) => e.id)
+      ]
+    }
 
     let query = supabase
       .from('gastos' as any)
@@ -21,9 +42,17 @@ export async function GET(request: NextRequest) {
       .order('fecha', { ascending: false })
       .limit(limit)
 
-    // Filtrar por cliente
-    if (clienteId) {
-      query = query.eq('id_cliente', clienteId)
+    // Filtrar por cliente (usando IDs encontrados por cédula)
+    if (cedulaCliente && clienteIds.length > 0) {
+      query = query.in('id_cliente', clienteIds)
+    } else if (cedulaCliente && clienteIds.length === 0) {
+      // No se encontró ningún cliente con esa cédula
+      return NextResponse.json({
+        success: true,
+        gastos: [],
+        total: 0,
+        message: 'No se encontró ningún cliente con esa cédula'
+      })
     }
 
     // Filtrar por estado (ignorar si es 'todos')
@@ -50,21 +79,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtener nombres de clientes
-    const clienteIds = [...new Set((gastos || []).map((g: any) => g.id_cliente).filter(Boolean))]
+    const idsParaNombres = [...new Set((gastos || []).map((g: any) => g.id_cliente).filter(Boolean))]
     
     let clientesMap: Record<string, string> = {}
-    if (clienteIds.length > 0) {
+    if (idsParaNombres.length > 0) {
       // Buscar en usuarios
       const { data: usuarios } = await supabase
         .from('usuarios')
         .select('id, nombre')
-        .in('id', clienteIds)
+        .in('id', idsParaNombres)
       
       // Buscar en empresas
       const { data: empresas } = await supabase
         .from('empresas')
         .select('id, nombre')
-        .in('id', clienteIds)
+        .in('id', idsParaNombres)
       
       usuarios?.forEach((u: any) => { clientesMap[u.id] = u.nombre })
       empresas?.forEach((e: any) => { clientesMap[e.id] = e.nombre })

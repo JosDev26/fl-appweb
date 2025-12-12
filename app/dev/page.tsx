@@ -966,7 +966,7 @@ export default function DevPage() {
         params.append('mes', filtroMesGasto)
       }
       if (filtroClienteGasto) {
-        params.append('cliente', filtroClienteGasto)
+        params.append('cedula', filtroClienteGasto)
       }
       
       const url = `/api/gastos-estado${params.toString() ? '?' + params.toString() : ''}`
@@ -2432,13 +2432,13 @@ export default function DevPage() {
                 />
               </div>
               <div className={styles.formGroup} style={{ marginBottom: 0 }}>
-                <label className={styles.formLabel}>Cliente (ID):</label>
+                <label className={styles.formLabel}>Cédula Cliente:</label>
                 <input
                   type="text"
                   className={styles.input}
                   value={filtroClienteGasto}
                   onChange={(e) => setFiltroClienteGasto(e.target.value)}
-                  placeholder="ID cliente..."
+                  placeholder="Cédula..."
                   style={{ minWidth: '150px' }}
                 />
               </div>
