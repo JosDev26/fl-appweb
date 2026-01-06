@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getCurrentDateCR, toDateString } from '@/lib/dateUtils'
+import { checkUploadRateLimit } from '@/lib/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -105,7 +106,11 @@ function validatePdfContent(buffer: Buffer): boolean {
   return true
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Rate limiting: 10 uploads per hour
+  const rateLimitResponse = await checkUploadRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File

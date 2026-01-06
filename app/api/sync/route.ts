@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SyncService } from '../../../lib/syncService';
+import { checkSyncRateLimit } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per minute per IP
+  const rateLimitResponse = await checkSyncRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     // Intentar parsear el body, si está vacío usar valores por defecto
     let direction = 'bidirectional';

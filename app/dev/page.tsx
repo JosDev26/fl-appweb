@@ -433,7 +433,8 @@ export default function DevPage() {
     setLoadingDeadlines(true)
     try {
       // Calcular plazos basados en clientes con modoPago activo
-      const now = new Date()
+      // Usar fecha simulada si está activa, de lo contrario fecha actual
+      const now = isDateSimulated && simulatedDate ? new Date(simulatedDate) : new Date()
       const year = now.getFullYear()
       const month = now.getMonth()
       const mesAnterior = new Date(year, month - 1, 1)
@@ -546,9 +547,9 @@ export default function DevPage() {
   const loadInvitationCodes = async () => {
     setLoadingCodes(true)
     try {
-      // El endpoint original usa DELETE para obtener códigos con filtros
+      // GET request to retrieve invitation codes with filters
       const response = await fetch('/api/invitation-codes?includeUsed=true&includeExpired=true', {
-        method: 'DELETE'
+        method: 'GET'
       })
       const data = await response.json()
       
@@ -670,7 +671,7 @@ export default function DevPage() {
   const handleSync = async (endpoint: string, label: string) => {
     setLoading(true)
     try {
-      const res = await fetch(endpoint)
+      const res = await fetch(endpoint, { method: 'POST' })
       const data = await res.json()
       setResults([{ success: data.success, message: `${label}: ${data.message}`, details: data }])
     } catch (error: any) {
@@ -707,7 +708,7 @@ export default function DevPage() {
     const syncResults: SyncResult[] = []
     for (const endpoint of endpoints) {
       try {
-        const res = await fetch(endpoint.url)
+        const res = await fetch(endpoint.url, { method: 'POST' })
         const data = await res.json()
         syncResults.push({ success: data.success, message: `${endpoint.label}: ${data.message}`, details: data })
       } catch (error: any) {

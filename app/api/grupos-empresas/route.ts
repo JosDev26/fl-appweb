@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,10 @@ const supabase = createClient(
 
 // GET: Obtener todos los grupos o un grupo específico
 export async function GET(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { searchParams } = new URL(request.url)
     const grupoId = searchParams.get('id')

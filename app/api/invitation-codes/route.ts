@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,7 +16,11 @@ function generateSecureCode(): string {
   return buffer.toString('hex')
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const body = await request.json()
     const { 

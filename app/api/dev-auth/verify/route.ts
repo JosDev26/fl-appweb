@@ -1,9 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
+import { checkAuthRateLimit } from '@/lib/rate-limit'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per 10 min + 20 per hour per IP
+  const rateLimitResponse = await checkAuthRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { code, adminId } = await request.json()
 

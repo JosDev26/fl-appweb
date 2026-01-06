@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentDateCR, getMesAnterior, getRangoMes } from "@/lib/dateUtils";
+import { checkStandardRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +71,10 @@ async function getDatosEmpresa(
 }
 
 export async function GET(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     // Obtener el userId de los headers (asumiendo que viene de la sesión)
     const userId = request.headers.get('x-user-id');

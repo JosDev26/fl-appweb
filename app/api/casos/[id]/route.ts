@@ -1,16 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { checkCasoAccess } from '@/lib/auth-helpers'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Rate limiting
+    const rateLimitResponse = await checkStandardRateLimit(request)
+    if (rateLimitResponse) return rateLimitResponse
+
     const { id: casoId } = await params
 
-    // Verificar si se proporcionó un id_cliente para validar acceso (opcional)
-    const searchParams = request.nextUrl.searchParams
-    const requestIdCliente = searchParams.get('id_cliente')
+    // IDOR Protection: Validate user has access to this caso using server-side session
+    const accessCheck = await checkCasoAccess(request, casoId)
+    if (!accessCheck.authorized) {
+      return NextResponse.json(
+        { error: accessCheck.error },
+        { status: accessCheck.status }
+      )
+    }
 
     // Obtener información del caso con el nombre de la materia
     const { data: caso, error } = await supabase
@@ -34,23 +45,12 @@ export async function GET(
       )
     }
 
-    // Si se proporciona id_cliente, verificar que coincida
-    if (requestIdCliente && caso.id_cliente !== requestIdCliente) {
-      return NextResponse.json(
-        { error: 'No tienes permiso para acceder a este caso' },
-        { status: 403 }
-      )
-    }
-
     return NextResponse.json({ caso })
 
   } catch (error) {
     console.error('Error al obtener caso:', error)
     return NextResponse.json(
-      { 
-        error: 'Error al obtener caso',
-        details: error instanceof Error ? error.message : String(error)
-      },
+      { error: 'Error al obtener caso' },
       { status: 500 }
     )
   }

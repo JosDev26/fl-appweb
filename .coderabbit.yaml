@@ -1,0 +1,123 @@
+# Configuración de CodeRabbit para fl-appweb
+# Optimizado para prueba de 14 días - Revisión priorizada
+
+language: "es"  # Comentarios en español
+early_access: false
+tone_instructions: "Ser conciso y técnico. Enfocarse en seguridad, rendimiento y mejores prácticas."
+
+reviews:
+  # Revisión automática habilitada
+  auto_review:
+    enabled: true
+    drafts: false  # No revisar draft PRs para ahorrar cuota
+    base_branches:
+      - main
+      - dev
+      - master
+  
+  # Resumen de alto nivel
+  high_level_summary: true
+  high_level_summary_placeholder: "Resumen generado por CodeRabbit"
+  
+  # Sin poemas (más profesional)
+  poem: false
+  
+  # Mostrar estado de revisión
+  review_status: true
+  
+  # Colapsar issues de baja prioridad
+  collapse_walkthrough: false
+  
+  # Workflow para solicitar cambios
+  request_changes_workflow: false  # Comentar solo, no bloquear
+  
+  # Filtros de archivos - IGNORAR lo innecesario
+  path_filters:
+    # Ignorar dependencias
+    - "!**/node_modules/**"
+    - "!**/package-lock.json"
+    - "!**/.next/**"
+    - "!**/dist/**"
+    - "!**/build/**"
+    
+    # Ignorar archivos de configuración básica
+    - "!**/*.md"
+    - "!**/.gitignore"
+    - "!**/tsconfig.tsbuildinfo"
+    
+    # REVISAR archivos críticos de seguridad y APIs
+    - "app/api/**"
+    - "lib/**"
+    - "middleware.ts"
+    - "next.config.ts"
+    - "app/dev/page.tsx"  # Incluir explícitamente (archivo grande pero importante)
+    
+  # Instrucciones de revisión personalizadas
+  path_instructions:
+    # APIs - Enfoque en seguridad
+    - path: "app/api/**"
+      instructions: |
+        - Revisar autenticación y autorización
+        - Validar inputs y sanitización
+        - Verificar manejo de errores
+        - Checar rate limiting
+        - Revisar queries SQL para prevenir SQL injection
+        - Validar CORS y headers de seguridad
+        
+    # Frontend - Enfoque en UX y seguridad
+    - path: "app/**/*.tsx"
+      instructions: |
+        - Revisar manejo de estado
+        - Verificar validación de formularios
+        - Checar XSS y seguridad del cliente
+        - Optimización de renders
+        - Accesibilidad básica
+        
+    # Utilidades - Enfoque en calidad
+    - path: "lib/**"
+      instructions: |
+        - Revisar tipado TypeScript
+        - Validar lógica de negocio
+        - Verificar manejo de errores
+        - Checar funciones reutilizables
+        
+    # SQL - Enfoque en integridad
+    - path: "**/*.sql"
+      instructions: |
+        - Validar sintaxis
+        - Revisar constraints y foreign keys
+        - Verificar migraciones seguras
+        - Checar rollback strategies
+
+  # Herramientas de revisión habilitadas
+  tools:
+    github-checks:
+      enabled: true
+    
+    shellcheck:
+      enabled: true
+    
+    ruff:
+      enabled: false  # No usas Python
+    
+    markdownlint:
+      enabled: false  # Ignorar .md para ahorrar cuota
+    
+    yamllint:
+      enabled: true
+    
+    biome:
+      enabled: false
+    
+    hadolint:
+      enabled: false  # No usas Docker en este proyecto
+
+# Configuración de chat
+chat:
+  auto_reply: false  # Responder solo cuando se mencione
+
+# Configuración de conocimiento del proyecto
+knowledge_base:
+  # Archivos clave que CodeRabbit debe entender
+  learnings:
+    scope: "global"

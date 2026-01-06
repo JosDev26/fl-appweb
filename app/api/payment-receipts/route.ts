@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 /**
  * GET - Obtener todos los comprobantes pendientes y usuarios con modoPago=true
  */
 export async function GET(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     // 1. Obtener comprobantes
     const { data: receipts, error: receiptsError } = await supabase

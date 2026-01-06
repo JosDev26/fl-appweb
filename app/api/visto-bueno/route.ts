@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -7,7 +8,11 @@ const supabase = createClient(
 )
 
 // Dar visto bueno a las horas del mes
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const userId = request.headers.get('x-user-id')
     const tipoCliente = request.headers.get('x-tipo-cliente')
@@ -49,7 +54,7 @@ export async function POST(request: Request) {
     if (error) {
       console.error('Error al dar visto bueno:', error.message, error.details, error.hint)
       return NextResponse.json(
-        { error: `Error al registrar visto bueno: ${error.message}` },
+        { error: 'Error al registrar visto bueno' },
         { status: 500 }
       )
     }

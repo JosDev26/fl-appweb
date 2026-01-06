@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getCurrentDateCR, getMesAnterior, toDateString } from '@/lib/dateUtils'
+import { checkUploadRateLimit } from '@/lib/rate-limit'
 
 // Configuración de seguridad
 const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -61,6 +62,10 @@ function hasValidExtension(fileName: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 10 uploads per hour
+  const rateLimitResponse = await checkUploadRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     // 1. Verificar autenticación
     const authHeader = request.headers.get('authorization')
@@ -191,7 +196,7 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       console.error('Error uploading to storage:', uploadError)
       return NextResponse.json(
-        { error: 'Error al subir el archivo: ' + uploadError.message },
+        { error: 'Error al subir el archivo' },
         { status: 500 }
       )
     }
@@ -225,7 +230,7 @@ export async function POST(request: NextRequest) {
       await supabase.storage.from('payment-receipts').remove([fileName])
       
       return NextResponse.json(
-        { error: 'Error al registrar el comprobante: ' + dbError.message },
+        { error: 'Error al registrar el comprobante' },
         { status: 500 }
       )
     }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
+import { checkAuthRateLimit } from '@/lib/rate-limit'
 
 // Cliente de Supabase con service_role para crear usuarios
 const supabaseAdmin = createClient(
@@ -45,6 +46,10 @@ function validatePassword(password: string): { isValid: boolean; errors: string[
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per 10 min + 20 per hour per IP
+  const rateLimitResponse = await checkAuthRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { identificacion, password } = await request.json()
 

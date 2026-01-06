@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 // GET - Obtener gastos con filtros
 export async function GET(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { searchParams } = new URL(request.url)
     const cedulaCliente = searchParams.get('cedula') || searchParams.get('cliente')
@@ -122,6 +127,10 @@ export async function GET(request: NextRequest) {
 
 // PATCH - Actualizar estado de pago de un gasto
 export async function PATCH(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const body = await request.json()
     const { id, gastoId, estado, nuevoEstado } = body
@@ -180,6 +189,10 @@ export async function PATCH(request: NextRequest) {
 
 // POST - Actualizar múltiples gastos
 export async function POST(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const body = await request.json()
     const { action, clienteId, mes, nuevoEstado, estado, gastoIds, ids } = body

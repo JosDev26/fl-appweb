@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 export async function GET(request: NextRequest) {
   try {
+    // Rate limiting: 100 requests per hour
+    const rateLimitResponse = await checkStandardRateLimit(request)
+    if (rateLimitResponse) return rateLimitResponse
     const searchParams = request.nextUrl.searchParams
     const id_cliente = searchParams.get('id_cliente')
 
@@ -37,10 +41,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('❌ Error en API de solicitudes:', error)
     return NextResponse.json(
-      { 
-        error: 'Error al obtener solicitudes',
-        details: error instanceof Error ? error.message : String(error)
-      },
+      { error: 'Error al obtener solicitudes' },
       { status: 500 }
     )
   }

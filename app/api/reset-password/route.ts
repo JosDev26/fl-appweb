@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkAuthRateLimit } from '@/lib/rate-limit'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -57,6 +58,10 @@ export async function GET(request: NextRequest) {
 
 // POST: Cambiar contraseña
 export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per 10 min + 20 per hour per IP
+  const rateLimitResponse = await checkAuthRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { token, password } = await request.json()
 

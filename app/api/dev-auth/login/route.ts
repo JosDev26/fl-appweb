@@ -1,9 +1,14 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { Resend } from 'resend'
+import { checkAuthRateLimit } from '@/lib/rate-limit'
 
+// Validate RESEND_API_KEY before creating client
+if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY.trim() === '') {
+  throw new Error('Missing RESEND_API_KEY environment variable')
+}
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 // Función para enviar correo con Resend
@@ -112,7 +117,11 @@ Fusion Legal CR`,
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per 10 min + 20 per hour per IP
+  const rateLimitResponse = await checkAuthRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { email, password } = await request.json()
 

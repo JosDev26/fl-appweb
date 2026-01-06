@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import crypto from 'crypto'
+import { checkEmailRateLimit } from '@/lib/rate-limit'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,6 +18,10 @@ const supabaseAdmin = createClient(
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 3 requests per hour per IP (prevents email spam)
+  const rateLimitResponse = await checkEmailRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { correoReportes } = await request.json()
 

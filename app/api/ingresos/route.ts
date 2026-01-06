@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 // GET - Obtener ingresos con filtros opcionales
 export async function GET(request: NextRequest) {
+  // Rate limiting: 100 requests per hour
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { searchParams } = new URL(request.url)
     const mes = searchParams.get('mes') // formato: YYYY-MM

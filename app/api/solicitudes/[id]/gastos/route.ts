@@ -1,15 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { checkCasoAccess } from '@/lib/auth-helpers'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Rate limiting
+    const rateLimitResponse = await checkStandardRateLimit(request)
+    if (rateLimitResponse) return rateLimitResponse
+
     const { id: solicitudId } = await params
     const { searchParams } = new URL(request.url)
     const clienteId = searchParams.get('clienteId')
     const tipoCliente = searchParams.get('tipoCliente') || 'cliente'
+
+    // IDOR Protection: Validate user has access to this solicitud/caso
+    const accessCheck = await checkCasoAccess(request, solicitudId)
+    if (!accessCheck.authorized) {
+      return NextResponse.json(
+        { error: accessCheck.error },
+        { status: accessCheck.status }
+      )
+    }
 
     // Obtenemos los gastos asociados directamente al id de la solicitud
     const { data: gastos, error: gastosError } = await supabase
@@ -104,10 +119,7 @@ export async function GET(
   } catch (error) {
     console.error('❌ Error al obtener gastos de solicitud:', error)
     return NextResponse.json(
-      {
-        error: 'Error al obtener gastos',
-        details: error instanceof Error ? error.message : String(error)
-      },
+      { error: 'Error al obtener gastos' },
       { status: 500 }
     )
   }

@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
+import { checkAuthRateLimit, resetAuthFailures, incrementAuthFailures } from '@/lib/rate-limit'
+import { setCsrfCookies } from '@/lib/csrf'
+import { logAuthFailure, logAuthSuccess } from '@/lib/security-logger'
 
 export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per 10 min + 20 per hour per IP
+  const rateLimitResponse = await checkAuthRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   try {
     const { identificacion, password } = await request.json()
 
@@ -22,6 +29,8 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (error || !user) {
+      await logAuthFailure(request, 'User not found', identificacion)
+      await incrementAuthFailures(identificacion, 'cliente')
       return NextResponse.json(
         { error: 'Identificación o contraseña incorrectas' },
         { status: 401 }
@@ -30,6 +39,8 @@ export async function POST(request: NextRequest) {
 
     // Verificar si el usuario está registrado
     if (!user.estaRegistrado) {
+      await logAuthFailure(request, 'User not registered', identificacion)
+      await incrementAuthFailures(user.id, 'cliente')
       return NextResponse.json(
         { error: 'Usuario no registrado. Debe crear una cuenta primero.' },
         { status: 401 }
@@ -57,12 +68,19 @@ export async function POST(request: NextRequest) {
     })
 
     if (authError || !authData.session) {
+      await logAuthFailure(request, 'Invalid password', identificacion)
+      await incrementAuthFailures(user.id, 'cliente')
       return NextResponse.json(
         { error: 'Identificación o contraseña incorrectas' },
         { status: 401 }
       )
     }
 
+    // Log successful authentication and reset failure counter
+    await logAuthSuccess(request, user.id, 'cliente')
+    await resetAuthFailures(user.id, 'cliente')
+
+    // Login exitoso - Crear respuesta con cookies
     // Login exitoso - Crear respuesta con cookies
     const response = NextResponse.json({
       success: true,
@@ -75,22 +93,27 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    const isProduction = process.env.NODE_ENV === 'production'
+
     // Establecer cookies de sesión de Supabase
     response.cookies.set('sb-access-token', authData.session.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: 'strict',
       maxAge: 60 * 60 * 24 * 7, // 7 días
       path: '/'
     })
 
     response.cookies.set('sb-refresh-token', authData.session.refresh_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: 'strict',
       maxAge: 60 * 60 * 24 * 7, // 7 días
       path: '/'
     })
+
+    // Set CSRF tokens for protection against cross-site request forgery
+    setCsrfCookies(response)
 
     return response
 

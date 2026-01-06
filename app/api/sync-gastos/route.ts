@@ -1,12 +1,21 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
+import { checkSyncRateLimit } from '@/lib/rate-limit'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Rate limiting: 5 requests per minute per IP
+  const rateLimitResponse = await checkSyncRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   return syncGastos()
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  // Rate limiting: 5 requests per minute per IP
+  const rateLimitResponse = await checkSyncRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
   return syncGastos()
 }
 
