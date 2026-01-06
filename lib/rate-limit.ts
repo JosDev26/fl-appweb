@@ -10,7 +10,7 @@ const redis = new Redis({
 })
 
 // Check if Redis is configured
-const isRedisConfigured = () => {
+export const isRedisConfigured = () => {
   return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
 }
 
