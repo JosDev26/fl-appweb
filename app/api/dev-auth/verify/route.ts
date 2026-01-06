@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 60 * 60 * 8, // 8 horas
-      path: '/dev'
+      path: '/' // Accesible desde /dev y /api
     })
 
     cookieStore.set('dev-admin-id', authCode.admin_id, {
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 60 * 60 * 8,
-      path: '/dev'
+      path: '/' // Accesible desde /dev y /api
     })
 
     cookieStore.set('dev-admin-name', authCode.dev_admins.name, {
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 60 * 60 * 8,
-      path: '/dev'
+      path: '/' // Accesible desde /dev y /api
     })
 
     return NextResponse.json({

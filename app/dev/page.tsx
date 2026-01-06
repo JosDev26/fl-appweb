@@ -549,7 +549,8 @@ export default function DevPage() {
     try {
       // GET request to retrieve invitation codes with filters
       const response = await fetch('/api/invitation-codes?includeUsed=true&includeExpired=true', {
-        method: 'GET'
+        method: 'GET',
+        credentials: 'include' // Incluir cookies de sesión
       })
       const data = await response.json()
       
@@ -557,6 +558,8 @@ export default function DevPage() {
       
       if (data.success) {
         setInvitationCodes(data.codes || [])
+      } else {
+        console.error('Error en respuesta:', data.error)
       }
     } catch (error) {
       console.error('Error cargando códigos:', error)
@@ -601,6 +604,7 @@ export default function DevPage() {
       const res = await fetch('/api/invitation-codes', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // Incluir cookies de sesión
         body: JSON.stringify({ codeId, action: 'deactivate' })
       })
       const data = await res.json()

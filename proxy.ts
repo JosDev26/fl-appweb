@@ -45,9 +45,9 @@ export default async function proxy(request: NextRequest) {
       if (error || !session) {
         const response = NextResponse.redirect(new URL('/dev/login', request.url))
         // Eliminar cookies con los mismos atributos con los que fueron creadas
-        response.cookies.set('dev-auth', '', { path: '/dev', maxAge: 0 })
-        response.cookies.set('dev-admin-id', '', { path: '/dev', maxAge: 0 })
-        response.cookies.set('dev-admin-name', '', { path: '/dev', maxAge: 0 })
+        response.cookies.set('dev-auth', '', { path: '/', maxAge: 0 })
+        response.cookies.set('dev-admin-id', '', { path: '/', maxAge: 0 })
+        response.cookies.set('dev-admin-name', '', { path: '/', maxAge: 0 })
         return response
       }
 
@@ -63,9 +63,9 @@ export default async function proxy(request: NextRequest) {
 
         const response = NextResponse.redirect(new URL('/dev/login', request.url))
         // Eliminar cookies con los mismos atributos con los que fueron creadas
-        response.cookies.set('dev-auth', '', { path: '/dev', maxAge: 0 })
-        response.cookies.set('dev-admin-id', '', { path: '/dev', maxAge: 0 })
-        response.cookies.set('dev-admin-name', '', { path: '/dev', maxAge: 0 })
+        response.cookies.set('dev-auth', '', { path: '/', maxAge: 0 })
+        response.cookies.set('dev-admin-id', '', { path: '/', maxAge: 0 })
+        response.cookies.set('dev-admin-name', '', { path: '/', maxAge: 0 })
         return response
       }
     } catch (error) {

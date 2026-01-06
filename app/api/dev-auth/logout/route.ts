@@ -22,12 +22,12 @@ export async function POST() {
     })
 
     // Eliminar cookies - DEBEN coincidir exactamente con los atributos usados al crearlas
-    // Las cookies fueron creadas con path: '/dev' y sameSite: 'strict'
+    // Las cookies fueron creadas con path: '/' y sameSite: 'strict'
     response.cookies.set('dev-auth', '', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      path: '/dev',
+      path: '/',
       maxAge: 0,
     })
     
@@ -35,7 +35,7 @@ export async function POST() {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      path: '/dev',
+      path: '/',
       maxAge: 0,
     })
     
@@ -43,7 +43,7 @@ export async function POST() {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      path: '/dev',
+      path: '/',
       maxAge: 0,
     })
 
