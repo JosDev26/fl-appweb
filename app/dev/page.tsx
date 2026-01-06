@@ -139,7 +139,73 @@ interface TotalesDeudas {
   }
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado'
+// Vista Pago types
+type TipoModalidadPago = 'Mensualidad' | 'Etapa Finalizada' | 'Único Pago' | 'Cobro por hora' | 'Solo gastos-servicios'
+
+interface ProyectoMensualidad {
+  id: string
+  titulo: string
+  costoNeto: number        // Sin IVA
+  montoIva: number         // IVA
+  totalProyecto: number    // Con IVA (total_a_pagar)
+  cantidadCuotas: number
+  montoPorCuota: number
+  montoPagado: number
+  saldoPendiente: number
+}
+
+interface ClienteVistaPago {
+  id: string
+  nombre: string
+  cedula: string
+  tipo: 'usuario' | 'empresa'
+  tipoModalidad: TipoModalidadPago
+  modoPago: boolean
+  fechaActivacionModoPago: string | null
+  grupoId?: string
+  grupoNombre?: string
+  esGrupoPrincipal?: boolean
+  mes: string
+  totalHoras: number
+  montoHoras: number
+  tarifaHora: number
+  totalGastos: number
+  totalMensualidades: number
+  subtotal: number
+  ivaPerc: number
+  iva: number
+  total: number
+  notaInterna?: string
+  trabajosPorHora?: any[]
+  gastos?: any[]
+  solicitudes?: any[]
+  proyectos?: ProyectoMensualidad[]
+}
+
+interface TotalesPorModalidad {
+  count: number
+  totalHoras: number
+  montoHoras: number
+  totalGastos: number
+  totalMensualidades: number
+  subtotal: number
+  iva: number
+  total: number
+}
+
+interface TotalesPorGrupo {
+  grupoNombre: string
+  empresas: string[]
+  totalHoras: number
+  montoHoras: number
+  totalGastos: number
+  totalMensualidades: number
+  subtotal: number
+  iva: number
+  total: number
+}
+
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'vista-pago'
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -224,6 +290,20 @@ export default function DevPage() {
   const [filtroClienteGasto, setFiltroClienteGasto] = useState<string>('')
   const [selectedGastos, setSelectedGastos] = useState<string[]>([])
   const [nuevoEstadoGasto, setNuevoEstadoGasto] = useState<string>('pendiente')
+
+  // Estados para Vista Pago
+  const [clientesVistaPago, setClientesVistaPago] = useState<ClienteVistaPago[]>([])
+  const [loadingVistaPago, setLoadingVistaPago] = useState(false)
+  const [totalesPorModalidadPago, setTotalesPorModalidadPago] = useState<Record<TipoModalidadPago, TotalesPorModalidad> | null>(null)
+  const [totalesPorGrupoPago, setTotalesPorGrupoPago] = useState<Record<string, TotalesPorGrupo> | null>(null)
+  const [granTotalPago, setGranTotalPago] = useState<TotalesPorModalidad | null>(null)
+  const [filtroModalidadPago, setFiltroModalidadPago] = useState<TipoModalidadPago | 'todos'>('todos')
+  const [filtroTipoPago, setFiltroTipoPago] = useState<'todos' | 'empresas' | 'usuarios'>('todos')
+  const [searchVistaPago, setSearchVistaPago] = useState<string>('')
+  const [ordenVistaPago, setOrdenVistaPago] = useState<'nombre' | 'total' | 'tipo'>('nombre')
+  const [clienteExpandido, setClienteExpandido] = useState<string | null>(null)
+  const [editandoNota, setEditandoNota] = useState<string | null>(null)
+  const [notaTemp, setNotaTemp] = useState<string>('')
 
   // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
@@ -1094,6 +1174,100 @@ export default function DevPage() {
     return grupos
   }
 
+  // VISTA PAGO - Cargar datos de clientes con modoPago
+  const loadVistaPago = async () => {
+    setLoadingVistaPago(true)
+    try {
+      const url = isDateSimulated && simulatedDate 
+        ? `/api/vista-pago?simulatedDate=${simulatedDate}`
+        : '/api/vista-pago'
+      const res = await fetch(url, { credentials: 'include' })
+      const data = await res.json()
+      
+      if (data.success) {
+        setClientesVistaPago(data.clientes || [])
+        setTotalesPorModalidadPago(data.totalesPorModalidad || null)
+        setTotalesPorGrupoPago(data.totalesPorGrupo || null)
+        setGranTotalPago(data.granTotal || null)
+      } else {
+        console.error('Error cargando vista pago:', data.error)
+        alert('Error cargando datos de pago: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error cargando vista pago:', error)
+      alert('Error de conexión al cargar datos de pago')
+    } finally {
+      setLoadingVistaPago(false)
+    }
+  }
+
+  // Filtrar clientes de vista pago
+  const getClientesVistaPagoFiltrados = () => {
+    let filtrados = [...clientesVistaPago]
+    
+    // Filtro por modalidad
+    if (filtroModalidadPago !== 'todos') {
+      filtrados = filtrados.filter(c => c.tipoModalidad === filtroModalidadPago)
+    }
+    
+    // Filtro por tipo (empresa/usuario)
+    if (filtroTipoPago !== 'todos') {
+      filtrados = filtrados.filter(c => c.tipo === (filtroTipoPago === 'empresas' ? 'empresa' : 'usuario'))
+    }
+    
+    // Búsqueda por texto
+    if (searchVistaPago.trim()) {
+      const search = searchVistaPago.toLowerCase()
+      filtrados = filtrados.filter(c => 
+        c.nombre.toLowerCase().includes(search) ||
+        c.cedula.toLowerCase().includes(search) ||
+        (c.grupoNombre || '').toLowerCase().includes(search)
+      )
+    }
+    
+    // Ordenamiento
+    filtrados.sort((a, b) => {
+      if (ordenVistaPago === 'total') {
+        return b.total - a.total
+      }
+      if (ordenVistaPago === 'tipo') {
+        if (a.tipo !== b.tipo) return a.tipo === 'empresa' ? -1 : 1
+        return a.nombre.localeCompare(b.nombre)
+      }
+      // Por defecto: nombre
+      return a.nombre.localeCompare(b.nombre)
+    })
+    
+    return filtrados
+  }
+
+  // Guardar nota interna
+  const guardarNotaInterna = async (clienteId: string, tipo: 'usuario' | 'empresa') => {
+    try {
+      const res = await fetch('/api/vista-pago', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ clienteId, tipo, nota: notaTemp })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        // Actualizar estado local
+        setClientesVistaPago(prev => prev.map(c => 
+          c.id === clienteId ? { ...c, notaInterna: notaTemp || undefined } : c
+        ))
+        setEditandoNota(null)
+        setNotaTemp('')
+      } else {
+        alert('Error guardando nota: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error guardando nota:', error)
+      alert('Error de conexión')
+    }
+  }
+
   // Formatear horas
   const formatHoras = (horas: number) => {
     const h = Math.floor(horas)
@@ -1200,6 +1374,13 @@ export default function DevPage() {
           >
             <span className={styles.navIcon}>💰</span>
             <span className={styles.navLabel}>Deudas Clientes</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'vista-pago' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('vista-pago'); loadVistaPago() }}
+          >
+            <span className={styles.navIcon}>📊</span>
+            <span className={styles.navLabel}>Vista Pago</span>
           </button>
           <button 
             className={`${styles.navItem} ${activeSection === 'gastos-estado' ? styles.active : ''}`}
@@ -2605,6 +2786,566 @@ export default function DevPage() {
                 <li><strong>Pagado:</strong> Gasto ya incluido en un comprobante de pago aprobado</li>
                 <li><strong>Pendiente (Mes Actual):</strong> Gasto del mes en curso, pendiente de cobro</li>
                 <li><strong>Pendiente (Mes Anterior):</strong> Gasto de meses anteriores que no ha sido cobrado</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* VISTA PAGO */}
+        {activeSection === 'vista-pago' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Vista de Pago por Cliente</h2>
+                <p className={styles.sectionDescription}>
+                  Desglose de pagos pendientes para clientes con modo pago activo, agrupados por tipo de modalidad
+                </p>
+              </div>
+              <button className={styles.button} onClick={loadVistaPago} disabled={loadingVistaPago}>
+                {loadingVistaPago ? 'Cargando...' : 'Refrescar'}
+              </button>
+            </div>
+
+            {/* Resumen por tipo de modalidad */}
+            {granTotalPago && totalesPorModalidadPago && (
+              <div style={{ marginBottom: '2rem' }}>
+                <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem', color: '#333' }}>📊 Resumen General</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                  {(['Mensualidad', 'Etapa Finalizada', 'Único Pago', 'Cobro por hora', 'Solo gastos-servicios'] as TipoModalidadPago[]).map(tipo => {
+                    const t = totalesPorModalidadPago[tipo]
+                    if (t.count === 0) return null
+                    return (
+                      <div 
+                        key={tipo} 
+                        className={styles.card}
+                        style={{ 
+                          cursor: 'pointer',
+                          border: filtroModalidadPago === tipo ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                          transition: 'border-color 0.2s'
+                        }}
+                        onClick={() => setFiltroModalidadPago(filtroModalidadPago === tipo ? 'todos' : tipo)}
+                      >
+                        <h4 style={{ marginBottom: '0.5rem', fontSize: '0.9rem', color: '#666' }}>{tipo}</h4>
+                        <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1976d2', margin: '0.25rem 0' }}>
+                          {formatCurrency(t.total)}
+                        </p>
+                        <p style={{ fontSize: '0.85rem', color: '#888' }}>{t.count} cliente{t.count !== 1 ? 's' : ''}</p>
+                      </div>
+                    )
+                  })}
+                </div>
+                
+                {/* Gran Total */}
+                <div className={styles.deudasResumen}>
+                  <h3 className={styles.deudasResumenTitle}>GRAN TOTAL ({granTotalPago.count} clientes con modo pago)</h3>
+                  <div className={styles.deudasResumenGrid}>
+                    <div>
+                      <strong>Horas:</strong>
+                      <p className={styles.deudasResumenValue}>{formatHoras(granTotalPago.totalHoras)}</p>
+                    </div>
+                    <div>
+                      <strong>Monto Horas:</strong>
+                      <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.montoHoras)}</p>
+                    </div>
+                    <div>
+                      <strong>Gastos:</strong>
+                      <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.totalGastos)}</p>
+                    </div>
+                    <div>
+                      <strong>Mensualidades:</strong>
+                      <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.totalMensualidades)}</p>
+                    </div>
+                    <div>
+                      <strong>Subtotal:</strong>
+                      <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.subtotal)}</p>
+                    </div>
+                    <div>
+                      <strong>IVA:</strong>
+                      <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.iva)}</p>
+                    </div>
+                    <div className={styles.deudasResumenTotal}>
+                      <strong>TOTAL A COBRAR:</strong>
+                      <p className={styles.deudasResumenTotalValue}>{formatCurrency(granTotalPago.total)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Filtros */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className={styles.formGroup} style={{ marginBottom: 0, minWidth: '180px' }}>
+                <label className={styles.formLabel}>Tipo Modalidad:</label>
+                <select
+                  className={styles.input}
+                  value={filtroModalidadPago}
+                  onChange={(e) => setFiltroModalidadPago(e.target.value as TipoModalidadPago | 'todos')}
+                >
+                  <option value="todos">Todas las modalidades</option>
+                  <option value="Mensualidad">Mensualidad</option>
+                  <option value="Etapa Finalizada">Etapa Finalizada</option>
+                  <option value="Único Pago">Único Pago</option>
+                  <option value="Cobro por hora">Cobro por hora</option>
+                  <option value="Solo gastos-servicios">Solo gastos-servicios</option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0, minWidth: '150px' }}>
+                <label className={styles.formLabel}>Tipo Cliente:</label>
+                <select
+                  className={styles.input}
+                  value={filtroTipoPago}
+                  onChange={(e) => setFiltroTipoPago(e.target.value as 'todos' | 'empresas' | 'usuarios')}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="empresas">Solo Empresas</option>
+                  <option value="usuarios">Solo Usuarios</option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0, minWidth: '150px' }}>
+                <label className={styles.formLabel}>Ordenar por:</label>
+                <select
+                  className={styles.input}
+                  value={ordenVistaPago}
+                  onChange={(e) => setOrdenVistaPago(e.target.value as 'nombre' | 'total' | 'tipo')}
+                >
+                  <option value="nombre">Nombre</option>
+                  <option value="total">Total (Mayor a menor)</option>
+                  <option value="tipo">Tipo (Empresa primero)</option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0, flex: 1, minWidth: '200px' }}>
+                <label className={styles.formLabel}>Buscar:</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="Nombre, cédula o grupo..."
+                  value={searchVistaPago}
+                  onChange={(e) => setSearchVistaPago(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Lista de clientes */}
+            {loadingVistaPago ? (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Cargando datos de pago...</p>
+              </div>
+            ) : getClientesVistaPagoFiltrados().length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>No hay clientes con modo pago activo {filtroModalidadPago !== 'todos' ? `en modalidad "${filtroModalidadPago}"` : ''}</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {/* Agrupar por tipo de modalidad */}
+                {(['Mensualidad', 'Etapa Finalizada', 'Único Pago', 'Cobro por hora', 'Solo gastos-servicios'] as TipoModalidadPago[]).map(tipoModalidad => {
+                  const clientesDeEstaModalidad = getClientesVistaPagoFiltrados().filter(c => c.tipoModalidad === tipoModalidad)
+                  if (clientesDeEstaModalidad.length === 0) return null
+                  if (filtroModalidadPago !== 'todos' && filtroModalidadPago !== tipoModalidad) return null
+                  
+                  return (
+                    <div key={tipoModalidad} style={{ marginBottom: '1.5rem' }}>
+                      <h3 style={{ 
+                        marginBottom: '1rem', 
+                        padding: '0.75rem 1rem', 
+                        background: tipoModalidad === 'Mensualidad' ? 'rgba(33, 150, 243, 0.12)' : 
+                                   tipoModalidad === 'Etapa Finalizada' ? 'rgba(255, 152, 0, 0.12)' : 
+                                   tipoModalidad === 'Único Pago' ? 'rgba(156, 39, 176, 0.12)' : 
+                                   tipoModalidad === 'Cobro por hora' ? 'rgba(76, 175, 80, 0.12)' : 'rgba(158, 158, 158, 0.12)',
+                        border: tipoModalidad === 'Mensualidad' ? '1px solid rgba(33, 150, 243, 0.3)' : 
+                                tipoModalidad === 'Etapa Finalizada' ? '1px solid rgba(255, 152, 0, 0.3)' : 
+                                tipoModalidad === 'Único Pago' ? '1px solid rgba(156, 39, 176, 0.3)' : 
+                                tipoModalidad === 'Cobro por hora' ? '1px solid rgba(76, 175, 80, 0.3)' : '1px solid rgba(158, 158, 158, 0.3)',
+                        borderRadius: '8px',
+                        fontSize: '1rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <span>📌 {tipoModalidad}</span>
+                        <span style={{ fontWeight: 600 }}>
+                          {clientesDeEstaModalidad.length} cliente{clientesDeEstaModalidad.length !== 1 ? 's' : ''} | 
+                          Total: {formatCurrency(clientesDeEstaModalidad.reduce((sum, c) => sum + c.total, 0))}
+                        </span>
+                      </h3>
+                      
+                      {clientesDeEstaModalidad.map(cliente => (
+                        <div 
+                          key={cliente.id} 
+                          className={styles.card}
+                          style={{ 
+                            marginBottom: '0.75rem',
+                            borderLeft: cliente.tipo === 'empresa' ? '4px solid #1976d2' : '4px solid #ff9800'
+                          }}
+                        >
+                          {/* Header del cliente */}
+                          <div 
+                            style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'flex-start',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => setClienteExpandido(clienteExpandido === cliente.id ? null : cliente.id)}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
+                                <strong style={{ fontSize: '1.1rem' }}>{cliente.nombre}</strong>
+                                <span className={`${styles.badge} ${cliente.tipo === 'empresa' ? styles.badgeInfo : styles.badgeWarning}`}>
+                                  {cliente.tipo === 'empresa' ? 'Empresa' : 'Usuario'}
+                                </span>
+                                {cliente.grupoNombre && (
+                                  <span className={styles.badge} style={{ background: '#e0e0e0', color: '#333' }}>
+                                    {cliente.esGrupoPrincipal ? '★ ' : ''}{cliente.grupoNombre}
+                                  </span>
+                                )}
+                              </div>
+                              <p style={{ color: '#666', fontSize: '0.9rem', margin: 0 }}>
+                                {cliente.cedula} | Mes: {getNombreMes(cliente.mes)}
+                              </p>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#388e3c', margin: 0 }}>
+                                {formatCurrency(cliente.total)}
+                              </p>
+                              <p style={{ fontSize: '0.85rem', color: '#888', margin: 0 }}>
+                                {clienteExpandido === cliente.id ? '▲ Contraer' : '▼ Expandir'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Detalles expandidos */}
+                          {clienteExpandido === cliente.id && (
+                            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(0, 0, 0, 0.12)' }} className="dark:border-opacity-20 dark:border-white">
+                              {/* Desglose de costos */}
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                                <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Horas</p>
+                                  <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
+                                    {formatHoras(cliente.totalHoras)}
+                                  </p>
+                                  <p style={{ fontSize: '0.85rem', opacity: 0.6, margin: 0 }}>
+                                    {formatCurrency(cliente.montoHoras)}
+                                  </p>
+                                </div>
+                                <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Gastos</p>
+                                  <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
+                                    {formatCurrency(cliente.totalGastos)}
+                                  </p>
+                                </div>
+                                <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Mensualidades</p>
+                                  <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
+                                    {formatCurrency(cliente.totalMensualidades)}
+                                  </p>
+                                </div>
+                                <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>IVA ({Math.round(cliente.ivaPerc * 100)}%)</p>
+                                  <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
+                                    {formatCurrency(cliente.iva)}
+                                  </p>
+                                </div>
+                                <div style={{ padding: '0.75rem', background: 'rgba(76, 175, 80, 0.15)', borderRadius: '6px', border: '1px solid rgba(76, 175, 80, 0.3)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Subtotal</p>
+                                  <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
+                                    {formatCurrency(cliente.subtotal)}
+                                  </p>
+                                </div>
+                                <div style={{ padding: '0.75rem', background: 'rgba(76, 175, 80, 0.25)', borderRadius: '6px', border: '1px solid rgba(76, 175, 80, 0.4)' }}>
+                                  <p style={{ fontSize: '0.8rem', color: '#2e7d32', margin: 0, fontWeight: 600 }}>TOTAL</p>
+                                  <p style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0.25rem 0 0', color: '#2e7d32' }}>
+                                    {formatCurrency(cliente.total)}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              {/* Proyectos con Mensualidad */}
+                              {cliente.tipoModalidad === 'Mensualidad' && cliente.proyectos && cliente.proyectos.length > 0 && (
+                                <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'rgba(33, 150, 243, 0.08)', border: '1px solid rgba(33, 150, 243, 0.2)', borderRadius: '8px' }}>
+                                  <h4 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 600, color: '#1976d2' }}>
+                                    📊 Proyectos con Mensualidad ({cliente.proyectos.length})
+                                  </h4>
+                                  
+                                  {cliente.proyectos.map((proyecto, idx) => (
+                                    <div key={proyecto.id} style={{ 
+                                      marginBottom: idx < cliente.proyectos!.length - 1 ? '1rem' : 0,
+                                      padding: '1rem',
+                                      background: 'rgba(255, 255, 255, 0.7)',
+                                      border: '1px solid rgba(33, 150, 243, 0.3)',
+                                      borderRadius: '6px'
+                                    }}>
+                                      <h5 style={{ margin: '0 0 0.75rem', fontSize: '0.95rem', fontWeight: 600, color: '#1565c0' }}>
+                                        {proyecto.titulo}
+                                      </h5>
+                                      
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', fontSize: '0.85rem' }}>
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Costo Neto (sin IVA)</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 600 }}>{formatCurrency(proyecto.costoNeto)}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>IVA</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 600 }}>{formatCurrency(proyecto.montoIva)}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Total Proyecto</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 700, color: '#1976d2' }}>{formatCurrency(proyecto.totalProyecto)}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Cuotas Totales</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 600 }}>{proyecto.cantidadCuotas}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Monto por Cuota</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 600 }}>{formatCurrency(proyecto.montoPorCuota)}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Monto Pagado</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 600, color: '#2e7d32' }}>{formatCurrency(proyecto.montoPagado)}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Saldo Pendiente</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 700, color: '#d32f2f' }}>{formatCurrency(proyecto.saldoPendiente)}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <p style={{ margin: 0, opacity: 0.7, fontSize: '0.75rem' }}>Pago Este Mes</p>
+                                          <p style={{ margin: '0.25rem 0 0', fontWeight: 700, color: '#f57c00' }}>
+                                            {formatCurrency(proyecto.montoPorCuota)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  
+                                  {/* Resumen de pago del mes */}
+                                  <div style={{ 
+                                    marginTop: '1rem', 
+                                    padding: '0.75rem',
+                                    background: 'rgba(255, 152, 0, 0.15)',
+                                    border: '1px solid rgba(255, 152, 0, 0.3)',
+                                    borderRadius: '6px'
+                                  }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      <div>
+                                        <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>Total Mensualidades del Mes</p>
+                                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.8rem', opacity: 0.7 }}>
+                                          (Cuotas + Gastos + Otros)
+                                        </p>
+                                      </div>
+                                      <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: '#f57c00' }}>
+                                        {formatCurrency(cliente.total)}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Info adicional */}
+                              <div style={{ fontSize: '0.9rem', opacity: 0.8, marginBottom: '1rem' }}>
+                                <p style={{ margin: '0.25rem 0' }}>
+                                  <strong>Tarifa por hora:</strong> {formatCurrency(cliente.tarifaHora)}
+                                </p>
+                                {cliente.fechaActivacionModoPago && (
+                                  <p style={{ margin: '0.25rem 0' }}>
+                                    <strong>Modo pago activado:</strong> {new Date(cliente.fechaActivacionModoPago).toLocaleDateString('es-CR')}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Detalle de trabajos */}
+                              {cliente.trabajosPorHora && cliente.trabajosPorHora.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem' }}>
+                                    📋 Trabajos por hora ({cliente.trabajosPorHora.length})
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(0, 0, 0, 0.04)', border: '1px solid rgba(0, 0, 0, 0.08)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Fecha</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Descripción</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Duración</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.trabajosPorHora.map((t: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{t.fecha ? new Date(t.fecha).toLocaleDateString('es-CR') : '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{t.descripcion || t.titulo || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{t.duracion || '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
+                              {/* Detalle de gastos */}
+                              {cliente.gastos && cliente.gastos.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem' }}>
+                                    💳 Gastos ({cliente.gastos.length})
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(0, 0, 0, 0.04)', border: '1px solid rgba(0, 0, 0, 0.08)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Fecha</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Producto</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Monto</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.gastos.map((g: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{g.fecha ? new Date(g.fecha).toLocaleDateString('es-CR') : '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{g.producto || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{formatCurrency(g.total_cobro || 0)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
+                              {/* Detalle de solicitudes/mensualidades */}
+                              {cliente.solicitudes && cliente.solicitudes.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem' }}>
+                                    📝 Solicitudes ({cliente.solicitudes.length})
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(0, 0, 0, 0.04)', border: '1px solid rgba(0, 0, 0, 0.08)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Título</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Modalidad</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Monto Cuota</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.solicitudes.map((s: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{s.titulo || '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{s.modalidad_pago || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{formatCurrency(s.monto_por_cuota || 0)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
+                              {/* Notas internas */}
+                              <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(255, 235, 59, 0.15)', border: '1px solid rgba(255, 235, 59, 0.3)', borderRadius: '6px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                  <strong style={{ fontSize: '0.9rem' }}>📝 Notas internas</strong>
+                                  {editandoNota !== cliente.id && (
+                                    <button 
+                                      className={styles.buttonSecondary}
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                                      onClick={(e) => { 
+                                        e.stopPropagation()
+                                        setEditandoNota(cliente.id)
+                                        setNotaTemp(cliente.notaInterna || '')
+                                      }}
+                                    >
+                                      {cliente.notaInterna ? 'Editar' : 'Agregar nota'}
+                                    </button>
+                                  )}
+                                </div>
+                                
+                                {editandoNota === cliente.id ? (
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <textarea
+                                      className={styles.input}
+                                      value={notaTemp}
+                                      onChange={(e) => setNotaTemp(e.target.value)}
+                                      placeholder="Escribe una nota interna sobre este cliente..."
+                                      rows={3}
+                                      style={{ width: '100%', marginBottom: '0.5rem' }}
+                                    />
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                      <button 
+                                        className={styles.button}
+                                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.85rem' }}
+                                        onClick={() => guardarNotaInterna(cliente.id, cliente.tipo)}
+                                      >
+                                        Guardar
+                                      </button>
+                                      <button 
+                                        className={styles.buttonSecondary}
+                                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.85rem' }}
+                                        onClick={() => { setEditandoNota(null); setNotaTemp('') }}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p style={{ margin: 0, fontSize: '0.9rem', opacity: cliente.notaInterna ? 0.9 : 0.5, fontStyle: cliente.notaInterna ? 'normal' : 'italic' }}>
+                                    {cliente.notaInterna || 'Sin notas'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Totales por grupo dentro de esta modalidad */}
+                      {totalesPorGrupoPago && Object.entries(totalesPorGrupoPago)
+                        .filter(([_, g]) => clientesDeEstaModalidad.some(c => c.grupoId && clientesVistaPago.find(cv => cv.id === c.id)?.grupoNombre === g.grupoNombre))
+                        .map(([grupoId, grupo]) => (
+                          <div 
+                            key={grupoId}
+                            style={{ 
+                              marginTop: '0.5rem',
+                              padding: '0.75rem 1rem',
+                              background: 'rgba(33, 150, 243, 0.15)',
+                              border: '1px solid rgba(33, 150, 243, 0.3)',
+                              borderRadius: '6px',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <span style={{ fontWeight: 600 }}>
+                              🏢 Total Grupo: {grupo.grupoNombre} ({grupo.empresas.length} empresas)
+                            </span>
+                            <span style={{ fontWeight: 700, color: '#2196f3', fontSize: '1.1rem' }}>
+                              {formatCurrency(grupo.total)}
+                            </span>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Info */}
+            <div className={styles.infoBox} style={{ marginTop: '1.5rem' }}>
+              <h4 style={{ marginBottom: '0.5rem' }}>ℹ️ Información</h4>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                <li><strong>Mensualidad:</strong> Clientes con solicitudes de pago mensual fijo</li>
+                <li><strong>Etapa Finalizada:</strong> Clientes que pagan al completar etapas del proceso</li>
+                <li><strong>Único Pago:</strong> Clientes con pago único al finalizar</li>
+                <li><strong>Cobro por hora:</strong> Clientes que pagan según horas trabajadas</li>
+                <li><strong>Solo gastos-servicios:</strong> Clientes sin solicitudes activas, solo gastos o servicios</li>
+                <li>Si el <strong>modo pago</strong> se activó en el mes actual, se muestran datos del mes anterior</li>
               </ul>
             </div>
           </div>
