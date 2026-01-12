@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
       { name: 'Materias', url: `${baseUrl}/api/sync-materias` },
       { name: 'Funcionarios', url: `${baseUrl}/api/sync-funcionarios` },
       { name: 'Historial_Reportes', url: `${baseUrl}/api/sync-historial-reportes` },
+      { name: 'Lista_Servicios', url: `${baseUrl}/api/sync-lista-servicios` }, // Catálogo de servicios
       
       // 2. Tablas que dependen de usuarios/empresas
       { name: 'Casos', url: `${baseUrl}/api/sync-casos` }, // FK: id_cliente, materia

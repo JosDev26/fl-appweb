@@ -5,6 +5,9 @@ import { checkStandardRateLimit } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
+// Only log in development mode
+const isDev = process.env.NODE_ENV === 'development';
+
 // Función auxiliar para obtener datos de pago de una empresa específica
 async function getDatosEmpresa(
   empresaId: string, 
@@ -14,6 +17,7 @@ async function getDatosEmpresa(
   trabajosPorHora: any[];
   gastos: any[];
   solicitudes: any[];
+  serviciosProfesionales: any[];
   empresa: { nombre: string; tarifa_hora: number; iva_perc: number } | null;
 }> {
   // Obtener info de la empresa
@@ -58,10 +62,25 @@ async function getDatosEmpresa(
     .eq('id_cliente', empresaId)
     .ilike('modalidad_pago', 'mensualidad');
 
+  // Obtener servicios profesionales (NO cancelados)
+  const { data: serviciosProfesionales } = await supabase
+    .from('servicios_profesionales' as any)
+    .select(`
+      id, id_caso, id_servicio, fecha, costo, gastos, iva, total, estado_pago,
+      funcionarios:id_responsable (nombre),
+      lista_servicios:id_servicio (titulo)
+    `)
+    .eq('id_cliente', empresaId)
+    .neq('estado_pago', 'cancelado')
+    .gte('fecha', inicioMes)
+    .lte('fecha', finMes)
+    .order('fecha', { ascending: false });
+
   return {
     trabajosPorHora: trabajosPorHora || [],
     gastos: gastos || [],
     solicitudes: solicitudes || [],
+    serviciosProfesionales: serviciosProfesionales || [],
     empresa: empresaData ? {
       nombre: (empresaData as any).nombre,
       tarifa_hora: (empresaData as any).tarifa_hora || 90000,
@@ -88,11 +107,35 @@ export async function GET(request: NextRequest) {
     }
 
     // Usar fecha simulada si se proporciona, sino usar fecha global o fecha real Costa Rica
+    // SECURITY: Only allow simulated dates in development environment
     const { searchParams } = new URL(request.url)
-    const simulatedDate = searchParams.get('simulatedDate')
-    console.log('📅 [datos-pago] simulatedDate param:', simulatedDate)
-    const now = await getCurrentDateCR(simulatedDate)
-    console.log('📅 [datos-pago] getCurrentDateCR retornó:', now.toISOString())
+    let validatedSimulatedDate: string | null = null
+    
+    if (isDev) {
+      const rawSimulatedDate = searchParams.get('simulatedDate')?.trim()
+      if (rawSimulatedDate) {
+        // Validate format: YYYY-MM-DD or ISO-8601 date
+        const dateFormatRegex = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?)?$/
+        if (dateFormatRegex.test(rawSimulatedDate)) {
+          // Also validate it's a valid date
+          const parsedDate = Date.parse(rawSimulatedDate)
+          if (!isNaN(parsedDate)) {
+            validatedSimulatedDate = rawSimulatedDate
+            console.log('📅 [datos-pago] simulatedDate validated:', validatedSimulatedDate)
+          } else {
+            console.warn('📅 [datos-pago] simulatedDate parse failed, ignoring:', rawSimulatedDate)
+          }
+        } else {
+          console.warn('📅 [datos-pago] simulatedDate invalid format (expected YYYY-MM-DD), ignoring:', rawSimulatedDate)
+        }
+      }
+    } else if (searchParams.get('simulatedDate')) {
+      // Log warning if someone tries to use simulatedDate in production
+      console.warn('⚠️ [datos-pago] simulatedDate parameter ignored in production environment')
+    }
+    
+    const now = await getCurrentDateCR(validatedSimulatedDate)
+    if (isDev) console.log('📅 [datos-pago] getCurrentDateCR retornó:', now.toISOString())
     
     // IMPORTANTE: Los clientes ven las horas/gastos del MES ANTERIOR
     // Si hoy es diciembre, se muestran datos de NOVIEMBRE
@@ -101,7 +144,7 @@ export async function GET(request: NextRequest) {
     const { year, month, mesPago } = getMesAnterior(now)
     const { inicioMes: inicioMesStr, finMes: finMesStr } = getRangoMes(year, month)
     
-    console.log('📅 [datos-pago] Fecha actual:', now.toISOString().split('T')[0], '| Mes anterior:', mesPago, '| Rango:', inicioMesStr, 'a', finMesStr)
+    if (isDev) console.log('📅 [datos-pago] Mes anterior:', mesPago, '| Rango:', inicioMesStr, 'a', finMesStr)
 
     // Verificar si es empresa principal de un grupo
     let esGrupoPrincipal = false;
@@ -133,7 +176,7 @@ export async function GET(request: NextRequest) {
             iva_perc: e.iva_perc || 0.13
           }));
         }
-        console.log('🏢 [datos-pago] Es empresa principal de grupo con', empresasDelGrupo.length, 'empresas asociadas');
+        if (isDev) console.log('🏢 [datos-pago] Es empresa principal de grupo con', empresasDelGrupo.length, 'empresas asociadas');
       }
     }
 
@@ -228,6 +271,38 @@ export async function GET(request: NextRequest) {
     
     const totalGastos = (gastos || []).reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
+    // Obtener servicios profesionales del mes anterior (NO cancelados)
+    const { data: serviciosProfesionales, error: serviciosError } = await supabase
+      .from('servicios_profesionales' as any)
+      .select(`
+        id,
+        id_caso,
+        id_servicio,
+        fecha,
+        costo,
+        gastos,
+        iva,
+        total,
+        estado_pago,
+        funcionarios:id_responsable (nombre),
+        lista_servicios:id_servicio (titulo)
+      `)
+      .eq('id_cliente', userId)
+      .neq('estado_pago', 'cancelado')
+      .gte('fecha', inicioMesStr)
+      .lte('fecha', finMesStr)
+      .order('fecha', { ascending: false });
+    
+    if (serviciosError) {
+      if (isDev) console.error('Error al obtener servicios profesionales:', serviciosError);
+    }
+    
+    // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
+    const totalServiciosProfesionales = (serviciosProfesionales || []).reduce(
+      (sum: number, s: any) => sum + (s.total || 0), 
+      0
+    );
+
     // Obtener solicitudes con modalidad mensual
     const { data: solicitudes, error: solicitudesError } = await supabase
       .from('solicitudes')
@@ -244,9 +319,9 @@ export async function GET(request: NextRequest) {
     let totalIVAMensualidades = 0; // IVA extraído
     
     if (solicitudes && solicitudes.length > 0) {
-      console.log('🔍 SOLICITUDES MENSUALIDADES:', solicitudes.length);
+      if (isDev) console.log('🔍 SOLICITUDES MENSUALIDADES:', solicitudes.length);
       solicitudes.forEach(s => {
-        console.log(`  - ${s.titulo}: monto_por_cuota=${s.monto_por_cuota}, se_cobra_iva=${s.se_cobra_iva}, monto_iva=${s.monto_iva}`);
+        if (isDev) console.log(`  - ${s.titulo}: monto_por_cuota=${s.monto_por_cuota}, se_cobra_iva=${s.se_cobra_iva}`);
         const montoCuota = s.monto_por_cuota || 0;
         
         if (s.se_cobra_iva) {
@@ -303,12 +378,11 @@ export async function GET(request: NextRequest) {
       totalMinutosGlobal += caso.totalMinutos;
     });
 
-    // DEBUG: Log detallado de trabajos
-    console.log('🔍 [DEBUG] EMPRESA PRINCIPAL trabajos:', trabajosPorHora.length);
-    console.log('🔍 [DEBUG] EMPRESA PRINCIPAL minutos totales:', totalMinutosGlobal);
-    trabajosPorHora.forEach((t: any, i: number) => {
-      console.log(`  [${i}] fecha=${t.fecha}, duracion=${t.duracion}, caso=${t.caso_asignado}`);
-    });
+    // DEBUG: Log detallado de trabajos (only in dev)
+    if (isDev) {
+      console.log('🔍 [DEBUG] EMPRESA PRINCIPAL trabajos:', trabajosPorHora.length);
+      console.log('🔍 [DEBUG] EMPRESA PRINCIPAL minutos totales:', totalMinutosGlobal);
+    }
 
     // Calcular totales de servicios profesionales
     // Cálculo correcto: minutos / 60 para obtener horas decimales
@@ -319,8 +393,9 @@ export async function GET(request: NextRequest) {
     const ahorroComparativo = costoServiciosEstandar - costoServiciosTarifa;
 
     // Calcular totales
-    // Subtotal (sin IVA): servicios + gastos + mensualidades sin IVA
-    const subtotal = costoServiciosTarifa + totalGastos + totalMensualidades;
+    // Subtotal (sin IVA): servicios tarifa_hora + gastos + mensualidades + servicios profesionales
+    // NOTA: totalServiciosProfesionales ya es el monto final (como gastos.total_cobro), no lleva IVA adicional
+    const subtotal = costoServiciosTarifa + totalGastos + totalMensualidades + totalServiciosProfesionales;
     
     // IVA total: IVA solo de servicios + IVA extraído de mensualidades
     // IMPORTANTE: Los gastos NO llevan IVA porque total_cobro ya es el monto final
@@ -338,6 +413,8 @@ export async function GET(request: NextRequest) {
       trabajosPorHora: any[];
       gastos: any[];
       solicitudes: any[];
+      serviciosProfesionales: any[];
+      totalServiciosProfesionales: number;
       totalMinutos: number;
       totalHoras: number;
       tarifaHora: number;
@@ -357,16 +434,15 @@ export async function GET(request: NextRequest) {
     let totalGrupoAPagar = 0;
     
     if (esGrupoPrincipal && empresasDelGrupo.length > 0) {
-      console.log('🏢 [datos-pago] Cargando datos de empresas asociadas...');
+      if (isDev) console.log('🏢 [datos-pago] Cargando datos de', empresasDelGrupo.length, 'empresas asociadas...');
       
       for (const empresaAsociada of empresasDelGrupo) {
         const datosEmp = await getDatosEmpresa(empresaAsociada.id, inicioMesStr, finMesStr);
         
-        // DEBUG: Log de empresa asociada
-        console.log(`🔍 [DEBUG] EMPRESA ASOCIADA: ${empresaAsociada.nombre} trabajos:`, datosEmp.trabajosPorHora.length);
-        datosEmp.trabajosPorHora.forEach((t: any, i: number) => {
-          console.log(`    [${i}] fecha=${t.fecha}, duracion=${t.duracion}`);
-        });
+        // DEBUG: Log de empresa asociada (only in dev)
+        if (isDev) {
+          console.log(`🔍 [DEBUG] EMPRESA ASOCIADA: ${empresaAsociada.nombre} trabajos:`, datosEmp.trabajosPorHora.length);
+        }
         
         // Calcular totales para esta empresa
         let empTotalMinutos = 0;
@@ -391,6 +467,12 @@ export async function GET(request: NextRequest) {
         const empCostoServicios = empTotalHoras * empTarifaHora;
         const empTotalGastos = datosEmp.gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
         
+        // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
+        const empTotalServiciosProfesionales = datosEmp.serviciosProfesionales.reduce(
+          (sum: number, s: any) => sum + (s.total || 0), 
+          0
+        );
+        
         // Calcular mensualidades de la empresa asociada
         let empTotalMensualidades = 0;
         let empTotalIVAMensualidades = 0;
@@ -405,7 +487,7 @@ export async function GET(request: NextRequest) {
           }
         });
         
-        const empSubtotal = empCostoServicios + empTotalGastos + empTotalMensualidades;
+        const empSubtotal = empCostoServicios + empTotalGastos + empTotalMensualidades + empTotalServiciosProfesionales;
         const empIvaServicios = empCostoServicios * empIvaPerc;
         const empMontoIVA = empIvaServicios + empTotalIVAMensualidades;
         const empTotal = empSubtotal + empMontoIVA;
@@ -417,6 +499,8 @@ export async function GET(request: NextRequest) {
           trabajosPorHora: datosEmp.trabajosPorHora,
           gastos: datosEmp.gastos,
           solicitudes: datosEmp.solicitudes,
+          serviciosProfesionales: datosEmp.serviciosProfesionales,
+          totalServiciosProfesionales: empTotalServiciosProfesionales,
           totalMinutos: empTotalMinutos,
           totalHoras: empTotalHoras,
           tarifaHora: empTarifaHora,
@@ -434,7 +518,7 @@ export async function GET(request: NextRequest) {
         totalGrupoIVA += empMontoIVA;
         totalGrupoAPagar += empTotal;
         
-        console.log(`  📊 ${empresaAsociada.nombre}: Subtotal=${empSubtotal}, IVA=${empMontoIVA}, Total=${empTotal}`);
+        if (isDev) console.log(`  📊 ${empresaAsociada.nombre}: Total=${empTotal}`);
       }
     }
     
@@ -443,40 +527,13 @@ export async function GET(request: NextRequest) {
     const granTotalIVA = montoIVA + totalGrupoIVA;
     const granTotalAPagar = totalAPagar + totalGrupoAPagar;
 
-    // Debug logs
-    console.log('📊 CÁLCULO DE PAGO (MES ANTERIOR):');
-    console.log('  - Fecha actual CR:', now.toISOString().split('T')[0]);
-    console.log('  - Mes a mostrar:', `${year}-${String(month).padStart(2, '0')}`);
-    console.log('  - Rango de fechas:', `${inicioMesStr} a ${finMesStr}`);
-    console.log('  - Costo servicios:', costoServiciosTarifa);
-    console.log('  - Total gastos (sin IVA):', totalGastos);
-    console.log('  - Total mensualidades (sin IVA):', totalMensualidades);
-    console.log('  - Subtotal:', subtotal);
-    console.log('  - IVA servicios:', ivaServicios);
-    console.log('  - IVA mensualidades:', totalIVAMensualidades);
-    console.log('  - Monto IVA total:', montoIVA);
-    console.log('  - Total a pagar:', totalAPagar);
-    if (esGrupoPrincipal) {
-      console.log('  🏢 GRUPO - Total asociadas:', totalGrupoAPagar);
-      console.log('  🏢 GRUPO - Gran total:', granTotalAPagar);
-      // DEBUG DETALLADO
-      console.log('🔍 [DEBUG FINAL] ===================');
-      console.log('  EMPRESA PRINCIPAL:');
-      console.log('    - Minutos:', totalMinutosGlobal);
-      console.log('    - Horas decimal:', totalHorasDecimal);
-      console.log('    - Tarifa:', tarifaHora);
-      console.log('    - Costo servicios:', costoServiciosTarifa);
-      console.log('    - Total principal (con IVA):', totalAPagar);
-      datosEmpresasGrupo.forEach(e => {
-        console.log(`  ASOCIADA ${e.empresaNombre}:`);
-        console.log(`    - Minutos: ${e.totalMinutos}`);
-        console.log(`    - Horas decimal: ${e.totalHoras}`);
-        console.log(`    - Tarifa: ${e.tarifaHora}`);
-        console.log(`    - Costo servicios: ${e.costoServicios}`);
-        console.log(`    - Total (con IVA): ${e.total}`);
-      });
-      console.log('  GRAN TOTAL:', granTotalAPagar);
-      console.log('🔍 [DEBUG FINAL] ===================');
+    // Debug logs (only in development)
+    if (isDev) {
+      console.log('📊 CÁLCULO DE PAGO (MES ANTERIOR):');
+      console.log('  - Mes:', mesPago, '| Total:', totalAPagar);
+      if (esGrupoPrincipal) {
+        console.log('  🏢 GRUPO - Gran total:', granTotalAPagar);
+      }
     }
 
     return NextResponse.json({
@@ -490,6 +547,8 @@ export async function GET(request: NextRequest) {
       totalIVAMensualidades,
       gastos: gastos || [],
       totalGastos,
+      serviciosProfesionales: serviciosProfesionales || [],
+      totalServiciosProfesionales,
       totalMinutosGlobal,
       totalHorasDecimal: parseFloat(totalHorasDecimal.toFixed(2)),
       tarifaHora,

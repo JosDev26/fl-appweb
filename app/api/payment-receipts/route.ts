@@ -1,15 +1,149 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
-import { checkStandardRateLimit } from '@/lib/rate-limit'
+import { checkStandardRateLimit, authBurstRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+
+// === Security Utilities ===
+const isDev = process.env.NODE_ENV === 'development'
+
+// Validar formato UUID
+function isValidUUID(id: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  return uuidRegex.test(id)
+}
+
+// Validar formato de session token (64 caracteres hexadecimales)
+function isValidSessionToken(token: string): boolean {
+  return typeof token === 'string' && /^[0-9a-f]{64}$/i.test(token)
+}
+
+// Validar formato mes_pago (YYYY-MM)
+function isValidMesPago(mes: string | null | undefined): boolean {
+  if (!mes) return false
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(mes)
+}
+
+// Sanitize string para prevenir XSS/SQL injection en notas
+function sanitizeNota(nota: string | null | undefined): string | null {
+  if (!nota) return null
+  // Remove potentially dangerous characters while keeping normal text
+  return nota
+    .replace(/<[^>]*>/g, '') // Strip HTML tags
+    .replace(/[<>'"&]/g, '') // Remove special chars
+    .substring(0, 500) // Limit length
+    .trim()
+}
+
+// Parse cookies from Cookie header
+function parseCookies(cookieHeader: string): Record<string, string> {
+  const cookies: Record<string, string> = {}
+  if (!cookieHeader) return cookies
+  
+  cookieHeader.split(';').forEach(cookie => {
+    const parts = cookie.trim().split('=')
+    if (parts.length >= 2) {
+      const key = parts[0].trim()
+      const value = parts.slice(1).join('=').trim()
+      if (key) {
+        try {
+          cookies[key] = decodeURIComponent(value)
+        } catch {
+          cookies[key] = value
+        }
+      }
+    }
+  })
+  return cookies
+}
+
+// Verify dev admin session
+async function verifyDevAdminSession(request: Request): Promise<{ valid: boolean; adminId?: string; error?: string }> {
+  try {
+    // Rate limiting for session verification
+    if (isRedisConfigured()) {
+      const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
+                       request.headers.get('x-real-ip') || '127.0.0.1'
+      const identifier = `session-verify:${clientIP}`
+      
+      try {
+        const result = await authBurstRateLimit.limit(identifier)
+        if (!result.success) {
+          if (isDev) console.warn('[Session Verify] Rate limit exceeded for IP:', clientIP)
+          return { valid: false, error: 'Rate limit exceeded' }
+        }
+      } catch (error) {
+        if (isDev) console.error('[Session Verify] Rate limit check failed:', error)
+      }
+    }
+
+    const cookieHeader = request.headers.get('cookie')
+    if (!cookieHeader) {
+      return { valid: false, error: 'No session' }
+    }
+
+    const cookies = parseCookies(cookieHeader)
+    const devAuth = cookies['dev-auth']
+    const adminId = cookies['dev-admin-id']
+
+    if (!devAuth || !adminId) {
+      return { valid: false, error: 'Missing session cookies' }
+    }
+
+    if (!isValidSessionToken(devAuth) || !isValidUUID(adminId)) {
+      return { valid: false, error: 'Invalid session format' }
+    }
+
+    // Verify session in database
+    const { data: session, error } = await supabase
+      .from('dev_sessions')
+      .select('id, is_active, expires_at')
+      .eq('session_token', devAuth)
+      .eq('admin_id', adminId)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (error || !session) {
+      return { valid: false, error: 'Invalid session' }
+    }
+
+    const now = new Date()
+    const expiresAt = new Date(session.expires_at)
+
+    if (now > expiresAt) {
+      // Deactivate expired session asynchronously
+      supabase
+        .from('dev_sessions')
+        .update({ is_active: false })
+        .eq('id', session.id)
+        .then(() => {})
+
+      return { valid: false, error: 'Session expired' }
+    }
+
+    return { valid: true, adminId }
+  } catch (error) {
+    if (isDev) console.error('[Session Verify] Error:', error)
+    return { valid: false, error: 'Session verification failed' }
+  }
+}
 
 /**
  * GET - Obtener todos los comprobantes pendientes y usuarios con modoPago=true
+ * Protected: Requires dev admin authentication
  */
 export async function GET(request: NextRequest) {
   // Rate limiting: 100 requests per hour
   const rateLimitResponse = await checkStandardRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
+
+  // Verify dev admin authentication
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401 }
+    )
+  }
 
   try {
     // 1. Obtener comprobantes
@@ -18,7 +152,7 @@ export async function GET(request: NextRequest) {
       .select('*')
       .order('uploaded_at', { ascending: false })
 
-    console.log('Receipts query result:', { receipts, receiptsError })
+    if (isDev) console.log('Receipts query result:', { count: receipts?.length, error: receiptsError?.message })
 
     // 2. Obtener usuarios con modoPago = true
     const { data: usuarios, error: usuariosError } = await supabase
@@ -26,7 +160,7 @@ export async function GET(request: NextRequest) {
       .select('id, nombre, cedula, correo, modoPago')
       .eq('modoPago', true)
 
-    console.log('Usuarios query result:', { count: usuarios?.length, usuariosError })
+    if (isDev) console.log('Usuarios query result:', { count: usuarios?.length, error: usuariosError?.message })
 
     // 3. Obtener empresas con modoPago = true  
     const { data: empresas, error: empresasError } = await supabase
@@ -34,7 +168,7 @@ export async function GET(request: NextRequest) {
       .select('id, nombre, cedula, correo, modoPago')
       .eq('modoPago', true)
 
-    console.log('Empresas query result:', { count: empresas?.length, empresasError })
+    if (isDev) console.log('Empresas query result:', { count: empresas?.length, error: empresasError?.message })
 
     // 4. Combinar datos
     const clientesConModoPago = [
@@ -51,7 +185,7 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Unexpected error:', error)
+    if (isDev) console.error('Unexpected error:', error)
     return NextResponse.json(
       { error: 'Error inesperado' },
       { status: 500 }
@@ -61,15 +195,37 @@ export async function GET(request: NextRequest) {
 
 /**
  * PATCH - Aprobar o rechazar un comprobante
+ * Protected: Requires dev admin authentication
  */
 export async function PATCH(request: NextRequest) {
+  // Rate limiting
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
+  // Verify dev admin authentication
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401 }
+    )
+  }
+
   try {
     const body = await request.json()
     const { receiptId, action, nota } = body
 
-    if (!receiptId || !action) {
+    // Validate receiptId is a valid UUID
+    if (!receiptId || !isValidUUID(receiptId)) {
       return NextResponse.json(
-        { error: 'receiptId y action son requeridos' },
+        { error: 'receiptId inválido' },
+        { status: 400 }
+      )
+    }
+
+    if (!action) {
+      return NextResponse.json(
+        { error: 'action es requerido' },
         { status: 400 }
       )
     }
@@ -80,6 +236,9 @@ export async function PATCH(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Sanitize nota to prevent XSS
+    const sanitizedNota = sanitizeNota(nota)
 
     // 1. Obtener el comprobante
     const { data: receipt, error: fetchError } = await supabase
@@ -99,6 +258,15 @@ export async function PATCH(request: NextRequest) {
     const tipoCliente = (receipt as any).tipo_cliente
     const mesPago = (receipt as any).mes_pago // Mover aquí para uso en grupos
 
+    // Validate mesPago format if present
+    if (mesPago && !isValidMesPago(mesPago)) {
+      if (isDev) console.warn('Invalid mesPago format:', mesPago)
+      return NextResponse.json(
+        { error: 'Formato de mes de pago inválido' },
+        { status: 400 }
+      )
+    }
+
     if (action === 'aprobar') {
       // Aprobar: Actualizar estado y desactivar modoPago
       const fechaAprobacion = new Date().toISOString()
@@ -107,12 +275,12 @@ export async function PATCH(request: NextRequest) {
         .update({
           estado: 'aprobado',
           reviewed_at: fechaAprobacion,
-          nota_revision: nota || null
+          nota_revision: sanitizedNota
         })
         .eq('id', receiptId)
 
       if (updateReceiptError) {
-        console.error('Error updating receipt:', updateReceiptError)
+        if (isDev) console.error('Error updating receipt:', updateReceiptError)
         return NextResponse.json(
           { error: 'Error al actualizar comprobante' },
           { status: 500 }
@@ -127,7 +295,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', userId)
 
       if (updateModoPagoError) {
-        console.error('Error updating modo_pago:', updateModoPagoError)
+        if (isDev) console.error('Error updating modo_pago:', updateModoPagoError)
         return NextResponse.json(
           { error: 'Error al desactivar modo pago' },
           { status: 500 }
@@ -146,7 +314,7 @@ export async function PATCH(request: NextRequest) {
             .maybeSingle()
 
           if (!grupoError && grupo) {
-            console.log('🏢 Empresa es principal del grupo:', (grupo as any).nombre)
+            if (isDev) console.log('🏢 Empresa es principal del grupo:', (grupo as any).nombre)
             
             // Obtener las empresas miembros del grupo
             const { data: miembros, error: miembrosError } = await supabase
@@ -156,82 +324,138 @@ export async function PATCH(request: NextRequest) {
 
             if (!miembrosError && miembros && miembros.length > 0) {
               const empresaIds = (miembros as any[]).map((m: any) => m.empresa_id)
-              console.log('🏢 Desactivando modoPago de empresas asociadas:', empresaIds)
+              if (isDev) console.log('🏢 Desactivando modoPago de empresas asociadas:', empresaIds.length)
 
-              // Desactivar modoPago de todas las empresas asociadas
+              // BATCH: Desactivar modoPago de todas las empresas asociadas (single query)
               const { error: updateGrupoError } = await supabase
                 .from('empresas' as any)
                 .update({ modoPago: false } as any)
                 .in('id', empresaIds)
 
               if (updateGrupoError) {
-                console.error('❌ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
+                if (isDev) console.error('❌ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
               } else {
-                console.log('✅ modoPago desactivado para', empresaIds.length, 'empresas del grupo')
+                if (isDev) console.log('✅ modoPago desactivado para', empresaIds.length, 'empresas del grupo')
               }
 
-              // También actualizar las solicitudes mensualidades de las empresas del grupo
-              for (const empresaId of empresaIds) {
-                const { data: solicitudesEmpresa, error: solError } = await supabase
-                  .from('solicitudes')
-                  .select('*')
-                  .eq('id_cliente', empresaId)
-                  .ilike('modalidad_pago', 'mensualidad')
+              // BATCH: Get ALL solicitudes for all empresas in one query
+              const { data: todasSolicitudes, error: solError } = await supabase
+                .from('solicitudes')
+                .select('*')
+                .in('id_cliente', empresaIds)
+                .ilike('modalidad_pago', 'mensualidad')
 
-                if (!solError && solicitudesEmpresa && solicitudesEmpresa.length > 0) {
-                  console.log(`📋 Actualizando ${solicitudesEmpresa.length} solicitudes de empresa ${empresaId}`)
-                  for (const solicitud of solicitudesEmpresa) {
-                    const montoCuota = solicitud.monto_por_cuota || 0
-                    const pagoRealizado = montoCuota
-                    const nuevoMontoPagado = (solicitud.monto_pagado || 0) + pagoRealizado
-                    const costoNeto = solicitud.costo_neto || 0
-                    let iva = 0
-                    if (solicitud.se_cobra_iva) {
-                      iva = solicitud.monto_iva || (costoNeto * 0.13)
-                    }
-                    const totalAPagar = costoNeto + iva
-                    const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
+              if (!solError && todasSolicitudes && todasSolicitudes.length > 0) {
+                if (isDev) console.log(`📋 Actualizando ${todasSolicitudes.length} solicitudes de empresas del grupo`)
+                
+                // Process each solicitud and batch updates
+                const updates = todasSolicitudes.map(solicitud => {
+                  const montoCuota = solicitud.monto_por_cuota || 0
+                  const pagoRealizado = montoCuota
+                  const nuevoMontoPagado = (solicitud.monto_pagado || 0) + pagoRealizado
+                  const costoNeto = solicitud.costo_neto || 0
+                  let iva = 0
+                  if (solicitud.se_cobra_iva) {
+                    iva = solicitud.monto_iva || (costoNeto * 0.13)
+                  }
+                  const totalAPagar = costoNeto + iva
+                  const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
+                  
+                  return {
+                    id: solicitud.id,
+                    monto_pagado: nuevoMontoPagado,
+                    saldo_pendiente: nuevoSaldoPendiente,
+                    updated_at: fechaAprobacion
+                  }
+                })
 
-                    await supabase
+                // Execute updates in parallel batches with error tracking
+                const grupoResults = await Promise.allSettled(
+                  updates.map(update => 
+                    supabase
                       .from('solicitudes')
                       .update({
-                        monto_pagado: nuevoMontoPagado,
-                        saldo_pendiente: nuevoSaldoPendiente,
-                        updated_at: fechaAprobacion
+                        monto_pagado: update.monto_pagado,
+                        saldo_pendiente: update.saldo_pendiente,
+                        updated_at: update.updated_at
                       })
-                      .eq('id', solicitud.id)
-                  }
+                      .eq('id', update.id)
+                      .then(result => ({ updateId: update.id, ...result }))
+                  )
+                )
+                
+                // Track failures for logging
+                const failedGrupoUpdates = grupoResults
+                  .map((result, index) => ({ result, updateId: updates[index].id }))
+                  .filter(({ result }) => 
+                    result.status === 'rejected' || 
+                    (result.status === 'fulfilled' && result.value?.error)
+                  )
+                  .map(({ updateId }) => updateId)
+                
+                if (failedGrupoUpdates.length > 0) {
+                  if (isDev) console.error(`❌ ${failedGrupoUpdates.length} solicitudes de grupo fallaron:`, failedGrupoUpdates)
+                } else if (isDev) {
+                  console.log(`✅ ${updates.length} solicitudes de grupo actualizadas`)
                 }
               }
 
-              // Marcar facturas de empresas del grupo como pagadas
+              // BATCH: Marcar facturas, gastos y servicios de empresas del grupo
               if (mesPago) {
-                for (const empresaId of empresaIds) {
-                  const { error: facturaError } = await supabase
-                    .from('invoice_payment_deadlines' as any)
-                    .update({
-                      estado_pago: 'pagado',
-                      fecha_pago: fechaAprobacion
-                    })
-                    .eq('mes_factura', mesPago)
-                    .eq('client_id', empresaId)
-                    .eq('client_type', 'empresa')
+                const [year, month] = mesPago.split('-')
+                const startDate = `${year}-${month}-01`
+                const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0]
+                
+                // BATCH: Update all facturas in one query using IN clause
+                await supabase
+                  .from('invoice_payment_deadlines' as any)
+                  .update({
+                    estado_pago: 'pagado',
+                    fecha_pago: fechaAprobacion
+                  })
+                  .eq('mes_factura', mesPago)
+                  .in('client_id', empresaIds)
+                  .eq('client_type', 'empresa')
 
-                  if (!facturaError) {
-                    console.log(`✅ Factura de empresa ${empresaId} marcada como pagada`)
-                  }
-                }
+                if (isDev) console.log(`✅ Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
+
+                // BATCH: Update all gastos in one query using IN clause
+                await supabase
+                  .from('gastos' as any)
+                  .update({ 
+                    estado_pago: 'pagado',
+                    updated_at: fechaAprobacion
+                  })
+                  .in('id_cliente', empresaIds)
+                  .gte('fecha', startDate)
+                  .lte('fecha', endDate)
+
+                if (isDev) console.log(`✅ Gastos de ${empresaIds.length} empresas marcados como pagados`)
+
+                // BATCH: Update all servicios in one query using IN clause
+                await supabase
+                  .from('servicios_profesionales' as any)
+                  .update({ 
+                    estado_pago: 'pagado',
+                    updated_at: fechaAprobacion
+                  })
+                  .in('id_cliente', empresaIds)
+                  .neq('estado_pago', 'cancelado')
+                  .gte('fecha', startDate)
+                  .lte('fecha', endDate)
+
+                if (isDev) console.log(`✅ Servicios de ${empresaIds.length} empresas marcados como pagados`)
               }
             }
           }
         } catch (grupoErr) {
-          console.error('❌ Error al procesar grupo de empresas:', grupoErr)
+          if (isDev) console.error('❌ Error al procesar grupo de empresas:', grupoErr)
         }
       }
 
       // Actualizar solicitudes con modalidad mensual
       // IMPORTANTE: Los gastos NO se incluyen en monto_pagado
-      console.log('💰 Actualizando solicitudes mensualidades del cliente:', userId)
+      if (isDev) console.log('💰 Actualizando solicitudes mensualidades del cliente:', userId)
       try {
         const { data: solicitudesMensuales, error: solicitudesError } = await supabase
           .from('solicitudes')
@@ -240,20 +464,15 @@ export async function PATCH(request: NextRequest) {
           .ilike('modalidad_pago', 'mensualidad')
 
         if (solicitudesError) {
-          console.error('❌ Error al obtener solicitudes:', solicitudesError)
+          if (isDev) console.error('❌ Error al obtener solicitudes:', solicitudesError)
         } else if (solicitudesMensuales && solicitudesMensuales.length > 0) {
-          console.log(`📋 Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
+          if (isDev) console.log(`📋 Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
           
-          for (const solicitud of solicitudesMensuales) {
-            // Calcular pago realizado SOLO de la cuota (SIN gastos)
+          // Calculate all updates first
+          const solicitudUpdates = solicitudesMensuales.map(solicitud => {
             const montoCuota = solicitud.monto_por_cuota || 0
-            
-            // El pago realizado es solo el monto de la cuota
-            // Los gastos se pagan aparte y NO se suman a monto_pagado
             const pagoRealizado = montoCuota
             const nuevoMontoPagado = (solicitud.monto_pagado || 0) + pagoRealizado
-            
-            // El total_a_pagar debe ser costo_neto + IVA (sin gastos)
             const costoNeto = solicitud.costo_neto || 0
             let iva = 0
             if (solicitud.se_cobra_iva) {
@@ -262,35 +481,39 @@ export async function PATCH(request: NextRequest) {
             const totalAPagar = costoNeto + iva
             const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
             
-            // Actualizar la solicitud
-            const { error: updateError } = await supabase
-              .from('solicitudes')
-              .update({
-                monto_pagado: nuevoMontoPagado,
-                saldo_pendiente: nuevoSaldoPendiente,
-                updated_at: fechaAprobacion
-              })
-              .eq('id', solicitud.id)
-            
-            if (updateError) {
-              console.error(`❌ Error al actualizar solicitud ${solicitud.id}:`, updateError)
-            } else {
-              console.log(`✅ Solicitud ${solicitud.id} actualizada:`, {
-                titulo: solicitud.titulo,
-                montoCuota,
-                pagoRealizado,
-                nuevoMontoPagado,
-                totalAPagar,
-                nuevoSaldoPendiente,
-                nota: 'Gastos NO incluidos en monto_pagado'
-              })
+            return {
+              id: solicitud.id,
+              monto_pagado: nuevoMontoPagado,
+              saldo_pendiente: nuevoSaldoPendiente,
+              updated_at: fechaAprobacion
             }
+          })
+
+          // Execute all updates in parallel
+          const results = await Promise.allSettled(
+            solicitudUpdates.map(update =>
+              supabase
+                .from('solicitudes')
+                .update({
+                  monto_pagado: update.monto_pagado,
+                  saldo_pendiente: update.saldo_pendiente,
+                  updated_at: update.updated_at
+                })
+                .eq('id', update.id)
+            )
+          )
+          
+          const failures = results.filter(r => r.status === 'rejected').length
+          if (failures > 0 && isDev) {
+            console.error(`❌ ${failures} solicitudes fallaron al actualizar`)
+          } else if (isDev) {
+            console.log(`✅ ${solicitudUpdates.length} solicitudes actualizadas`)
           }
         } else {
-          console.log('ℹ️ No se encontraron solicitudes mensualidades para actualizar')
+          if (isDev) console.log('ℹ️ No se encontraron solicitudes mensualidades para actualizar')
         }
       } catch (err) {
-        console.error('❌ Error al actualizar solicitudes:', err)
+        if (isDev) console.error('❌ Error al actualizar solicitudes:', err)
       }
 
       // Marcar gastos del mes como pagados
@@ -301,7 +524,7 @@ export async function PATCH(request: NextRequest) {
           const startDate = `${year}-${month}-01`
           const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0] // Último día del mes
           
-          console.log(`💰 Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
+          if (isDev) console.log(`💰 Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
           
           // Marcar gastos del mes como pagados
           const { error: gastosError } = await supabase
@@ -315,17 +538,37 @@ export async function PATCH(request: NextRequest) {
             .lte('fecha', endDate)
           
           if (gastosError) {
-            console.error('❌ Error al marcar gastos como pagados:', gastosError)
+            if (isDev) console.error('❌ Error al marcar gastos como pagados:', gastosError)
           } else {
-            console.log(`✅ Gastos del mes ${mesPago} marcados como pagados`)
+            if (isDev) console.log(`✅ Gastos del mes ${mesPago} marcados como pagados`)
+          }
+          
+          // Marcar servicios profesionales del mes como pagados
+          if (isDev) console.log(`💰 Marcando servicios profesionales del mes ${mesPago} como pagados para cliente ${userId}...`)
+          
+          const { error: serviciosError } = await supabase
+            .from('servicios_profesionales' as any)
+            .update({ 
+              estado_pago: 'pagado',
+              updated_at: fechaAprobacion
+            })
+            .eq('id_cliente', userId)
+            .neq('estado_pago', 'cancelado') // No cambiar los cancelados
+            .gte('fecha', startDate)
+            .lte('fecha', endDate)
+          
+          if (serviciosError) {
+            if (isDev) console.error('❌ Error al marcar servicios como pagados:', serviciosError)
+          } else {
+            if (isDev) console.log(`✅ Servicios profesionales del mes ${mesPago} marcados como pagados`)
           }
         } catch (err) {
-          console.error('❌ Error al procesar gastos:', err)
+          if (isDev) console.error('❌ Error al procesar gastos:', err)
         }
       }
 
       // Marcar factura como pagada directamente en la base de datos
-      console.log('🔍 Intentando actualizar factura con mes_pago:', mesPago, 'userId:', userId, 'tipoCliente:', tipoCliente)
+      if (isDev) console.log('🔍 Intentando actualizar factura con mes_pago:', mesPago)
       
       if (mesPago) {
         try {
@@ -338,10 +581,9 @@ export async function PATCH(request: NextRequest) {
             .eq('client_type', tipoCliente)
             .single()
 
-          console.log('🔍 Búsqueda de factura existente:', { 
+          if (isDev) console.log('🔍 Búsqueda de factura existente:', { 
             encontrada: !!existingDeadline, 
-            error: checkError?.message,
-            datos: existingDeadline 
+            error: checkError?.message
           })
 
           if (existingDeadline) {
@@ -356,28 +598,23 @@ export async function PATCH(request: NextRequest) {
               .eq('client_type', tipoCliente)
 
             if (invoiceError) {
-              console.error('❌ Error al actualizar estado de factura:', invoiceError)
+              if (isDev) console.error('❌ Error al actualizar estado de factura:', invoiceError)
             } else {
-              console.log('✅ Estado de factura actualizado a pagado:', { mesPago, userId, tipoCliente })
+              if (isDev) console.log('✅ Estado de factura actualizado a pagado')
             }
           } else {
-            console.warn('⚠️ No se encontró factura para actualizar. Posibles causas:', {
-              mesPago,
-              userId,
-              tipoCliente,
-              checkError: checkError?.message
-            })
+            if (isDev) console.warn('⚠️ No se encontró factura para actualizar')
           }
         } catch (err) {
-          console.error('❌ Error al actualizar estado de factura:', err)
+          if (isDev) console.error('❌ Error al actualizar estado de factura:', err)
         }
       } else {
-        console.warn('⚠️ El comprobante no tiene mes_pago asociado')
+        if (isDev) console.warn('⚠️ El comprobante no tiene mes_pago asociado')
       }
 
       // ===== ESCRIBIR EN HOJA "Ingresos" DE GOOGLE SHEETS =====
       try {
-        console.log('📝 Preparando registro de ingreso para Google Sheets...')
+        if (isDev) console.log('📝 Preparando registro de ingreso para Google Sheets...')
         
         // Obtener datos del cliente
         const tablaCliente = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
@@ -458,18 +695,11 @@ export async function PATCH(request: NextRequest) {
           totalIngreso                  // J: Total_Ingreso
         ]
         
-        console.log('📊 Datos del ingreso:', {
-          id: ingresoId,
-          cliente: userId,
-          moneda,
-          honorarios,
-          gastos: reembolsoGastos,
-          total: totalIngreso
-        })
+        if (isDev) console.log('📊 Datos del ingreso:', { id: ingresoId, total: totalIngreso })
         
         // Escribir en Google Sheets
         await GoogleSheetsService.appendRow('Ingresos', rowData)
-        console.log('✅ Ingreso registrado en Google Sheets')
+        if (isDev) console.log('✅ Ingreso registrado en Google Sheets')
         
         // También guardar en Supabase para consultas rápidas
         await (supabase as any)
@@ -488,11 +718,11 @@ export async function PATCH(request: NextRequest) {
             total_ingreso: totalIngreso
           }, { onConflict: 'id' })
         
-        console.log('✅ Ingreso guardado en Supabase')
+        if (isDev) console.log('✅ Ingreso guardado en Supabase')
         
       } catch (ingresosError) {
         // No fallar la aprobación si falla el registro de ingresos
-        console.error('❌ Error registrando ingreso (no crítico):', ingresosError)
+        if (isDev) console.error('❌ Error registrando ingreso (no crítico):', ingresosError)
       }
 
       return NextResponse.json({
@@ -502,33 +732,33 @@ export async function PATCH(request: NextRequest) {
 
     } else {
       // Rechazar: Actualizar estado con nota
-      if (!nota) {
+      if (!sanitizedNota) {
         return NextResponse.json(
           { error: 'La nota de rechazo es requerida' },
           { status: 400 }
         )
       }
 
-      console.log('Rechazando comprobante:', { receiptId, nota })
+      if (isDev) console.log('Rechazando comprobante:', receiptId)
 
       const { error: updateReceiptError } = await supabase
         .from('payment_receipts' as any)
         .update({
           estado: 'rechazado',
           reviewed_at: new Date().toISOString(),
-          nota_revision: nota
+          nota_revision: sanitizedNota
         })
         .eq('id', receiptId)
 
       if (updateReceiptError) {
-        console.error('Error updating receipt:', updateReceiptError)
+        if (isDev) console.error('Error updating receipt:', updateReceiptError)
         return NextResponse.json(
           { error: 'Error al actualizar comprobante' },
           { status: 500 }
         )
       }
 
-      console.log('Comprobante rechazado exitosamente:', receiptId)
+      if (isDev) console.log('Comprobante rechazado exitosamente:', receiptId)
 
       return NextResponse.json({
         success: true,
@@ -537,10 +767,5 @@ export async function PATCH(request: NextRequest) {
     }
 
   } catch (error) {
-    console.error('Unexpected error:', error)
-    return NextResponse.json(
-      { error: 'Error inesperado' },
-      { status: 500 }
-    )
-  }
+    if (isDev) console.error('Unexpected error:', error)
 }

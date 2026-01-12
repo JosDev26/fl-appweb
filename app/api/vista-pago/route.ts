@@ -41,6 +41,7 @@ interface ClienteVistaPago {
   montoHoras: number;
   tarifaHora: number;
   totalGastos: number;
+  totalServiciosProfesionales: number;
   totalMensualidades: number;
   subtotal: number;
   ivaPerc: number;
@@ -53,6 +54,7 @@ interface ClienteVistaPago {
   // Detalle de trabajos y gastos
   trabajosPorHora?: any[];
   gastos?: any[];
+  serviciosProfesionales?: any[];
   solicitudes?: any[];
   
   // Proyectos con modalidad Mensualidad
@@ -159,6 +161,7 @@ async function getDatosCliente(
 ): Promise<{
   trabajosPorHora: any[];
   gastos: any[];
+  serviciosProfesionales: any[];
   solicitudes: any[];
   tarifaHora: number;
   ivaPerc: number;
@@ -223,11 +226,46 @@ async function getDatosCliente(
     // Obtener gastos
     const { data: gastos } = await supabase
       .from('gastos' as any)
-      .select(`id, producto, fecha, total_cobro, funcionarios:id_responsable (nombre)`)
+      .select(`id, producto, fecha, total_cobro, estado_pago, funcionarios:id_responsable (nombre)`)
       .eq('id_cliente', clienteId)
       .gte('fecha', inicioMes)
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
+    
+    // Obtener servicios profesionales (NO cancelados)
+    const { data: serviciosProfesionalesEmpresa } = await supabase
+      .from('servicios_profesionales' as any)
+      .select('*')
+      .eq('id_cliente', clienteId)
+      .neq('estado_pago', 'cancelado')
+      .gte('fecha', inicioMes)
+      .lte('fecha', finMes)
+      .order('fecha', { ascending: false });
+    
+    // Fetch related data separately (no FK constraints exist)
+    let serviciosConRelaciones = serviciosProfesionalesEmpresa || [];
+    if (serviciosProfesionalesEmpresa && serviciosProfesionalesEmpresa.length > 0) {
+      const funcionariosIds = [...new Set(serviciosProfesionalesEmpresa.map(s => s.id_responsable).filter(Boolean))];
+      const serviciosIds = [...new Set(serviciosProfesionalesEmpresa.map(s => s.id_servicio).filter(Boolean))];
+      
+      const [funcionariosRes, serviciosRes] = await Promise.all([
+        funcionariosIds.length > 0
+          ? supabase.from('funcionarios').select('id, nombre').in('id', funcionariosIds)
+          : Promise.resolve({ data: [] }),
+        serviciosIds.length > 0
+          ? supabase.from('lista_servicios' as any).select('id, titulo').in('id', serviciosIds)
+          : Promise.resolve({ data: [] })
+      ]);
+      
+      const funcionariosMap = new Map((funcionariosRes.data || []).map(f => [f.id, f]));
+      const serviciosMap = new Map((serviciosRes.data || []).map(s => [s.id, s]));
+      
+      serviciosConRelaciones = serviciosProfesionalesEmpresa.map(servicio => ({
+        ...servicio,
+        funcionarios: servicio.id_responsable ? funcionariosMap.get(servicio.id_responsable) : null,
+        lista_servicios: servicio.id_servicio ? serviciosMap.get(servicio.id_servicio) : null
+      }));
+    }
     
     // Obtener solicitudes
     const { data: solicitudes } = await supabase
@@ -238,6 +276,7 @@ async function getDatosCliente(
     return {
       trabajosPorHora: trabajosPorHora || [],
       gastos: gastos || [],
+      serviciosProfesionales: serviciosConRelaciones,
       solicitudes: solicitudes || [],
       tarifaHora,
       ivaPerc,
@@ -285,11 +324,46 @@ async function getDatosCliente(
     // Obtener gastos
     const { data: gastos } = await supabase
       .from('gastos' as any)
-      .select(`id, producto, fecha, total_cobro, funcionarios:id_responsable (nombre)`)
+      .select(`id, producto, fecha, total_cobro, estado_pago, funcionarios:id_responsable (nombre)`)
       .eq('id_cliente', clienteId)
       .gte('fecha', inicioMes)
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
+    
+    // Obtener servicios profesionales (NO cancelados)
+    const { data: serviciosProfesionalesUsuario } = await supabase
+      .from('servicios_profesionales' as any)
+      .select('*')
+      .eq('id_cliente', clienteId)
+      .neq('estado_pago', 'cancelado')
+      .gte('fecha', inicioMes)
+      .lte('fecha', finMes)
+      .order('fecha', { ascending: false });
+    
+    // Fetch related data separately (no FK constraints exist)
+    let serviciosConRelaciones = serviciosProfesionalesUsuario || [];
+    if (serviciosProfesionalesUsuario && serviciosProfesionalesUsuario.length > 0) {
+      const funcionariosIds = [...new Set(serviciosProfesionalesUsuario.map(s => s.id_responsable).filter(Boolean))];
+      const serviciosIds = [...new Set(serviciosProfesionalesUsuario.map(s => s.id_servicio).filter(Boolean))];
+      
+      const [funcionariosRes, serviciosRes] = await Promise.all([
+        funcionariosIds.length > 0
+          ? supabase.from('funcionarios').select('id, nombre').in('id', funcionariosIds)
+          : Promise.resolve({ data: [] }),
+        serviciosIds.length > 0
+          ? supabase.from('lista_servicios' as any).select('id, titulo').in('id', serviciosIds)
+          : Promise.resolve({ data: [] })
+      ]);
+      
+      const funcionariosMap = new Map((funcionariosRes.data || []).map(f => [f.id, f]));
+      const serviciosMap = new Map((serviciosRes.data || []).map(s => [s.id, s]));
+      
+      serviciosConRelaciones = serviciosProfesionalesUsuario.map(servicio => ({
+        ...servicio,
+        funcionarios: servicio.id_responsable ? funcionariosMap.get(servicio.id_responsable) : null,
+        lista_servicios: servicio.id_servicio ? serviciosMap.get(servicio.id_servicio) : null
+      }));
+    }
     
     // Obtener solicitudes
     const { data: solicitudes } = await supabase
@@ -300,6 +374,7 @@ async function getDatosCliente(
     return {
       trabajosPorHora: trabajosPorHora || [],
       gastos: gastos || [],
+      serviciosProfesionales: serviciosConRelaciones,
       solicitudes: solicitudes || [],
       tarifaHora,
       ivaPerc,
@@ -314,6 +389,7 @@ async function getDatosCliente(
 function calcularTotales(
   trabajosPorHora: any[],
   gastos: any[],
+  serviciosProfesionales: any[],
   solicitudes: any[],
   tarifaHora: number,
   ivaPerc: number
@@ -322,6 +398,7 @@ function calcularTotales(
   totalHoras: number;
   montoHoras: number;
   totalGastos: number;
+  totalServiciosProfesionales: number;
   totalMensualidades: number;
   totalIVAMensualidades: number;
   subtotal: number;
@@ -350,8 +427,16 @@ function calcularTotales(
   const totalHoras = totalMinutos / 60;
   const montoHoras = totalHoras * tarifaHora;
   
-  // Calcular gastos
-  const totalGastos = gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+  // Calcular gastos (solo NO cancelados)
+  const totalGastos = gastos
+    .filter((g: any) => g.estado_pago !== 'cancelado')
+    .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+  
+  // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
+  const totalServiciosProfesionales = serviciosProfesionales.reduce(
+    (sum: number, s: any) => sum + (s.total || 0), 
+    0
+  );
   
   // Calcular mensualidades (solo las que son tipo mensualidad)
   let totalMensualidades = 0;
@@ -373,7 +458,8 @@ function calcularTotales(
   });
   
   // Calcular totales
-  const subtotal = montoHoras + totalGastos + totalMensualidades;
+  // NOTA: totalServiciosProfesionales ya es monto final (como gastos.total_cobro), no lleva IVA adicional
+  const subtotal = montoHoras + totalGastos + totalMensualidades + totalServiciosProfesionales;
   const ivaServicios = montoHoras * ivaPerc;
   const iva = ivaServicios + totalIVAMensualidades;
   const total = subtotal + iva;
@@ -386,6 +472,7 @@ function calcularTotales(
     totalHoras,
     montoHoras,
     totalGastos,
+    totalServiciosProfesionales,
     totalMensualidades,
     totalIVAMensualidades,
     subtotal,
@@ -472,6 +559,7 @@ export async function GET(request: NextRequest) {
       const totales = calcularTotales(
         datos.trabajosPorHora,
         datos.gastos,
+        datos.serviciosProfesionales,
         datos.solicitudes,
         datos.tarifaHora,
         datos.ivaPerc
@@ -479,7 +567,7 @@ export async function GET(request: NextRequest) {
       
       const tipoModalidad = determinarTipoModalidad(
         datos.solicitudes,
-        datos.gastos.length > 0,
+        datos.gastos.length > 0 || datos.serviciosProfesionales.length > 0,
         datos.trabajosPorHora.length > 0
       );
       
@@ -496,6 +584,7 @@ export async function GET(request: NextRequest) {
         montoHoras: totales.montoHoras,
         tarifaHora: datos.tarifaHora,
         totalGastos: totales.totalGastos,
+        totalServiciosProfesionales: totales.totalServiciosProfesionales,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
         ivaPerc: datos.ivaPerc,
@@ -504,6 +593,7 @@ export async function GET(request: NextRequest) {
         notaInterna: datos.notaInterna || undefined,
         trabajosPorHora: datos.trabajosPorHora,
         gastos: datos.gastos,
+        serviciosProfesionales: datos.serviciosProfesionales,
         solicitudes: datos.solicitudes,
         proyectos: totales.proyectos
       });
@@ -526,6 +616,7 @@ export async function GET(request: NextRequest) {
       const totales = calcularTotales(
         datos.trabajosPorHora,
         datos.gastos,
+        datos.serviciosProfesionales,
         datos.solicitudes,
         datos.tarifaHora,
         datos.ivaPerc
@@ -533,7 +624,7 @@ export async function GET(request: NextRequest) {
       
       const tipoModalidad = determinarTipoModalidad(
         datos.solicitudes,
-        datos.gastos.length > 0,
+        datos.gastos.length > 0 || datos.serviciosProfesionales.length > 0,
         datos.trabajosPorHora.length > 0
       );
       
@@ -555,6 +646,7 @@ export async function GET(request: NextRequest) {
         montoHoras: totales.montoHoras,
         tarifaHora: datos.tarifaHora,
         totalGastos: totales.totalGastos,
+        totalServiciosProfesionales: totales.totalServiciosProfesionales,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
         ivaPerc: datos.ivaPerc,
@@ -563,6 +655,7 @@ export async function GET(request: NextRequest) {
         notaInterna: datos.notaInterna || undefined,
         trabajosPorHora: datos.trabajosPorHora,
         gastos: datos.gastos,
+        serviciosProfesionales: datos.serviciosProfesionales,
         solicitudes: datos.solicitudes,
         proyectos: totales.proyectos
       });

@@ -4,17 +4,6 @@ import { GoogleSheetsService } from '@/lib/googleSheets'
 import { checkSyncRateLimit } from '@/lib/rate-limit'
 
 export async function GET(request: NextRequest) {
-  // Authorization check for cron/automated access
-  const authHeader = request.headers.get('authorization')
-  const expectedToken = process.env.CRON_SECRET_TOKEN
-  
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-    return NextResponse.json(
-      { success: false, message: 'Unauthorized' },
-      { status: 401 }
-    )
-  }
-
   // Rate limiting: 5 requests per minute per IP
   const rateLimitResponse = await checkSyncRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
@@ -23,17 +12,6 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // Authorization check for cron/automated access
-  const authHeader = request.headers.get('authorization')
-  const expectedToken = process.env.CRON_SECRET_TOKEN
-  
-  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-    return NextResponse.json(
-      { success: false, message: 'Unauthorized' },
-      { status: 401 }
-    )
-  }
-
   // Rate limiting: 5 requests per minute per IP
   const rateLimitResponse = await checkSyncRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
@@ -61,12 +39,20 @@ async function syncServiciosProfesionales() {
 
     console.log(`📊 Encontrados ${sheetData.length} registros en Sheets`)
 
-    // 1.1 Obtener servicios existentes en Supabase
+    // 1.1 Obtener servicios existentes en Supabase (incluyendo estado_pago)
     const { data: existingServicios, error: fetchError } = await supabase
       .from('servicios_profesionales' as any)
-      .select('id')
+      .select('id, estado_pago')
 
     if (fetchError) throw fetchError
+
+    // Crear mapa de IDs existentes con su estado_pago
+    const existingEstadoPago = new Map<string, string>()
+    for (const existing of (existingServicios || []) as any[]) {
+      if (existing.id) {
+        existingEstadoPago.set(existing.id, existing.estado_pago || 'pendiente')
+      }
+    }
 
     // Crear set de IDs de Sheets
     const sheetsIdSet = new Set<string>()
@@ -205,6 +191,8 @@ async function syncServiciosProfesionales() {
         }
 
         // Preparar datos para insertar/actualizar
+        // IMPORTANTE: Preservar estado_pago si el registro ya existe
+        const existingEstado = existingEstadoPago.get(id)
         const servicioData = {
           id,
           id_caso_sheets: idCasoSheets || null,
@@ -219,7 +207,9 @@ async function syncServiciosProfesionales() {
           costo,
           gastos,
           iva,
-          total
+          total,
+          // Preservar estado_pago existente, o 'pendiente' para nuevos registros
+          estado_pago: existingEstado || 'pendiente'
         }
 
         // Debug: mostrar lo que se está procesando

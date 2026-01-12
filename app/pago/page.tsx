@@ -55,6 +55,24 @@ interface Gasto {
   } | null
 }
 
+interface ServicioProfesional {
+  id: string
+  id_caso: string | null
+  id_servicio: string | null
+  fecha: string | null
+  costo: number | null
+  gastos: number | null
+  iva: number | null
+  total: number | null
+  estado_pago: string | null
+  funcionarios?: {
+    nombre: string | null
+  } | null
+  lista_servicios?: {
+    titulo: string | null
+  } | null
+}
+
 interface DatosPago {
   success: boolean
   tipoCliente: string
@@ -66,6 +84,8 @@ interface DatosPago {
   totalIVAMensualidades: number
   gastos: Gasto[]
   totalGastos: number
+  serviciosProfesionales: ServicioProfesional[]
+  totalServiciosProfesionales: number
   totalMinutosGlobal: number
   totalHorasDecimal: number
   tarifaHora: number
@@ -97,6 +117,8 @@ interface DatosEmpresaGrupo {
   trabajosPorHora: any[]
   gastos: any[]
   solicitudes: any[]
+  serviciosProfesionales: ServicioProfesional[]
+  totalServiciosProfesionales: number
   totalMinutos: number
   totalHoras: number
   tarifaHora: number
@@ -442,6 +464,34 @@ export default function PagoPage() {
                 </div>
               )}
               
+              {/* Servicios Profesionales */}
+              {datosPago.serviciosProfesionales && datosPago.serviciosProfesionales.length > 0 && (
+                <>
+                  <div className={styles.divider} />
+                  <div className={styles.costoItem}>
+                    <span>Servicios Profesionales:</span>
+                    <strong>{formatMonto(datosPago.totalServiciosProfesionales)}</strong>
+                  </div>
+                  
+                  {/* Detalle de servicios profesionales */}
+                  <div className={styles.detalleGastos}>
+                    {datosPago.serviciosProfesionales.map((servicio) => (
+                      <div key={servicio.id} className={styles.gastoItem}>
+                        <div className={styles.gastoInfo}>
+                          <span className={styles.gastoProducto}>
+                            {servicio.lista_servicios?.titulo || 'Servicio sin título'}
+                          </span>
+                          <span className={styles.gastoMeta}>
+                            {formatFecha(servicio.fecha)} • {servicio.funcionarios?.nombre || 'Sin responsable'}
+                          </span>
+                        </div>
+                        <span className={styles.gastoMonto}>{formatMonto(servicio.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              
               <div className={styles.divider} />
               
               {/* Subtotal */}
@@ -506,6 +556,14 @@ export default function PagoPage() {
                     <div className={styles.costoItem}>
                       <span>Gastos:</span>
                       <strong>{formatMonto(empresaGrupo.totalGastos)}</strong>
+                    </div>
+                  )}
+                  
+                  {/* Servicios Profesionales */}
+                  {empresaGrupo.totalServiciosProfesionales > 0 && (
+                    <div className={styles.costoItem}>
+                      <span>Servicios Profesionales:</span>
+                      <strong>{formatMonto(empresaGrupo.totalServiciosProfesionales)}</strong>
                     </div>
                   )}
                   

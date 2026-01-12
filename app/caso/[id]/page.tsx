@@ -41,6 +41,22 @@ interface Gasto {
   } | null
 }
 
+interface ServicioProfesional {
+  id: string
+  fecha: string | null
+  costo: number | null
+  gastos: number | null
+  iva: number | null
+  total: number | null
+  estado_pago: string | null
+  funcionarios?: {
+    nombre: string | null
+  } | null
+  lista_servicios?: {
+    titulo: string | null
+  } | null
+}
+
 interface User {
   id: string
   nombre: string
@@ -53,6 +69,7 @@ export default function CasoDetalle() {
   const [caso, setCaso] = useState<Caso | null>(null)
   const [trabajos, setTrabajos] = useState<Trabajo[]>([])
   const [gastos, setGastos] = useState<Gasto[]>([])
+  const [servicios, setServicios] = useState<ServicioProfesional[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const params = useParams()
@@ -98,6 +115,14 @@ export default function CasoDetalle() {
         
         if (gastosData.gastos) {
           setGastos(gastosData.gastos)
+        }
+
+        // Obtener servicios profesionales del caso
+        const serviciosResponse = await fetch(`/api/casos/${casoId}/servicios`)
+        const serviciosData = await serviciosResponse.json()
+        
+        if (serviciosData.servicios) {
+          setServicios(serviciosData.servicios)
         }
       } else {
         router.push('/home')
@@ -389,6 +414,75 @@ export default function CasoDetalle() {
             </>
           )}
         </div>
+
+        {/* Sección de Servicios Profesionales */}
+        {servicios.length > 0 && (
+          <div className={styles.trabajosSection}>
+            <h2 className={styles.sectionTitle}>Servicios Profesionales</h2>
+            
+            {/* Servicios Pagados */}
+            {servicios.filter(s => s.estado_pago === 'pagado').length > 0 && (
+              <div className={styles.gastosCategoria}>
+                <h3 className={styles.gastosSubtitulo}>
+                  <span className={styles.iconoPagado}>✓</span> Servicios Pagados
+                </h3>
+                <div className={styles.tableContainer}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Servicio</th>
+                        <th>Responsable</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {servicios.filter(s => s.estado_pago === 'pagado').map((servicio) => (
+                        <tr key={servicio.id} className={styles.filaPagado}>
+                          <td className={styles.cellFecha}>{formatFecha(servicio.fecha)}</td>
+                          <td className={styles.cellDescripcion}>{servicio.lista_servicios?.titulo || '-'}</td>
+                          <td className={styles.cellTitulo}>{servicio.funcionarios?.nombre || '-'}</td>
+                          <td className={styles.cellDuracion}>{formatMonto(servicio.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Servicios Pendientes */}
+            {servicios.filter(s => s.estado_pago === 'pendiente').length > 0 && (
+              <div className={styles.gastosCategoria}>
+                <h3 className={styles.gastosSubtitulo}>
+                  <span className={styles.iconoPendiente}>⏳</span> Servicios Pendientes
+                </h3>
+                <div className={styles.tableContainer}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Servicio</th>
+                        <th>Responsable</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {servicios.filter(s => s.estado_pago === 'pendiente').map((servicio) => (
+                        <tr key={servicio.id} className={styles.filaPendiente}>
+                          <td className={styles.cellFecha}>{formatFecha(servicio.fecha)}</td>
+                          <td className={styles.cellDescripcion}>{servicio.lista_servicios?.titulo || '-'}</td>
+                          <td className={styles.cellTitulo}>{servicio.funcionarios?.nombre || '-'}</td>
+                          <td className={styles.cellDuracion}>{formatMonto(servicio.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   )

@@ -1,7 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import styles from './dev.module.css'
+
+// ===== DEV LOGGER =====
+const isDev = process.env.NODE_ENV === 'development'
+const devLog = (...args: unknown[]) => {
+  if (isDev) console.log(...args)
+}
 
 // ===== INTERFACES =====
 interface SyncResult {
@@ -170,6 +176,7 @@ interface ClienteVistaPago {
   montoHoras: number
   tarifaHora: number
   totalGastos: number
+  totalServiciosProfesionales: number
   totalMensualidades: number
   subtotal: number
   ivaPerc: number
@@ -178,6 +185,7 @@ interface ClienteVistaPago {
   notaInterna?: string
   trabajosPorHora?: any[]
   gastos?: any[]
+  serviciosProfesionales?: any[]
   solicitudes?: any[]
   proyectos?: ProyectoMensualidad[]
 }
@@ -205,7 +213,7 @@ interface TotalesPorGrupo {
   total: number
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'vista-pago'
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'servicios-estado' | 'vista-pago'
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -291,6 +299,15 @@ export default function DevPage() {
   const [selectedGastos, setSelectedGastos] = useState<string[]>([])
   const [nuevoEstadoGasto, setNuevoEstadoGasto] = useState<string>('pendiente')
 
+  // Estados para gestión de estado de servicios profesionales
+  const [serviciosEstado, setServiciosEstado] = useState<any[]>([])
+  const [loadingServiciosEstado, setLoadingServiciosEstado] = useState(false)
+  const [filtroEstadoServicio, setFiltroEstadoServicio] = useState<string>('todos')
+  const [filtroMesServicio, setFiltroMesServicio] = useState<string>('')
+  const [filtroClienteServicio, setFiltroClienteServicio] = useState<string>('')
+  const [selectedServicios, setSelectedServicios] = useState<string[]>([])
+  const [nuevoEstadoServicio, setNuevoEstadoServicio] = useState<string>('pendiente')
+
   // Estados para Vista Pago
   const [clientesVistaPago, setClientesVistaPago] = useState<ClienteVistaPago[]>([])
   const [loadingVistaPago, setLoadingVistaPago] = useState(false)
@@ -330,6 +347,14 @@ export default function DevPage() {
     loadPaymentData()
   }, [])
 
+  // Effect para recargar ingresos cuando cambian año/mes o se activa la sección
+  useEffect(() => {
+    if (activeSection === 'ingresos') {
+      loadIngresos()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ingresosYear, ingresosMes, activeSection])
+
   // ===== FUNCIONES DE CARGA POR SECCIÓN =====
   
   // COMPROBANTES
@@ -340,7 +365,7 @@ export default function DevPage() {
       const response = await fetch('/api/payment-receipts')
       const data = await response.json()
       
-      console.log('Payment receipts response:', data)
+      devLog('Payment receipts response:', data)
       
       if (data.success && data.data) {
         setReceipts(data.data.receipts || [])
@@ -555,8 +580,8 @@ export default function DevPage() {
       const usuariosData = await usuariosRes.json()
       const empresasData = await empresasRes.json()
       
-      console.log('Usuarios response:', usuariosData)
-      console.log('Empresas response:', empresasData)
+      devLog('Usuarios response:', usuariosData)
+      devLog('Empresas response:', empresasData)
       
       const allClientes: ClientVistoBueno[] = []
       
@@ -634,7 +659,7 @@ export default function DevPage() {
       })
       const data = await response.json()
       
-      console.log('Invitation codes response:', data)
+      devLog('Invitation codes response:', data)
       
       if (data.success) {
         setInvitationCodes(data.codes || [])
@@ -649,6 +674,19 @@ export default function DevPage() {
   }
 
   const generateInvitationCode = async () => {
+    // Validate numeric inputs
+    const expiryValue = parseInt(newCodeExpiry, 10)
+    const maxUsesValue = parseInt(newCodeMaxUses, 10)
+    
+    if (!Number.isFinite(expiryValue) || expiryValue <= 0) {
+      alert('Por favor ingresa un valor válido para las horas de expiración')
+      return
+    }
+    if (!Number.isFinite(maxUsesValue) || maxUsesValue <= 0) {
+      alert('Por favor ingresa un valor válido para el número máximo de usos')
+      return
+    }
+    
     setGeneratingCode(true)
     setGeneratedCode(null)
     try {
@@ -657,8 +695,8 @@ export default function DevPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: newCodeType,
-          expiresInHours: parseInt(newCodeExpiry),
-          maxUses: parseInt(newCodeMaxUses),
+          expiresInHours: expiryValue,
+          maxUses: maxUsesValue,
           notes: newCodeNotes || null
         })
       })
@@ -699,10 +737,19 @@ export default function DevPage() {
     }
   }
 
-  const copyToClipboard = (code: string) => {
-    navigator.clipboard.writeText(code)
-    setCopiedCode(code)
-    setTimeout(() => setCopiedCode(null), 2000)
+  const copyToClipboard = async (code: string) => {
+    if (!navigator.clipboard) {
+      alert('Clipboard API no disponible en este navegador')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopiedCode(code)
+      setTimeout(() => setCopiedCode(null), 2000)
+    } catch (error) {
+      console.error('Error copiando al clipboard:', error)
+      alert('Error al copiar el código')
+    }
   }
 
   const getCodeStatus = (code: InvitationCode) => {
@@ -871,7 +918,7 @@ export default function DevPage() {
       // Cargar grupos existentes
       const resGrupos = await fetch('/api/grupos-empresas')
       const dataGrupos = await resGrupos.json()
-      console.log('Grupos response:', dataGrupos)
+      devLog('Grupos response:', dataGrupos)
       if (dataGrupos.success) {
         setGrupos(dataGrupos.grupos || [])
       }
@@ -879,11 +926,11 @@ export default function DevPage() {
       // Obtener empresas de Supabase directamente
       const empresasRes = await fetch('/api/client?tipo=empresa&all=true')
       const empresasData = await empresasRes.json()
-      console.log('Empresas response completa:', JSON.stringify(empresasData))
+      devLog('Empresas response completa:', JSON.stringify(empresasData))
       
       // La respuesta puede tener empresas directamente o dentro de success
       const empresasList = empresasData.empresas || []
-      console.log('Empresas encontradas:', empresasList.length)
+      devLog('Empresas encontradas:', empresasList.length)
       
       if (empresasList.length > 0) {
         setEmpresasDisponibles(empresasList.map((e: any) => ({
@@ -1142,6 +1189,111 @@ export default function DevPage() {
     }
   }
 
+  // SERVICIOS PROFESIONALES - ESTADO DE PAGO
+  const loadServiciosEstado = async () => {
+    setLoadingServiciosEstado(true)
+    // Clear selection when reloading to prevent stale selection
+    setSelectedServicios([])
+    try {
+      const params = new URLSearchParams()
+      if (filtroEstadoServicio && filtroEstadoServicio !== 'todos') {
+        params.append('estado', filtroEstadoServicio)
+      }
+      if (filtroMesServicio) {
+        params.append('mes', filtroMesServicio)
+      }
+      if (filtroClienteServicio) {
+        params.append('cedula', filtroClienteServicio)
+      }
+      
+      const url = `/api/servicios-estado${params.toString() ? '?' + params.toString() : ''}`
+      const res = await fetch(url)
+      const data = await res.json()
+      
+      if (data.success) {
+        setServiciosEstado(data.servicios || [])
+      } else {
+        console.error('Error cargando servicios:', data.error)
+        alert('Error cargando servicios: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error cargando servicios:', error)
+      alert('Error de conexión al cargar servicios')
+    } finally {
+      setLoadingServiciosEstado(false)
+    }
+  }
+
+  // Actualizar estado de un servicio individual
+  const updateServicioEstado = async (id: string, nuevoEstado: string) => {
+    try {
+      const res = await fetch('/api/servicios-estado', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, estado: nuevoEstado })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        // Actualizar el estado local
+        setServiciosEstado(prev => prev.map(s => 
+          s.id === id ? { ...s, estado_pago: nuevoEstado } : s
+        ))
+      } else {
+        alert('Error actualizando estado: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error de conexión')
+    }
+  }
+
+  // Actualizar estado de múltiples servicios
+  const updateServiciosEstadoBulk = async () => {
+    if (selectedServicios.length === 0) {
+      alert('Selecciona al menos un servicio')
+      return
+    }
+    
+    try {
+      const res = await fetch('/api/servicios-estado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedServicios, estado: nuevoEstadoServicio })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        alert(`${data.updated} servicios actualizados`)
+        setSelectedServicios([])
+        loadServiciosEstado()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error de conexión')
+    }
+  }
+
+  // Toggle selección de servicio
+  const toggleServicioSelection = (id: string) => {
+    setSelectedServicios(prev => 
+      prev.includes(id) 
+        ? prev.filter(s => s !== id)
+        : [...prev, id]
+    )
+  }
+
+  // Seleccionar/deseleccionar todos los servicios
+  const toggleAllServicios = () => {
+    if (selectedServicios.length === serviciosEstado.length) {
+      setSelectedServicios([])
+    } else {
+      setSelectedServicios(serviciosEstado.map(s => s.id))
+    }
+  }
+
   // Filtrar deudas según el filtro seleccionado
   const getDeudasFiltradas = () => {
     if (filtroDeudas === 'todos') return deudas
@@ -1316,7 +1468,7 @@ export default function DevPage() {
   return (
     <div className={`${styles.container} ${!sidebarOpen ? styles.sidebarClosed : ''}`}>
       {/* SIDEBAR */}
-      <aside className={`${styles.sidebar} ${!sidebarOpen ? styles.collapsed : ''}`}>
+      <aside id="sidebar-nav" className={`${styles.sidebar} ${!sidebarOpen ? styles.collapsed : ''}`}>
         <nav className={styles.nav}>
           <button 
             className={`${styles.navItem} ${activeSection === 'comprobantes' ? styles.active : ''}`}
@@ -1390,6 +1542,13 @@ export default function DevPage() {
             <span className={styles.navLabel}>Estado Gastos</span>
           </button>
           <button 
+            className={`${styles.navItem} ${activeSection === 'servicios-estado' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('servicios-estado'); loadServiciosEstado() }}
+          >
+            <span className={styles.navIcon}>🛠️</span>
+            <span className={styles.navLabel}>Estado Servicios</span>
+          </button>
+          <button 
             className={`${styles.navItem} ${activeSection === 'fecha' ? styles.active : ''}`}
             onClick={() => setActiveSection('fecha')}
           >
@@ -1417,7 +1576,13 @@ export default function DevPage() {
       {/* HEADER */}
       <header className={`${styles.header} ${!sidebarOpen ? styles.fullWidth : ''}`}>
         <div className={styles.headerLeft}>
-          <button className={styles.toggleButton} onClick={() => setSidebarOpen(!sidebarOpen)}>
+          <button 
+            className={styles.toggleButton} 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'}
+            aria-expanded={sidebarOpen}
+            aria-controls="sidebar-nav"
+          >
             ☰
           </button>
           <h1 className={styles.headerTitle}>Panel de Administración</h1>
@@ -1813,7 +1978,7 @@ export default function DevPage() {
                 <select 
                   className={styles.input}
                   value={ingresosYear}
-                  onChange={(e) => { setIngresosYear(e.target.value); setTimeout(loadIngresos, 100) }}
+                  onChange={(e) => setIngresosYear(e.target.value)}
                   style={{ width: 'auto' }}
                 >
                   {[2024, 2025, 2026].map(y => (
@@ -1823,7 +1988,7 @@ export default function DevPage() {
                 <select 
                   className={styles.input}
                   value={ingresosMes}
-                  onChange={(e) => { setIngresosMes(e.target.value); setTimeout(loadIngresos, 100) }}
+                  onChange={(e) => setIngresosMes(e.target.value)}
                   style={{ width: 'auto' }}
                 >
                   <option value="">Todos los meses</option>
@@ -2123,6 +2288,16 @@ export default function DevPage() {
               <button className={styles.syncCard} onClick={() => handleSync('/api/sync-clicks-etapa', 'Clicks Etapa')} disabled={loading}>
                 <span className={styles.syncIcon}>🔄</span>
                 <span className={styles.syncLabel}>Clicks Etapa</span>
+              </button>
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-lista-servicios', 'Lista Servicios')} disabled={loading}>
+                <span className={styles.syncIcon}>📋</span>
+                <span className={styles.syncLabel}>Lista Servicios</span>
+              </button>
+              
+              <button className={styles.syncCard} onClick={() => handleSync('/api/sync-servicios-profesionales', 'Servicios Profesionales')} disabled={loading}>
+                <span className={styles.syncIcon}>💼</span>
+                <span className={styles.syncLabel}>Servicios Profesionales</span>
               </button>
             </div>
             
@@ -2791,6 +2966,218 @@ export default function DevPage() {
           </div>
         )}
 
+        {/* ESTADO DE SERVICIOS PROFESIONALES */}
+        {activeSection === 'servicios-estado' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Estado de Pago de Servicios Profesionales</h2>
+                <p className={styles.sectionDescription}>
+                  Gestiona manualmente el estado de pago de los servicios profesionales registrados
+                </p>
+              </div>
+              <button className={styles.button} onClick={loadServiciosEstado} disabled={loadingServiciosEstado}>
+                {loadingServiciosEstado ? 'Cargando...' : 'Refrescar'}
+              </button>
+            </div>
+
+            {/* Filtros */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Estado:</label>
+                <select
+                  className={styles.input}
+                  value={filtroEstadoServicio}
+                  onChange={(e) => setFiltroEstadoServicio(e.target.value)}
+                  style={{ minWidth: '180px' }}
+                >
+                  <option value="todos">Todos</option>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="pagado">Pagado</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Mes:</label>
+                <input
+                  type="month"
+                  className={styles.input}
+                  value={filtroMesServicio}
+                  onChange={(e) => setFiltroMesServicio(e.target.value)}
+                  style={{ minWidth: '150px' }}
+                />
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Cédula Cliente:</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  value={filtroClienteServicio}
+                  onChange={(e) => setFiltroClienteServicio(e.target.value)}
+                  placeholder="Cédula..."
+                  style={{ minWidth: '150px' }}
+                />
+              </div>
+              <button 
+                className={styles.button} 
+                onClick={loadServiciosEstado}
+                disabled={loadingServiciosEstado}
+              >
+                Buscar
+              </button>
+              <button 
+                className={styles.buttonSecondary} 
+                onClick={() => {
+                  setFiltroEstadoServicio('todos')
+                  setFiltroMesServicio('')
+                  setFiltroClienteServicio('')
+                }}
+              >
+                Limpiar
+              </button>
+            </div>
+
+            {/* Acciones en lote */}
+            {serviciosEstado.length > 0 && (
+              <div className={styles.bulkActions}>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selectedServicios.length === serviciosEstado.length && serviciosEstado.length > 0}
+                    onChange={toggleAllServicios}
+                  />
+                  Seleccionar todos ({selectedServicios.length}/{serviciosEstado.length})
+                </label>
+                <div className={styles.bulkActionsRight}>
+                  <span>Cambiar a:</span>
+                  <select
+                    className={styles.input}
+                    value={nuevoEstadoServicio}
+                    onChange={(e) => setNuevoEstadoServicio(e.target.value)}
+                    style={{ minWidth: '180px' }}
+                  >
+                    <option value="pendiente">Pendiente</option>
+                    <option value="pagado">Pagado</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                  <button 
+                    className={styles.button}
+                    onClick={updateServiciosEstadoBulk}
+                    disabled={selectedServicios.length === 0}
+                  >
+                    Aplicar ({selectedServicios.length})
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Lista de servicios */}
+            {loadingServiciosEstado ? (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Cargando servicios...</p>
+              </div>
+            ) : serviciosEstado.length === 0 ? (
+              <div className={styles.emptyState}>
+                <p>No hay servicios que coincidan con los filtros</p>
+                <p style={{ fontSize: '0.875rem', color: '#666', marginTop: '0.5rem' }}>
+                  Ajusta los filtros o haz clic en &quot;Buscar&quot; para cargar servicios
+                </p>
+              </div>
+            ) : (
+              <div className={styles.table}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedServicios.length === serviciosEstado.length && serviciosEstado.length > 0}
+                          onChange={toggleAllServicios}
+                          aria-label="Seleccionar todos los servicios"
+                        />
+                      </th>
+                      <th>Servicio</th>
+                      <th>Cliente</th>
+                      <th style={{ textAlign: 'right' }}>Total</th>
+                      <th>Fecha</th>
+                      <th>Estado</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serviciosEstado.map((servicio) => (
+                      <tr key={servicio.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedServicios.includes(servicio.id)}
+                            onChange={() => toggleServicioSelection(servicio.id)}
+                            aria-label={`Seleccionar servicio ${servicio.servicio_titulo || servicio.lista_servicios?.titulo || servicio.id}`}
+                          />
+                        </td>
+                        <td>
+                          <strong>{servicio.servicio_titulo || servicio.lista_servicios?.titulo || 'Sin título'}</strong>
+                          {servicio.funcionarios?.nombre && (
+                            <><br /><small className={styles.textMuted}>{servicio.funcionarios.nombre}</small></>
+                          )}
+                        </td>
+                        <td>
+                          {servicio.cliente_nombre || (
+                            <span className={styles.textMuted}>—</span>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                          {formatCurrency(servicio.total || 0)}
+                        </td>
+                        <td>
+                          {servicio.fecha ? new Date(servicio.fecha).toLocaleDateString('es-CR') : '—'}
+                        </td>
+                        <td>
+                          <span className={`${styles.badge} ${
+                            servicio.estado_pago === 'pagado' ? styles.badgeSuccess :
+                            servicio.estado_pago === 'cancelado' ? styles.badgeDanger :
+                            styles.badgeWarning
+                          }`}>
+                            {servicio.estado_pago === 'pagado' ? '✓ Pagado' :
+                             servicio.estado_pago === 'cancelado' ? '✗ Cancelado' :
+                             '⏳ Pendiente'}
+                          </span>
+                        </td>
+                        <td>
+                          <select
+                            className={styles.input}
+                            value={servicio.estado_pago || 'pendiente'}
+                            onChange={(e) => updateServicioEstado(servicio.id, e.target.value)}
+                            style={{ minWidth: '140px', fontSize: '0.875rem', padding: '0.25rem 0.5rem' }}
+                          >
+                            <option value="pendiente">Pendiente</option>
+                            <option value="pagado">Pagado</option>
+                            <option value="cancelado">Cancelado</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Info */}
+            <div className={styles.infoBox} style={{ marginTop: '1.5rem' }}>
+              <h4 style={{ marginBottom: '0.5rem' }}>ℹ️ Estados de Servicios Profesionales</h4>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                <li><strong>Pendiente:</strong> Servicio registrado pero aún no incluido en un pago</li>
+                <li><strong>Pagado:</strong> Servicio incluido en un comprobante de pago aprobado</li>
+                <li><strong>Cancelado:</strong> Servicio cancelado, no se cobrará al cliente</li>
+              </ul>
+              <p style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#666' }}>
+                <strong>Nota:</strong> Los servicios marcados como &quot;Cancelado&quot; no aparecerán en los totales de pago del cliente.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* VISTA PAGO */}
         {activeSection === 'vista-pago' && (
           <div className={styles.section}>
@@ -3034,6 +3421,12 @@ export default function DevPage() {
                                     {formatCurrency(cliente.totalGastos)}
                                   </p>
                                 </div>
+                                <div style={{ padding: '0.75rem', background: 'rgba(156, 39, 176, 0.1)', borderRadius: '6px', border: '1px solid rgba(156, 39, 176, 0.3)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Servicios Prof.</p>
+                                  <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
+                                    {formatCurrency(cliente.totalServiciosProfesionales || 0)}
+                                  </p>
+                                </div>
                                 <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Mensualidades</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
@@ -3210,6 +3603,37 @@ export default function DevPage() {
                                             <td style={{ padding: '0.25rem' }}>{g.fecha ? new Date(g.fecha).toLocaleDateString('es-CR') : '—'}</td>
                                             <td style={{ padding: '0.25rem' }}>{g.producto || '—'}</td>
                                             <td style={{ textAlign: 'right', padding: '0.25rem' }}>{formatCurrency(g.total_cobro || 0)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
+                              {/* Detalle de servicios profesionales */}
+                              {cliente.serviciosProfesionales && cliente.serviciosProfesionales.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem' }}>
+                                    🔧 Servicios Profesionales ({cliente.serviciosProfesionales.length}) - {formatCurrency(cliente.totalServiciosProfesionales || 0)}
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(0, 0, 0, 0.04)', border: '1px solid rgba(0, 0, 0, 0.08)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Fecha</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Servicio</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Responsable</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Total</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.serviciosProfesionales.map((sp: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{sp.fecha ? new Date(sp.fecha).toLocaleDateString('es-CR') : '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{sp.lista_servicios?.titulo || '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{sp.funcionarios?.nombre || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{formatCurrency(sp.total || 0)}</td>
                                           </tr>
                                         ))}
                                       </tbody>
