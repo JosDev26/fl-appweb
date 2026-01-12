@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
       { name: 'Trabajos_Por_Hora', url: `${baseUrl}/api/sync-control-horas` }, // FK: caso_asignado, responsable, solicitante
       { name: 'Gastos', url: `${baseUrl}/api/sync-gastos` }, // FK: id_cliente, id_responsable, id_caso
       { name: 'Actualizaciones', url: `${baseUrl}/api/sync-actualizaciones` }, // FK: id_solicitud
-      { name: 'Clicks_Etapa', url: `${baseUrl}/api/sync-clicks-etapa` } // FK: id_solicitud
+      { name: 'Clicks_Etapa', url: `${baseUrl}/api/sync-clicks-etapa` }, // FK: id_solicitud
+      { name: 'Servicios_Profesionales', url: `${baseUrl}/api/sync-servicios-profesionales` } // FK: id_caso, id_cliente, id_responsable, id_servicio
     ]
 
     // Ejecutar sincronizaciones secuencialmente
