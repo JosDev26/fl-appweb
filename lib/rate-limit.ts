@@ -53,6 +53,18 @@ export const authBurstRateLimit = new Ratelimit({
 })
 
 /**
+ * Session verification rate limiter: 100 requests per 10 minutes
+ * More permissive since this is just checking cookies, not authenticating
+ * Used for: verifyDevAdminSession
+ */
+export const sessionVerifyRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(100, '10 m'),
+  analytics: true,
+  prefix: 'ratelimit:session-verify',
+})
+
+/**
  * Upload rate limiter: 10 uploads per hour
  * Used for: /api/upload-factura, /api/upload-comprobante
  */

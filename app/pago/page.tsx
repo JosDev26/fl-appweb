@@ -132,16 +132,30 @@ interface DatosEmpresaGrupo {
   total: number
 }
 
+// Estado del visto bueno
+type EstadoVistoBueno = 'pendiente' | 'aprobado' | 'rechazado'
+
 export default function PagoPage() {
   const { user, loading: authLoading } = useAuth()
   const [datosPago, setDatosPago] = useState<DatosPago | null>(null)
   const [loading, setLoading] = useState(true)
   const [vistoBuenoDado, setVistoBuenoDado] = useState(false)
+  const [estadoVistoBueno, setEstadoVistoBueno] = useState<EstadoVistoBueno>('pendiente')
   const [loadingVistoBueno, setLoadingVistoBueno] = useState(false)
   const [simulatedDate, setSimulatedDate] = useState<string | null>(null)
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const router = useRouter()
+
+  // Estados para modal de rechazo
+  const [showRechazoModal, setShowRechazoModal] = useState(false)
+  const [motivoRechazo, setMotivoRechazo] = useState('')
+  const [archivoRechazo, setArchivoRechazo] = useState<File | null>(null)
+  const [loadingRechazo, setLoadingRechazo] = useState(false)
+  const [errorRechazo, setErrorRechazo] = useState('')
+
+  // Estados para modal de confirmación de re-aprobación
+  const [showReaprobarModal, setShowReaprobarModal] = useState(false)
 
   // Cargar fecha simulada global desde API al montar
   useEffect(() => {
@@ -191,7 +205,7 @@ export default function PagoPage() {
       const data = await response.json()
       setDatosPago(data)
 
-      // Si requiere dar visto bueno, verificar si ya lo dio para el mes de trabajo
+      // Si requiere dar visto bueno, verificar el estado actual
       if (data.darVistoBueno) {
         // Usar el mes actual de datos de pago (mes de las horas trabajadas)
         const mes = data.mesActualISO
@@ -205,7 +219,10 @@ export default function PagoPage() {
 
         if (checkResponse.ok) {
           const checkData = await checkResponse.json()
-          setVistoBuenoDado(checkData.dado || false)
+          // Usar el nuevo campo estado
+          const estado = checkData.estado as EstadoVistoBueno || 'pendiente'
+          setEstadoVistoBueno(estado)
+          setVistoBuenoDado(estado === 'aprobado')
         }
       }
     } catch (error) {
@@ -218,7 +235,21 @@ export default function PagoPage() {
   const handleDarVistoBueno = async () => {
     if (!user || !datosPago) return
 
+    // Si el estado era rechazado, mostrar modal de confirmación
+    if (estadoVistoBueno === 'rechazado') {
+      setShowReaprobarModal(true)
+      return
+    }
+
+    await ejecutarAprobacion()
+  }
+
+  const ejecutarAprobacion = async () => {
+    if (!user || !datosPago) return
+
     setLoadingVistoBueno(true)
+    setShowReaprobarModal(false)
+    
     try {
       // Usar el mes de las horas trabajadas
       const mes = datosPago.mesActualISO
@@ -245,6 +276,7 @@ export default function PagoPage() {
       const data = await response.json()
       if (data.success) {
         setVistoBuenoDado(true)
+        setEstadoVistoBueno('aprobado')
         setToastMessage('Visto bueno registrado correctamente')
         setShowToast(true)
         setTimeout(() => setShowToast(false), 3000)
@@ -255,6 +287,100 @@ export default function PagoPage() {
       setTimeout(() => setShowToast(false), 3000)
     } finally {
       setLoadingVistoBueno(false)
+    }
+  }
+
+  // Abrir modal de rechazo
+  const handleAbrirRechazoModal = () => {
+    setMotivoRechazo('')
+    setArchivoRechazo(null)
+    setErrorRechazo('')
+    setShowRechazoModal(true)
+  }
+
+  // Enviar rechazo
+  const handleEnviarRechazo = async () => {
+    if (!user || !datosPago) return
+
+    // Validar motivo
+    if (motivoRechazo.trim().length < 20) {
+      setErrorRechazo('El motivo debe tener al menos 20 caracteres')
+      return
+    }
+
+    if (motivoRechazo.trim().length > 500) {
+      setErrorRechazo('El motivo no puede exceder 500 caracteres')
+      return
+    }
+
+    // Validar archivo si existe
+    if (archivoRechazo) {
+      const maxSize = 3 * 1024 * 1024 // 3MB
+      if (archivoRechazo.size > maxSize) {
+        setErrorRechazo('El archivo es demasiado grande. Máximo 3MB')
+        return
+      }
+
+      const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']
+      if (!allowedTypes.includes(archivoRechazo.type)) {
+        setErrorRechazo('Solo se permiten archivos PDF, JPG o PNG')
+        return
+      }
+    }
+
+    setLoadingRechazo(true)
+    setErrorRechazo('')
+
+    try {
+      const mes = datosPago.mesActualISO
+      const fechaActual = simulatedDate ? new Date(simulatedDate + 'T12:00:00') : new Date()
+
+      const formData = new FormData()
+      formData.append('mes', mes)
+      formData.append('motivo', motivoRechazo.trim())
+      formData.append('fechaSimulada', fechaActual.toISOString())
+      
+      if (archivoRechazo) {
+        formData.append('archivo', archivoRechazo)
+      }
+
+      const response = await fetch('/api/visto-bueno/rechazar', {
+        method: 'POST',
+        headers: {
+          'x-user-id': String(user.id),
+          'x-tipo-cliente': user.tipo || 'cliente'
+        },
+        body: formData
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setErrorRechazo(data.error || 'Error al registrar el rechazo')
+        return
+      }
+
+      if (data.success) {
+        setShowRechazoModal(false)
+        setEstadoVistoBueno('rechazado')
+        setVistoBuenoDado(false)
+        setToastMessage('Rechazo registrado. Un administrador revisará tu caso.')
+        setShowToast(true)
+        setTimeout(() => setShowToast(false), 4000)
+      }
+    } catch (error) {
+      setErrorRechazo('Error de conexión. Intenta de nuevo.')
+    } finally {
+      setLoadingRechazo(false)
+    }
+  }
+
+  // Manejar selección de archivo
+  const handleArchivoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setArchivoRechazo(file)
+      setErrorRechazo('')
     }
   }
 
@@ -306,6 +432,10 @@ export default function PagoPage() {
 
   const tieneTrabajosHora = datosPago.trabajosPorHora.length > 0
   const tieneMensualidades = datosPago.solicitudesMensuales.length > 0
+  const tieneGastos = datosPago.gastos && datosPago.gastos.length > 0
+  const tieneServiciosProfesionales = datosPago.serviciosProfesionales && datosPago.serviciosProfesionales.length > 0
+  // Mostrar contenido si hay cualquier tipo de dato de pago
+  const tieneContenidoPago = tieneTrabajosHora || tieneMensualidades || tieneGastos || tieneServiciosProfesionales
 
   return (
     <div className={styles.container}>
@@ -385,7 +515,7 @@ export default function PagoPage() {
         )}
 
         {/* Resumen de Costos */}
-        {(tieneTrabajosHora || tieneMensualidades) && (
+        {tieneContenidoPago && (
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>Resumen de Costos</h2>
             
@@ -592,11 +722,11 @@ export default function PagoPage() {
               </div>
             ))}
             
-            {/* Gran Total del Grupo */}
+            {/* Total del Grupo */}
             <div className={styles.granTotalGrupo}>
               <div className={styles.divider + ' ' + styles.dividerBold} />
               <div className={styles.costoItem + ' ' + styles.total + ' ' + styles.granTotal}>
-                <span>🏢 GRAN TOTAL DEL GRUPO:</span>
+                <span>🏢 TOTAL DEL GRUPO:</span>
                 <strong>
                   {formatMonto(datosPago.granTotalAPagar || 0)}
                 </strong>
@@ -682,10 +812,38 @@ export default function PagoPage() {
           </div>
         )}
 
+        {/* Mensaje de rechazo activo */}
+        {estadoVistoBueno === 'rechazado' && datosPago?.darVistoBueno && (
+          <div className={styles.rechazoActivo}>
+            <div className={styles.rechazoActivoIcon}>⚠️</div>
+            <div className={styles.rechazoActivoContent}>
+              <h3>Has rechazado las horas registradas</h3>
+              <p>
+                Revisa nuevamente los detalles y vuelve a aprobar si todo está correcto,
+                o espera a que un administrador resuelva tu caso.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Botón de acción */}
-        {(tieneTrabajosHora || tieneMensualidades) && (
+        {tieneContenidoPago && (
           <div className={styles.actionSection}>
-            {datosPago?.darVistoBueno && !vistoBuenoDado ? (
+            {/* Estado: Rechazado - mostrar botón para re-aprobar */}
+            {datosPago?.darVistoBueno && estadoVistoBueno === 'rechazado' && (
+              <div className={styles.vistoBuenoContainer}>
+                <button 
+                  className={styles.vistoBuenoButtonReaprobar}
+                  onClick={handleDarVistoBueno}
+                  disabled={loadingVistoBueno}
+                >
+                  {loadingVistoBueno ? 'Procesando...' : '🔄 Re-aprobar Horas (Revisa Cuidadosamente)'}
+                </button>
+              </div>
+            )}
+
+            {/* Estado: Pendiente - mostrar botones de confirmar/rechazar */}
+            {datosPago?.darVistoBueno && estadoVistoBueno === 'pendiente' && (
               <div className={styles.vistoBuenoContainer}>
                 <button 
                   className={styles.vistoBuenoButtonConfirm}
@@ -696,13 +854,16 @@ export default function PagoPage() {
                 </button>
                 <button 
                   className={styles.vistoBuenoButtonCancel}
-                  onClick={() => router.push('/home')}
+                  onClick={handleAbrirRechazoModal}
                   disabled={loadingVistoBueno}
                 >
                   No Confirmar
                 </button>
               </div>
-            ) : (
+            )}
+
+            {/* Estado: Aprobado o no requiere visto bueno - mostrar botón de pago */}
+            {(!datosPago?.darVistoBueno || estadoVistoBueno === 'aprobado') && (
               <button 
                 className={styles.pagarButton}
                 onClick={() => router.push('/pago/comprobante')}
@@ -710,6 +871,147 @@ export default function PagoPage() {
                 Proceder al Pago
               </button>
             )}
+          </div>
+        )}
+
+        {/* Modal de Rechazo */}
+        {showRechazoModal && (
+          <div className={styles.modalOverlay} onClick={() => setShowRechazoModal(false)}>
+            <div className={styles.modal} onClick={e => e.stopPropagation()}>
+              <div className={styles.modalHeader}>
+                <h2>¿Por qué rechazas estas horas?</h2>
+                <button 
+                  className={styles.modalClose} 
+                  onClick={() => setShowRechazoModal(false)}
+                  disabled={loadingRechazo}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className={styles.modalBody}>
+                <p className={styles.modalDescription}>
+                  Describe el problema que encontraste con las horas registradas.
+                  Un administrador revisará tu caso.
+                </p>
+                
+                <div className={styles.formGroup}>
+                  <label htmlFor="motivo">Motivo del rechazo *</label>
+                  <textarea
+                    id="motivo"
+                    className={styles.textarea}
+                    placeholder="Describe detalladamente el problema encontrado..."
+                    value={motivoRechazo}
+                    onChange={(e) => setMotivoRechazo(e.target.value)}
+                    maxLength={500}
+                    rows={4}
+                    disabled={loadingRechazo}
+                  />
+                  <div className={styles.charCount}>
+                    {motivoRechazo.length}/500 caracteres
+                    {motivoRechazo.length < 20 && motivoRechazo.length > 0 && (
+                      <span className={styles.charCountWarning}> (mínimo 20)</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label htmlFor="archivo">Archivo de respaldo (opcional)</label>
+                  <input
+                    type="file"
+                    id="archivo"
+                    className={styles.fileInput}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={handleArchivoChange}
+                    disabled={loadingRechazo}
+                  />
+                  <p className={styles.fileHint}>
+                    Máximo 3MB. Solo PDF, JPG o PNG.
+                  </p>
+                  {archivoRechazo && (
+                    <div className={styles.filePreview}>
+                      📎 {archivoRechazo.name} ({(archivoRechazo.size / 1024).toFixed(1)} KB)
+                      <button 
+                        type="button" 
+                        className={styles.fileRemove}
+                        onClick={() => setArchivoRechazo(null)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {errorRechazo && (
+                  <div className={styles.errorMessage}>
+                    {errorRechazo}
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.modalFooter}>
+                <button 
+                  className={styles.modalButtonCancel}
+                  onClick={() => setShowRechazoModal(false)}
+                  disabled={loadingRechazo}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  className={styles.modalButtonSubmit}
+                  onClick={handleEnviarRechazo}
+                  disabled={loadingRechazo || motivoRechazo.trim().length < 20}
+                >
+                  {loadingRechazo ? 'Enviando...' : 'Enviar Rechazo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Confirmación para Re-aprobar */}
+        {showReaprobarModal && (
+          <div className={styles.modalOverlay} onClick={() => setShowReaprobarModal(false)}>
+            <div className={styles.modal} onClick={e => e.stopPropagation()}>
+              <div className={styles.modalHeader}>
+                <h2>⚠️ Confirmar Re-aprobación</h2>
+                <button 
+                  className={styles.modalClose} 
+                  onClick={() => setShowReaprobarModal(false)}
+                  disabled={loadingVistoBueno}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className={styles.modalBody}>
+                <div className={styles.warningBox}>
+                  <p><strong>Anteriormente rechazaste estas horas.</strong></p>
+                  <p>
+                    Por favor, revisa <strong>COMPLETAMENTE</strong> todos los detalles 
+                    de las horas trabajadas antes de aprobar.
+                  </p>
+                  <p>¿Estás seguro de que ahora todo está correcto?</p>
+                </div>
+              </div>
+
+              <div className={styles.modalFooter}>
+                <button 
+                  className={styles.modalButtonCancel}
+                  onClick={() => setShowReaprobarModal(false)}
+                  disabled={loadingVistoBueno}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  className={styles.modalButtonConfirm}
+                  onClick={ejecutarAprobacion}
+                  disabled={loadingVistoBueno}
+                >
+                  {loadingVistoBueno ? 'Procesando...' : 'Sí, Aprobar Ahora'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

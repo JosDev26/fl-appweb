@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { checkStandardRateLimit, authBurstRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+import { checkStandardRateLimit, sessionVerifyRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+
+// Configuración de límites para códigos de invitación
+const MAX_MAX_USES = 100 // Máximo número de usos permitido
+const MAX_EXPIRES_HOURS = 720 // Máximo tiempo de expiración (30 días)
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -67,14 +71,15 @@ async function verifyDevAdminSession(request: Request): Promise<{ valid: boolean
       const identifier = `session-verify:${clientIP}`
       
       try {
-        const result = await authBurstRateLimit.limit(identifier)
+        const result = await sessionVerifyRateLimit.limit(identifier)
         if (!result.success) {
           console.warn('[Session Verify] Rate limit exceeded for IP:', clientIP)
           return { valid: false, error: 'Invalid admin session' }
         }
       } catch (error) {
-        console.error('[Session Verify] Rate limit check failed:', error)
-        // Fail open on rate limit errors
+        // Fail-closed: Si Redis falla, rechazar la solicitud por seguridad
+        console.error('[Session Verify] Rate limit check failed - blocking request:', error)
+        return { valid: false, error: 'Service temporarily unavailable' }
       }
     }
 
@@ -168,6 +173,15 @@ export async function POST(request: NextRequest) {
   const rateLimitResponse = await checkStandardRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
 
+  // Verificar que el usuario es admin antes de crear códigos
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado. Se requiere sesión de administrador.' },
+      { status: 401 }
+    )
+  }
+
   try {
     const body = await request.json()
     const { 
@@ -192,9 +206,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validar límite superior de maxUses
+    if (maxUses > MAX_MAX_USES) {
+      return NextResponse.json(
+        { error: `maxUses no puede exceder ${MAX_MAX_USES}` },
+        { status: 400 }
+      )
+    }
+
     if (typeof expiresInHours !== 'number' || expiresInHours < 1) {
       return NextResponse.json(
         { error: 'expiresInHours debe ser un número mayor a 0' },
+        { status: 400 }
+      )
+    }
+
+    // Validar límite superior de expiresInHours
+    if (expiresInHours > MAX_EXPIRES_HOURS) {
+      return NextResponse.json(
+        { error: `expiresInHours no puede exceder ${MAX_EXPIRES_HOURS} (30 días)` },
         { status: 400 }
       )
     }

@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
 import { checkAuthRateLimit } from '@/lib/rate-limit'
+import { validatePassword } from '@/lib/validators/password'
+import { validateIdentification, buildInternalEmail } from '@/lib/validators/identification'
+
+// Tipos de cliente permitidos
+const ALLOWED_TIPOS = ['empresa', 'cliente'] as const
+type TipoCliente = typeof ALLOWED_TIPOS[number]
 
 // Cliente de Supabase con service_role
 const supabaseAdmin = createClient(
@@ -15,6 +21,50 @@ const supabaseAdmin = createClient(
   }
 )
 
+/**
+ * Busca un usuario por email usando paginación
+ * Supabase Auth no soporta filtrado por email en listUsers, así que iteramos
+ */
+async function findAuthUserByEmail(email: string): Promise<{ id: string } | null> {
+  const perPage = 100
+  let page = 1
+  const maxPages = 50 // Límite de seguridad para evitar loops infinitos
+  
+  while (page <= maxPages) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage
+    })
+    
+    if (error) {
+      console.error('Error listando usuarios en página', page, ':', error)
+      break
+    }
+    
+    const users = data?.users || []
+    
+    // Si no hay más usuarios, terminar
+    if (users.length === 0) {
+      break
+    }
+    
+    // Buscar el usuario por email
+    const found = users.find(u => u.email === email)
+    if (found) {
+      return { id: found.id }
+    }
+    
+    // Si hay menos usuarios que el perPage, es la última página
+    if (users.length < perPage) {
+      break
+    }
+    
+    page++
+  }
+  
+  return null
+}
+
 export async function POST(request: NextRequest) {
   // Rate limiting: 5 requests per 10 min + 20 per hour per IP
   const rateLimitResponse = await checkAuthRateLimit(request)
@@ -23,45 +73,73 @@ export async function POST(request: NextRequest) {
   try {
     const { identificacion, password, tipo } = await request.json()
 
-    if (!identificacion || !password || !tipo) {
+    // Validar y sanitizar identificación
+    const idValidation = validateIdentification(identificacion)
+    if (!idValidation.isValid) {
       return NextResponse.json(
-        { error: 'Identificación, contraseña y tipo son requeridos' },
+        { error: idValidation.error },
+        { status: 400 }
+      )
+    }
+    const sanitizedIdentificacion = idValidation.sanitized
+
+    // Validar contraseña con el validador compartido
+    const passwordValidation = validatePassword(password)
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        { error: 'Contraseña inválida', details: passwordValidation.errors },
         { status: 400 }
       )
     }
 
-    // Validar requisitos de contraseña
-    if (password.length < 8) {
+    // Validar tipo contra whitelist
+    if (!tipo || !ALLOWED_TIPOS.includes(tipo)) {
       return NextResponse.json(
-        { error: 'La contraseña debe tener al menos 8 caracteres' },
+        { error: `Tipo inválido. Debe ser uno de: ${ALLOWED_TIPOS.join(', ')}` },
         { status: 400 }
       )
     }
+    const validatedTipo = tipo as TipoCliente
 
-    const tabla = tipo === 'empresa' ? 'empresas' : 'usuarios'
-    const emailInterno = `${identificacion}@clientes.interno`
+    // Mapear tipo a tabla
+    const tabla = validatedTipo === 'empresa' ? 'empresas' : 'usuarios'
+    const emailInterno = buildInternalEmail(sanitizedIdentificacion)
 
     // 1. Buscar el registro en la base de datos
     const { data: registro, error: selectError } = await supabase
       .from(tabla)
       .select('id, nombre, cedula')
-      .eq('cedula', identificacion)
+      .eq('cedula', sanitizedIdentificacion)
       .single()
 
     if (selectError || !registro) {
       return NextResponse.json(
-        { error: `${tipo === 'empresa' ? 'Empresa' : 'Usuario'} no encontrado` },
+        { error: `${validatedTipo === 'empresa' ? 'Empresa' : 'Usuario'} no encontrado` },
         { status: 404 }
       )
     }
 
-    // 2. Eliminar usuario existente en Supabase Auth si existe
-    const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers()
-    const existingAuthUser = authUsers?.users.find(u => u.email === emailInterno)
+    // 2. Buscar y eliminar usuario existente en Supabase Auth si existe (con paginación)
+    const existingAuthUser = await findAuthUserByEmail(emailInterno)
     
     if (existingAuthUser) {
-      await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id)
-      console.log('✅ Usuario existente eliminado de Supabase Auth')
+      try {
+        const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(existingAuthUser.id)
+        if (deleteError) {
+          console.error('Error eliminando usuario existente de Auth:', deleteError)
+          return NextResponse.json(
+            { error: 'Error al preparar la recreación de contraseña. Intente nuevamente.' },
+            { status: 500 }
+          )
+        }
+        console.log('✅ Usuario existente eliminado de Supabase Auth:', existingAuthUser.id)
+      } catch (deleteError) {
+        console.error('Error eliminando usuario existente de Auth:', deleteError)
+        return NextResponse.json(
+          { error: 'Error al preparar la recreación de contraseña' },
+          { status: 500 }
+        )
+      }
     }
 
     // 3. Crear nuevo usuario en Supabase Auth
@@ -70,20 +148,32 @@ export async function POST(request: NextRequest) {
       password: password,
       email_confirm: true,
       user_metadata: {
-        cedula: identificacion,
+        cedula: sanitizedIdentificacion,
         nombre: registro.nombre,
-        tipo: tipo,
+        tipo: validatedTipo,
         user_id: registro.id
       }
     })
 
     if (authError) {
       console.error('Error creando usuario en Supabase Auth:', authError)
+      
+      // Manejar error de email ya registrado
+      if (authError.code === 'email_exists' || authError.message?.includes('already been registered')) {
+        return NextResponse.json(
+          { error: 'Esta cuenta ya está registrada. Si olvidó su contraseña, use la opción de recuperar contraseña.' },
+          { status: 409 }
+        )
+      }
+      
       return NextResponse.json(
         { error: 'Error al crear la cuenta de autenticación' },
         { status: 500 }
       )
     }
+
+    // Guardar el ID del usuario creado para posible rollback
+    const createdUserId = authData.user?.id
 
     // 4. Actualizar registro en la base de datos (solo marcar como registrado)
     const { error: updateError } = await supabase
@@ -92,10 +182,21 @@ export async function POST(request: NextRequest) {
         estaRegistrado: true,
         updated_at: new Date().toISOString()
       })
-      .eq('cedula', identificacion)
+      .eq('cedula', sanitizedIdentificacion)
 
     if (updateError) {
       console.error('Error actualizando registro:', updateError)
+      
+      // Rollback: eliminar usuario de Auth si la actualización en DB falla
+      if (createdUserId) {
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+          console.log('Rollback: Usuario eliminado de Auth debido a error en DB')
+        } catch (rollbackError) {
+          console.error('Error en rollback al eliminar usuario de Auth:', rollbackError)
+        }
+      }
+      
       return NextResponse.json(
         { error: 'Error al actualizar la contraseña' },
         { status: 500 }

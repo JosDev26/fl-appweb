@@ -99,7 +99,7 @@ export default function ComprobantePage() {
       }
 
       const data = await response.json()
-      // Si es empresa principal de grupo, usar el gran total que incluye todas las empresas
+      // Si es empresa principal de grupo, usar el total que incluye todas las empresas
       const totalFinal = data.esGrupoPrincipal && data.granTotalAPagar 
         ? data.granTotalAPagar 
         : data.totalAPagar

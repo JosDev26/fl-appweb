@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
 import { checkAuthRateLimit } from '@/lib/rate-limit'
+import { validatePassword } from '@/lib/validators/password'
+import { validateIdentification, buildInternalEmail } from '@/lib/validators/identification'
 
 // Cliente de Supabase con service_role para crear usuarios
 const supabaseAdmin = createClient(
@@ -23,26 +25,30 @@ export async function POST(request: NextRequest) {
   try {
     const { identificacion, password } = await request.json()
 
-    if (!identificacion || !password) {
+    // Validar y sanitizar identificación
+    const idValidation = validateIdentification(identificacion)
+    if (!idValidation.isValid) {
       return NextResponse.json(
-        { error: 'Identificación y contraseña son requeridos' },
+        { error: idValidation.error },
+        { status: 400 }
+      )
+    }
+    const sanitizedIdentificacion = idValidation.sanitized
+
+    // Validar contraseña con el validador compartido
+    const passwordValidation = validatePassword(password)
+    if (!passwordValidation.isValid) {
+      return NextResponse.json(
+        { error: 'Contraseña inválida', details: passwordValidation.errors },
         { status: 400 }
       )
     }
 
-    // Validar requisitos de contraseña
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: 'La contraseña debe tener al menos 8 caracteres' },
-        { status: 400 }
-      )
-    }
-
-    // Buscar empresa
+    // Buscar empresa (usando parámetro sanitizado)
     const { data: empresa, error: selectError } = await supabase
       .from('empresas')
       .select('id, nombre, cedula, password, estaRegistrado')
-      .eq('cedula', identificacion)
+      .eq('cedula', sanitizedIdentificacion)
       .single()
 
     if (selectError || !empresa) {
@@ -60,8 +66,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Crear email interno basado en identificación
-    const emailInterno = `${identificacion}@clientes.interno`
+    // Crear email interno basado en identificación sanitizada
+    const emailInterno = buildInternalEmail(sanitizedIdentificacion)
 
     // 1. Crear usuario en Supabase Auth (maneja la contraseña de forma segura)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -69,7 +75,7 @@ export async function POST(request: NextRequest) {
       password: password,
       email_confirm: true,
       user_metadata: {
-        cedula: identificacion,
+        cedula: sanitizedIdentificacion,
         nombre: empresa.nombre,
         tipo: 'empresa',
         user_id: empresa.id
@@ -78,11 +84,23 @@ export async function POST(request: NextRequest) {
 
     if (authError) {
       console.error('Error creando empresa en Supabase Auth:', authError)
+      
+      // Manejar error de email ya registrado
+      if (authError.code === 'email_exists' || authError.message?.includes('already been registered')) {
+        return NextResponse.json(
+          { error: 'Esta empresa ya tiene una cuenta registrada. Si olvidó su contraseña, use la opción de recuperar contraseña.' },
+          { status: 409 }
+        )
+      }
+      
       return NextResponse.json(
         { error: 'Error al crear la cuenta de autenticación' },
         { status: 500 }
       )
     }
+
+    // Guardar el ID del usuario creado para posible rollback
+    const createdUserId = authData.user?.id
 
     // 2. Actualizar la empresa en nuestra tabla (solo marcar como registrado)
     // El correo interno solo existe en Supabase Auth, no se guarda en la tabla
@@ -92,10 +110,21 @@ export async function POST(request: NextRequest) {
         estaRegistrado: true,
         updated_at: new Date().toISOString()
       })
-      .eq('cedula', identificacion)
+      .eq('cedula', sanitizedIdentificacion)
 
     if (updateError) {
       console.error('Error al actualizar empresa:', updateError)
+      
+      // Rollback: eliminar usuario de Auth si la actualización en DB falla
+      if (createdUserId) {
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+          console.log('Rollback: Usuario eliminado de Auth debido a error en DB')
+        } catch (deleteError) {
+          console.error('Error en rollback al eliminar usuario de Auth:', deleteError)
+        }
+      }
+      
       return NextResponse.json(
         { error: 'Error al crear la contraseña' },
         { status: 500 }

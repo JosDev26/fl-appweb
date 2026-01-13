@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { authBurstRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+import { sessionVerifyRateLimit, isRedisConfigured } from '@/lib/rate-limit'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -70,20 +70,28 @@ export interface DevAdminSessionResult {
  */
 export async function verifyDevAdminSession(request: Request): Promise<DevAdminSessionResult> {
   try {
-    // Rate limiting for session verification
+    // Rate limiting for session verification - using a higher limit since this is just cookie verification
+    // Not login attempts. Use 100 requests per 10 minutes for session checks.
     if (isRedisConfigured()) {
       const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
                        request.headers.get('x-real-ip') || '127.0.0.1'
-      const identifier = `session-verify:${clientIP}`
+      // Use a different identifier prefix to avoid sharing rate limit with login attempts
+      const identifier = `dev-session-check:${clientIP}`
       
       try {
-        const result = await authBurstRateLimit.limit(identifier)
+        // Use sessionVerifyRateLimit (100/10min) - more permissive for cookie checks
+        const result = await sessionVerifyRateLimit.limit(identifier)
         if (!result.success) {
           if (isDev) console.warn('[Session Verify] Rate limit exceeded for IP:', clientIP)
           return { valid: false, error: 'Rate limit exceeded' }
         }
       } catch (error) {
-        if (isDev) console.error('[Session Verify] Rate limit check failed:', error instanceof Error ? error.message : 'Unknown error')
+        // If rate limit check fails, allow the request through in dev
+        if (isDev) {
+          console.error('[Session Verify] Rate limit check failed, allowing in dev:', error instanceof Error ? error.message : 'Unknown error')
+        } else {
+          return { valid: false, error: 'Rate limit check failed' }
+        }
       }
     }
 

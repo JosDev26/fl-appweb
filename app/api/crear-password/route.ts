@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { createClient } from '@supabase/supabase-js'
 import { checkAuthRateLimit } from '@/lib/rate-limit'
+import { validatePassword } from '@/lib/validators/password'
+import { validateIdentification, buildInternalEmail } from '@/lib/validators/identification'
 
 // Cliente de Supabase con service_role para crear usuarios
 const supabaseAdmin = createClient(
@@ -15,36 +17,6 @@ const supabaseAdmin = createClient(
   }
 )
 
-// Función para validar la contraseña
-function validatePassword(password: string): { isValid: boolean; errors: string[] } {
-  const errors: string[] = []
-  
-  if (password.length < 8) {
-    errors.push('La contraseña debe tener al menos 8 caracteres')
-  }
-  
-  if (!/[A-Z]/.test(password)) {
-    errors.push('La contraseña debe contener al menos una letra mayúscula')
-  }
-  
-  if (!/[a-z]/.test(password)) {
-    errors.push('La contraseña debe contener al menos una letra minúscula')
-  }
-  
-  if (!/\d/.test(password)) {
-    errors.push('La contraseña debe contener al menos un número')
-  }
-  
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    errors.push('La contraseña debe contener al menos un carácter especial')
-  }
-  
-  return {
-    isValid: errors.length === 0,
-    errors
-  }
-}
-
 export async function POST(request: NextRequest) {
   // Rate limiting: 5 requests per 10 min + 20 per hour per IP
   const rateLimitResponse = await checkAuthRateLimit(request)
@@ -53,15 +25,17 @@ export async function POST(request: NextRequest) {
   try {
     const { identificacion, password } = await request.json()
 
-    // Validar que se proporcionen todos los datos
-    if (!identificacion || !password) {
+    // Validar y sanitizar identificación
+    const idValidation = validateIdentification(identificacion)
+    if (!idValidation.isValid) {
       return NextResponse.json(
-        { error: 'La identificación y contraseña son requeridas' },
+        { error: idValidation.error },
         { status: 400 }
       )
     }
+    const sanitizedIdentificacion = idValidation.sanitized
 
-    // Validar la contraseña
+    // Validar la contraseña con el validador compartido
     const passwordValidation = validatePassword(password)
     if (!passwordValidation.isValid) {
       return NextResponse.json(
@@ -70,11 +44,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Buscar el usuario por cédula
+    // Buscar el usuario por cédula (usando parámetro sanitizado)
     const { data: usuario, error: searchError } = await supabase
       .from('usuarios')
       .select('id, cedula, nombre, estaRegistrado, password')
-      .eq('cedula', identificacion)
+      .eq('cedula', sanitizedIdentificacion)
       .single()
 
     if (searchError || !usuario) {
@@ -92,8 +66,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Crear email interno basado en identificación
-    const emailInterno = `${identificacion}@clientes.interno`
+    // Crear email interno basado en identificación sanitizada
+    const emailInterno = buildInternalEmail(sanitizedIdentificacion)
 
     // 1. Crear usuario en Supabase Auth (maneja la contraseña de forma segura)
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -101,7 +75,7 @@ export async function POST(request: NextRequest) {
       password: password,
       email_confirm: true, // Auto-confirmar email
       user_metadata: {
-        cedula: identificacion,
+        cedula: sanitizedIdentificacion,
         nombre: usuario.nombre,
         tipo: 'cliente',
         user_id: usuario.id
@@ -110,11 +84,23 @@ export async function POST(request: NextRequest) {
 
     if (authError) {
       console.error('Error creando usuario en Supabase Auth:', authError)
+      
+      // Manejar error de email ya registrado
+      if (authError.code === 'email_exists' || authError.message?.includes('already been registered')) {
+        return NextResponse.json(
+          { error: 'Este usuario ya tiene una cuenta registrada. Si olvidó su contraseña, use la opción de recuperar contraseña.' },
+          { status: 409 }
+        )
+      }
+      
       return NextResponse.json(
         { error: 'Error al crear la cuenta de autenticación' },
         { status: 500 }
       )
     }
+
+    // Guardar el ID del usuario creado para posible rollback
+    const createdUserId = authData.user?.id
 
     // 2. Actualizar el usuario en nuestra tabla (solo marcar como registrado)
     // NO sobrescribir el correo - los usuarios ya tienen su correo real
@@ -127,6 +113,17 @@ export async function POST(request: NextRequest) {
 
     if (updateError) {
       console.error('Error actualizando usuario:', updateError)
+      
+      // Rollback: eliminar usuario de Auth si la actualización en DB falla
+      if (createdUserId) {
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(createdUserId)
+          console.log('Rollback: Usuario eliminado de Auth debido a error en DB')
+        } catch (deleteError) {
+          console.error('Error en rollback al eliminar usuario de Auth:', deleteError)
+        }
+      }
+      
       return NextResponse.json(
         { error: 'Error al guardar la contraseña' },
         { status: 500 }

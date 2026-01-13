@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { checkStandardRateLimit, authBurstRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+import { checkStandardRateLimit, sessionVerifyRateLimit, isRedisConfigured } from '@/lib/rate-limit'
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -36,7 +36,7 @@ async function verifyDevAdminSession(request: Request): Promise<{ valid: boolean
       const identifier = `session-verify:${clientIP}`
       
       try {
-        const result = await authBurstRateLimit.limit(identifier)
+        const result = await sessionVerifyRateLimit.limit(identifier)
         if (!result.success) {
           return { valid: false, error: 'Rate limit exceeded' }
         }

@@ -9,6 +9,17 @@ const devLog = (...args: unknown[]) => {
   if (isDev) console.log(...args)
 }
 
+// ===== URL VALIDATION HELPER =====
+const isHttpUrl = (url: string | null | undefined): url is string => {
+  if (!url || typeof url !== 'string') return false
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 // ===== INTERFACES =====
 interface SyncResult {
   success: boolean
@@ -73,6 +84,32 @@ interface ClientVistoBueno {
   cedula: string
   darVistoBueno: boolean
   tipo: 'cliente' | 'empresa'
+}
+
+// Tipos para Estado Mensual de Visto Bueno
+interface VistoBuenoRecord {
+  id: string
+  clientId: string
+  clientType: 'cliente' | 'empresa'
+  clientName: string
+  clientCedula: string
+  estado: 'pendiente' | 'aprobado' | 'rechazado'
+  fechaVistoBueno: string | null
+  fechaRechazo: string | null
+  motivoRechazo: string | null
+  archivoUrl: string | null
+}
+
+interface VistoBuenoEstadoMensual {
+  aprobados: VistoBuenoRecord[]
+  rechazados: VistoBuenoRecord[]
+  pendientes: VistoBuenoRecord[]
+  counts: {
+    aprobados: number
+    rechazados: number
+    pendientes: number
+    total: number
+  }
 }
 
 interface GrupoEmpresa {
@@ -232,6 +269,15 @@ export default function DevPage() {
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([])
   const [monthInvoices, setMonthInvoices] = useState<InvoiceFile[]>([])
   const [clientesVistoBueno, setClientesVistoBueno] = useState<ClientVistoBueno[]>([])
+  
+  // Estados para Visto Bueno - Estado Mensual
+  const [vistoBuenoTab, setVistoBuenoTab] = useState<'config' | 'estado'>('config')
+  const [vistoBuenoMes, setVistoBuenoMes] = useState<string>('')
+  const [vistoBuenoEstado, setVistoBuenoEstado] = useState<VistoBuenoEstadoMensual | null>(null)
+  const [loadingVistoBuenoEstado, setLoadingVistoBuenoEstado] = useState(false)
+  const [showMotivoModal, setShowMotivoModal] = useState(false)
+  const [selectedRechazo, setSelectedRechazo] = useState<VistoBuenoRecord | null>(null)
+  const [forzandoAprobacion, setForzandoAprobacion] = useState<string | null>(null)
   
   // Estados de loading por sección
   const [loadingReceipts, setLoadingReceipts] = useState(false)
@@ -645,6 +691,71 @@ export default function DevPage() {
       }
     } catch (error) {
       alert('Error actualizando cliente')
+    }
+  }
+
+  // ESTADO MENSUAL VISTO BUENO
+  const loadVistoBuenoEstado = async (mes?: string) => {
+    const mesParam = mes || vistoBuenoMes
+    if (!mesParam) return
+    
+    setLoadingVistoBuenoEstado(true)
+    try {
+      const res = await fetch(`/api/visto-bueno/admin?mes=${mesParam}`, {
+        credentials: 'include' // Incluir cookies de sesión de dev admin
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        // Combinar data y counts en un solo objeto
+        setVistoBuenoEstado({
+          ...data.data,
+          counts: data.counts
+        })
+      } else {
+        console.error('Error cargando estado visto bueno:', data.error)
+        setVistoBuenoEstado(null)
+      }
+    } catch (error) {
+      console.error('Error cargando estado visto bueno:', error)
+      setVistoBuenoEstado(null)
+    } finally {
+      setLoadingVistoBuenoEstado(false)
+    }
+  }
+
+  const handleForzarAprobacion = async (record: VistoBuenoRecord) => {
+    if (!vistoBuenoMes) {
+      alert('Debe seleccionar un mes primero')
+      return
+    }
+    if (!confirm(`¿Forzar aprobación para ${record.clientName}? Esto eliminará el rechazo actual.`)) return
+    
+    const compositeKey = `${record.clientType}:${record.clientId}`
+    setForzandoAprobacion(compositeKey)
+    try {
+      const res = await fetch('/api/visto-bueno/admin/forzar', {
+        method: 'POST',
+        credentials: 'include', // Incluir cookies de sesión de dev admin
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: record.clientId,
+          clientType: record.clientType,
+          mes: vistoBuenoMes
+        })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        alert('Aprobación forzada correctamente')
+        await loadVistoBuenoEstado()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      alert('Error forzando aprobación')
+    } finally {
+      setForzandoAprobacion(null)
     }
   }
 
@@ -1810,48 +1921,311 @@ export default function DevPage() {
             <div className={styles.sectionHeader}>
               <div>
                 <h2 className={styles.sectionTitle}>Gestión de Visto Bueno</h2>
-                <p className={styles.sectionDescription}>Activa/desactiva la opción "Dar visto bueno" por cliente</p>
+                <p className={styles.sectionDescription}>Configuración y estado mensual del visto bueno</p>
               </div>
             </div>
-            {loadingVistoBueno ? (
-              <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando clientes...</p></div>
-            ) : !clientesVistoBueno || clientesVistoBueno.length === 0 ? (
-              <div className={styles.emptyState}>No hay clientes registrados</div>
-            ) : (
-              <div className={styles.table}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Cédula</th>
-                      <th>Tipo</th>
-                      <th>Dar Visto Bueno</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clientesVistoBueno.map((cliente) => (
-                      <tr key={cliente.id}>
-                        <td>{cliente.nombre}</td>
-                        <td>{cliente.cedula}</td>
-                        <td><span className={styles.badge}>{cliente.tipo}</span></td>
-                        <td>
-                          <span className={`${styles.badge} ${cliente.darVistoBueno ? styles.badgeSuccess : styles.badgeDanger}`}>
-                            {cliente.darVistoBueno ? 'Activo' : 'Inactivo'}
-                          </span>
-                        </td>
-                        <td>
-                          <button 
-                            className={`${styles.button} ${cliente.darVistoBueno ? styles.buttonDanger : styles.buttonSuccess}`}
-                            onClick={() => toggleVistoBueno(cliente)}
-                          >
-                            {cliente.darVistoBueno ? 'Desactivar' : 'Activar'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            
+            {/* Tabs */}
+            <div className={styles.tabsContainer} role="tablist" aria-label="Visto Bueno">
+              <button 
+                className={`${styles.tab} ${vistoBuenoTab === 'config' ? styles.tabActive : ''}`}
+                onClick={() => setVistoBuenoTab('config')}
+                role="tab"
+                aria-selected={vistoBuenoTab === 'config'}
+                aria-controls="tabpanel-config"
+                id="tab-config"
+              >
+                Configuración
+              </button>
+              <button 
+                className={`${styles.tab} ${vistoBuenoTab === 'estado' ? styles.tabActive : ''}`}
+                onClick={() => {
+                  setVistoBuenoTab('estado')
+                  if (!vistoBuenoEstado) {
+                    // Inicializar con mes anterior
+                    const now = new Date()
+                    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+                    const mesStr = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`
+                    setVistoBuenoMes(mesStr)
+                    loadVistoBuenoEstado(mesStr)
+                  }
+                }}
+                role="tab"
+                aria-selected={vistoBuenoTab === 'estado'}
+                aria-controls="tabpanel-estado"
+                id="tab-estado"
+              >
+                Estado Mensual
+              </button>
+            </div>
+
+            {/* Tab: Configuración */}
+            {vistoBuenoTab === 'config' && (
+              <div role="tabpanel" id="tabpanel-config" aria-labelledby="tab-config">
+                {loadingVistoBueno ? (
+                  <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando clientes...</p></div>
+                ) : !clientesVistoBueno || clientesVistoBueno.length === 0 ? (
+                  <div className={styles.emptyState}>No hay clientes registrados</div>
+                ) : (
+                  <div className={styles.table}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Nombre</th>
+                          <th>Cédula</th>
+                          <th>Tipo</th>
+                          <th>Dar Visto Bueno</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientesVistoBueno.map((cliente) => (
+                          <tr key={cliente.id}>
+                            <td>{cliente.nombre}</td>
+                            <td>{cliente.cedula}</td>
+                            <td><span className={styles.badge}>{cliente.tipo}</span></td>
+                            <td>
+                              <span className={`${styles.badge} ${cliente.darVistoBueno ? styles.badgeSuccess : styles.badgeDanger}`}>
+                                {cliente.darVistoBueno ? 'Activo' : 'Inactivo'}
+                              </span>
+                            </td>
+                            <td>
+                              <button 
+                                className={`${styles.button} ${cliente.darVistoBueno ? styles.buttonDanger : styles.buttonSuccess}`}
+                                onClick={() => toggleVistoBueno(cliente)}
+                              >
+                                {cliente.darVistoBueno ? 'Desactivar' : 'Activar'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: Estado Mensual */}
+            {vistoBuenoTab === 'estado' && (
+              <div role="tabpanel" id="tabpanel-estado" aria-labelledby="tab-estado">
+                {/* Selector de mes */}
+                <div className={styles.card} style={{ marginBottom: '1.5rem' }}>
+                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <label className={styles.formLabel} style={{ margin: 0 }}>Mes:</label>
+                    <input 
+                      type="month" 
+                      className={styles.input}
+                      value={vistoBuenoMes}
+                      onChange={(e) => {
+                        setVistoBuenoMes(e.target.value)
+                        loadVistoBuenoEstado(e.target.value)
+                      }}
+                      style={{ width: 'auto' }}
+                    />
+                    <button 
+                      className={styles.button}
+                      onClick={() => loadVistoBuenoEstado()}
+                      disabled={loadingVistoBuenoEstado}
+                    >
+                      {loadingVistoBuenoEstado ? 'Cargando...' : 'Actualizar'}
+                    </button>
+                  </div>
+                </div>
+
+                {loadingVistoBuenoEstado ? (
+                  <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando estado...</p></div>
+                ) : !vistoBuenoEstado ? (
+                  <div className={styles.emptyState}>Selecciona un mes para ver el estado</div>
+                ) : (
+                  <>
+                    {/* Resumen */}
+                    <div className={styles.statsGrid} style={{ marginBottom: '1.5rem' }}>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Aprobados</span>
+                        <span className={styles.statValue} style={{ color: '#16a34a' }}>{vistoBuenoEstado.counts.aprobados}</span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Rechazados</span>
+                        <span className={styles.statValue} style={{ color: '#dc2626' }}>{vistoBuenoEstado.counts.rechazados}</span>
+                      </div>
+                      <div className={styles.statCard}>
+                        <span className={styles.statLabel}>Pendientes</span>
+                        <span className={styles.statValue} style={{ color: '#ca8a04' }}>{vistoBuenoEstado.counts.pendientes}</span>
+                      </div>
+                    </div>
+
+                    {/* Rechazados */}
+                    {vistoBuenoEstado.rechazados.length > 0 && (
+                      <div className={styles.card} style={{ marginBottom: '1.5rem', borderLeft: '4px solid #dc2626' }}>
+                        <h3 style={{ marginBottom: '1rem', color: '#dc2626' }}>
+                          ❌ Rechazados ({vistoBuenoEstado.rechazados.length})
+                        </h3>
+                        <div className={styles.table}>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Cliente</th>
+                                <th>Tipo</th>
+                                <th>Fecha Rechazo</th>
+                                <th>Motivo</th>
+                                <th>Archivo</th>
+                                <th>Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {vistoBuenoEstado.rechazados.map((record) => (
+                                <tr key={`${record.clientType}:${record.clientId}`}>
+                                  <td>
+                                    <strong>{record.clientName}</strong>
+                                    <br />
+                                    <small style={{ color: '#666' }}>{record.clientCedula}</small>
+                                  </td>
+                                  <td><span className={styles.badge}>{record.clientType}</span></td>
+                                  <td>{record.fechaRechazo ? new Date(record.fechaRechazo).toLocaleDateString('es-CR') : '-'}</td>
+                                  <td>
+                                    {record.motivoRechazo ? (
+                                      <button 
+                                        className={styles.buttonLink}
+                                        onClick={() => {
+                                          setSelectedRechazo(record)
+                                          setShowMotivoModal(true)
+                                        }}
+                                      >
+                                        Ver motivo
+                                      </button>
+                                    ) : '-'}
+                                  </td>
+                                  <td>
+                                    {isHttpUrl(record.archivoUrl) ? (
+                                      <a href={record.archivoUrl} target="_blank" rel="noopener noreferrer" className={styles.buttonLink}>
+                                        Ver archivo
+                                      </a>
+                                    ) : '-'}
+                                  </td>
+                                  <td>
+                                    <button 
+                                      className={`${styles.button} ${styles.buttonWarning}`}
+                                      onClick={() => handleForzarAprobacion(record)}
+                                      disabled={!vistoBuenoMes || forzandoAprobacion === `${record.clientType}:${record.clientId}`}
+                                    >
+                                      {forzandoAprobacion === `${record.clientType}:${record.clientId}` ? 'Forzando...' : 'Forzar Aprobación'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Aprobados */}
+                    {vistoBuenoEstado.aprobados.length > 0 && (
+                      <div className={styles.card} style={{ marginBottom: '1.5rem', borderLeft: '4px solid #16a34a' }}>
+                        <h3 style={{ marginBottom: '1rem', color: '#16a34a' }}>
+                          ✅ Aprobados ({vistoBuenoEstado.aprobados.length})
+                        </h3>
+                        <div className={styles.table}>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Cliente</th>
+                                <th>Tipo</th>
+                                <th>Fecha Aprobación</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {vistoBuenoEstado.aprobados.map((record) => (
+                                <tr key={`${record.clientType}:${record.clientId}`}>
+                                  <td>
+                                    <strong>{record.clientName}</strong>
+                                    <br />
+                                    <small style={{ color: '#666' }}>{record.clientCedula}</small>
+                                  </td>
+                                  <td><span className={styles.badge}>{record.clientType}</span></td>
+                                  <td>{record.fechaVistoBueno ? new Date(record.fechaVistoBueno).toLocaleDateString('es-CR') : '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pendientes */}
+                    {vistoBuenoEstado.pendientes.length > 0 && (
+                      <div className={styles.card} style={{ marginBottom: '1.5rem', borderLeft: '4px solid #ca8a04' }}>
+                        <h3 style={{ marginBottom: '1rem', color: '#ca8a04' }}>
+                          ⏳ Pendientes ({vistoBuenoEstado.pendientes.length})
+                        </h3>
+                        <div className={styles.table}>
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Cliente</th>
+                                <th>Tipo</th>
+                                <th>Cédula</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {vistoBuenoEstado.pendientes.map((record) => (
+                                <tr key={`${record.clientType}:${record.clientId}`}>
+                                  <td><strong>{record.clientName}</strong></td>
+                                  <td><span className={styles.badge}>{record.clientType}</span></td>
+                                  <td>{record.clientCedula}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {vistoBuenoEstado.aprobados.length === 0 && 
+                     vistoBuenoEstado.rechazados.length === 0 && 
+                     vistoBuenoEstado.pendientes.length === 0 && (
+                      <div className={styles.emptyState}>
+                        No hay registros para este mes
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Modal para ver motivo */}
+            {showMotivoModal && selectedRechazo && (
+              <div className={styles.modalOverlay} onClick={() => setShowMotivoModal(false)}>
+                <div 
+                  className={styles.modal} 
+                  onClick={(e) => e.stopPropagation()}
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="modal-motivo-title"
+                >
+                  <div className={styles.modalHeader}>
+                    <h3 id="modal-motivo-title">Motivo de Rechazo</h3>
+                    <button className={styles.modalClose} onClick={() => setShowMotivoModal(false)} aria-label="Cerrar modal">×</button>
+                  </div>
+                  <div className={styles.modalBody}>
+                    <p><strong>Cliente:</strong> {selectedRechazo.clientName}</p>
+                    <p><strong>Fecha:</strong> {selectedRechazo.fechaRechazo ? new Date(selectedRechazo.fechaRechazo).toLocaleString('es-CR') : '-'}</p>
+                    <div style={{ marginTop: '1rem', padding: '1rem', background: '#f5f5f5', borderRadius: '0.5rem', whiteSpace: 'pre-wrap' }}>
+                      {selectedRechazo.motivoRechazo}
+                    </div>
+                    {isHttpUrl(selectedRechazo.archivoUrl) && (
+                      <div style={{ marginTop: '1rem' }}>
+                        <a href={selectedRechazo.archivoUrl} target="_blank" rel="noopener noreferrer" className={styles.button}>
+                          Ver Archivo Adjunto
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  <div className={styles.modalFooter}>
+                    <button className={styles.button} onClick={() => setShowMotivoModal(false)}>Cerrar</button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -3222,9 +3596,9 @@ export default function DevPage() {
                   })}
                 </div>
                 
-                {/* Gran Total */}
+                {/* Total */}
                 <div className={styles.deudasResumen}>
-                  <h3 className={styles.deudasResumenTitle}>GRAN TOTAL ({granTotalPago.count} clientes con modo pago)</h3>
+                  <h3 className={styles.deudasResumenTitle}>TOTAL ({granTotalPago.count} clientes con modo pago)</h3>
                   <div className={styles.deudasResumenGrid}>
                     <div>
                       <strong>Horas:</strong>

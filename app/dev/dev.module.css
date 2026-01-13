@@ -320,6 +320,86 @@
   background: #2e7d32;
 }
 
+.buttonWarning {
+  background: #f59e0b;
+  color: white;
+}
+
+.buttonWarning:hover:not(:disabled) {
+  background: #d97706;
+}
+
+.buttonLink {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  font-size: inherit;
+}
+
+.buttonLink:hover {
+  color: #1d4ed8;
+}
+
+/* Tabs */
+.tabsContainer {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 0.5rem;
+}
+
+.tab {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: #666;
+  border-radius: 0.5rem 0.5rem 0 0;
+  transition: all 0.2s ease;
+}
+
+.tab:hover {
+  background: rgba(25, 48, 75, 0.05);
+  color: #19304B;
+}
+
+.tabActive {
+  color: #19304B;
+  background: rgba(25, 48, 75, 0.1);
+  border-bottom: 2px solid #19304B;
+  margin-bottom: -2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tabsContainer {
+    border-bottom-color: rgba(250, 208, 44, 0.2);
+  }
+  .tab {
+    color: #999;
+  }
+  .tab:hover {
+    background: rgba(250, 208, 44, 0.05);
+    color: #FAD02C;
+  }
+  .tabActive {
+    color: #FAD02C;
+    background: rgba(250, 208, 44, 0.1);
+    border-bottom-color: #FAD02C;
+  }
+  .buttonLink {
+    color: #60a5fa;
+  }
+  .buttonLink:hover {
+    color: #93c5fd;
+  }
+}
+
 /* Grid de botones */
 .buttonGrid {
   display: grid;

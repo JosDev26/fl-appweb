@@ -12,6 +12,40 @@ VALUES (
   ARRAY['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']
 );
 
+-- ============================================
+-- BUCKET PARA RECHAZOS DE VISTO BUENO
+-- ============================================
+
+-- 1b. Crear bucket para archivos de rechazo de visto bueno
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'visto-bueno-rechazos',
+  'visto-bueno-rechazos',
+  false, -- privado, requiere autenticación
+  3145728, -- 3MB límite (suficiente para documentos escaneados)
+  ARRAY['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']
+) ON CONFLICT (id) DO NOTHING;
+
+-- Políticas RLS para el bucket de rechazos
+CREATE POLICY "Allow authenticated uploads to visto-bueno-rechazos"
+ON storage.objects FOR INSERT
+TO public
+WITH CHECK (bucket_id = 'visto-bueno-rechazos');
+
+CREATE POLICY "Allow authenticated reads from visto-bueno-rechazos"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'visto-bueno-rechazos');
+
+CREATE POLICY "Allow authenticated deletes from visto-bueno-rechazos"
+ON storage.objects FOR DELETE
+TO public
+USING (bucket_id = 'visto-bueno-rechazos');
+
+-- ============================================
+-- POLÍTICAS BUCKET PAYMENT-RECEIPTS (existente)
+-- ============================================
+
 -- 2. Políticas RLS para el bucket
 -- IMPORTANTE: Como usamos supabase client sin auth.uid(), necesitamos políticas más permisivas
 -- O usar service_role key en el backend

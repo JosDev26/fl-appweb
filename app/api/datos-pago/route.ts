@@ -46,14 +46,32 @@ async function getDatosEmpresa(
     trabajosPorHora = data || [];
   }
 
-  // Obtener gastos
-  const { data: gastos } = await supabase
+  // Obtener gastos (SIN FK join)
+  const { data: gastosRaw } = await supabase
     .from('gastos' as any)
-    .select(`id, producto, fecha, total_cobro, funcionarios:id_responsable (nombre)`)
+    .select('id, producto, fecha, total_cobro, id_responsable')
     .eq('id_cliente', empresaId)
     .gte('fecha', inicioMes)
     .lte('fecha', finMes)
     .order('fecha', { ascending: false });
+
+  // Enriquecer gastos con nombres de funcionarios
+  let gastos: any[] = [];
+  if (gastosRaw && gastosRaw.length > 0) {
+    const gastosResponsableIds = [...new Set((gastosRaw as any[]).map(g => g.id_responsable).filter(Boolean))];
+    let gastosFuncionariosMap = new Map<string, string>();
+    if (gastosResponsableIds.length > 0) {
+      const { data: gastosFuncionarios } = await supabase
+        .from('funcionarios')
+        .select('id, nombre')
+        .in('id', gastosResponsableIds);
+      (gastosFuncionarios || []).forEach((f: any) => gastosFuncionariosMap.set(f.id, f.nombre));
+    }
+    gastos = (gastosRaw as any[]).map(g => ({
+      ...g,
+      funcionarios: g.id_responsable ? { nombre: gastosFuncionariosMap.get(g.id_responsable) || 'Sin asignar' } : null
+    }));
+  }
 
   // Obtener solicitudes mensuales
   const { data: solicitudes } = await supabase
@@ -62,25 +80,67 @@ async function getDatosEmpresa(
     .eq('id_cliente', empresaId)
     .ilike('modalidad_pago', 'mensualidad');
 
-  // Obtener servicios profesionales (NO cancelados)
-  const { data: serviciosProfesionales } = await supabase
+  // Obtener servicios profesionales (NO cancelados) - SIN FK joins
+  const { data: serviciosProfesionalesRaw, error: spError } = await supabase
     .from('servicios_profesionales' as any)
-    .select(`
-      id, id_caso, id_servicio, fecha, costo, gastos, iva, total, estado_pago,
-      funcionarios:id_responsable (nombre),
-      lista_servicios:id_servicio (titulo)
-    `)
+    .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
     .eq('id_cliente', empresaId)
     .neq('estado_pago', 'cancelado')
     .gte('fecha', inicioMes)
     .lte('fecha', finMes)
     .order('fecha', { ascending: false });
 
+  if (spError) {
+    console.error('Error al obtener servicios profesionales en getDatosEmpresa:', spError);
+  }
+
+  // Enriquecer con datos de funcionarios y servicios (queries separadas)
+  let serviciosProfesionales: any[] = [];
+  if (serviciosProfesionalesRaw && serviciosProfesionalesRaw.length > 0) {
+    const responsableIds = [...new Set((serviciosProfesionalesRaw as any[]).map(s => s.id_responsable).filter(Boolean))];
+    const servicioIds = [...new Set((serviciosProfesionalesRaw as any[]).map(s => s.id_servicio).filter(Boolean))];
+
+    // Obtener funcionarios
+    let funcionariosMap = new Map<string, string>();
+    if (responsableIds.length > 0) {
+      const { data: funcionarios, error: funcionariosError } = await supabase
+        .from('funcionarios')
+        .select('id, nombre')
+        .in('id', responsableIds);
+      if (funcionariosError) {
+        if (isDev) console.error('Error al consultar funcionarios:', funcionariosError);
+      } else if (funcionarios) {
+        funcionarios.forEach((f: any) => funcionariosMap.set(f.id, f.nombre));
+      }
+    }
+
+    // Obtener servicios
+    let serviciosMap = new Map<string, string>();
+    if (servicioIds.length > 0) {
+      const { data: servicios, error: serviciosError } = await supabase
+        .from('lista_servicios' as any)
+        .select('id, titulo')
+        .in('id', servicioIds);
+      if (serviciosError) {
+        if (isDev) console.error('Error al consultar servicios:', serviciosError);
+      } else if (servicios) {
+        servicios.forEach((s: any) => serviciosMap.set(s.id, s.titulo));
+      }
+    }
+
+    // Mapear datos
+    serviciosProfesionales = (serviciosProfesionalesRaw as any[]).map(sp => ({
+      ...sp,
+      funcionarios: sp.id_responsable ? { nombre: funcionariosMap.get(sp.id_responsable) || 'Sin asignar' } : null,
+      lista_servicios: sp.id_servicio ? { titulo: serviciosMap.get(sp.id_servicio) || 'Sin título' } : null
+    }));
+  }
+
   return {
     trabajosPorHora: trabajosPorHora || [],
     gastos: gastos || [],
     solicitudes: solicitudes || [],
-    serviciosProfesionales: serviciosProfesionales || [],
+    serviciosProfesionales,
     empresa: empresaData ? {
       nombre: (empresaData as any).nombre,
       tarifa_hora: (empresaData as any).tarifa_hora || 90000,
@@ -250,18 +310,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Obtener gastos del mes anterior del cliente con detalles
-    const { data: gastos, error: gastosError } = await supabase
+    // Obtener gastos del mes anterior del cliente con detalles (SIN FK join)
+    const { data: gastosRaw, error: gastosError } = await supabase
       .from('gastos' as any)
-      .select(`
-        id,
-        producto,
-        fecha,
-        total_cobro,
-        funcionarios:id_responsable (
-          nombre
-        )
-      `)
+      .select('id, producto, fecha, total_cobro, id_responsable')
       .eq('id_cliente', userId)
       .gte('fecha', inicioMesStr)
       .lte('fecha', finMesStr)
@@ -269,24 +321,30 @@ export async function GET(request: NextRequest) {
     
     if (gastosError) throw gastosError;
     
-    const totalGastos = (gastos || []).reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+    // Enriquecer gastos con nombres de funcionarios
+    let gastos: any[] = [];
+    if (gastosRaw && gastosRaw.length > 0) {
+      const responsableIdsGastos = [...new Set((gastosRaw as any[]).map(g => g.id_responsable).filter(Boolean))];
+      let funcionariosGastosMap = new Map<string, string>();
+      if (responsableIdsGastos.length > 0) {
+        const { data: funcionariosGastos } = await supabase
+          .from('funcionarios')
+          .select('id, nombre')
+          .in('id', responsableIdsGastos);
+        (funcionariosGastos || []).forEach((f: any) => funcionariosGastosMap.set(f.id, f.nombre));
+      }
+      gastos = (gastosRaw as any[]).map(g => ({
+        ...g,
+        funcionarios: g.id_responsable ? { nombre: funcionariosGastosMap.get(g.id_responsable) || 'Sin asignar' } : null
+      }));
+    }
+    
+    const totalGastos = gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
-    // Obtener servicios profesionales del mes anterior (NO cancelados)
-    const { data: serviciosProfesionales, error: serviciosError } = await supabase
+    // Obtener servicios profesionales del mes anterior (NO cancelados) - SIN FK joins
+    const { data: serviciosProfesionalesRawMain, error: serviciosError } = await supabase
       .from('servicios_profesionales' as any)
-      .select(`
-        id,
-        id_caso,
-        id_servicio,
-        fecha,
-        costo,
-        gastos,
-        iva,
-        total,
-        estado_pago,
-        funcionarios:id_responsable (nombre),
-        lista_servicios:id_servicio (titulo)
-      `)
+      .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
       .eq('id_cliente', userId)
       .neq('estado_pago', 'cancelado')
       .gte('fecha', inicioMesStr)
@@ -297,8 +355,39 @@ export async function GET(request: NextRequest) {
       if (isDev) console.error('Error al obtener servicios profesionales:', serviciosError);
     }
     
+    // Enriquecer servicios profesionales con datos de funcionarios y servicios
+    let serviciosProfesionales: any[] = [];
+    if (serviciosProfesionalesRawMain && serviciosProfesionalesRawMain.length > 0) {
+      const responsableIdsSP = [...new Set((serviciosProfesionalesRawMain as any[]).map(s => s.id_responsable).filter(Boolean))];
+      const servicioIdsSP = [...new Set((serviciosProfesionalesRawMain as any[]).map(s => s.id_servicio).filter(Boolean))];
+
+      let funcionariosSPMap = new Map<string, string>();
+      if (responsableIdsSP.length > 0) {
+        const { data: funcionariosSP } = await supabase
+          .from('funcionarios')
+          .select('id, nombre')
+          .in('id', responsableIdsSP);
+        (funcionariosSP || []).forEach((f: any) => funcionariosSPMap.set(f.id, f.nombre));
+      }
+
+      let serviciosSPMap = new Map<string, string>();
+      if (servicioIdsSP.length > 0) {
+        const { data: serviciosSP } = await supabase
+          .from('lista_servicios' as any)
+          .select('id, titulo')
+          .in('id', servicioIdsSP);
+        (serviciosSP || []).forEach((s: any) => serviciosSPMap.set(s.id, s.titulo));
+      }
+
+      serviciosProfesionales = (serviciosProfesionalesRawMain as any[]).map(sp => ({
+        ...sp,
+        funcionarios: sp.id_responsable ? { nombre: funcionariosSPMap.get(sp.id_responsable) || 'Sin asignar' } : null,
+        lista_servicios: sp.id_servicio ? { titulo: serviciosSPMap.get(sp.id_servicio) || 'Sin título' } : null
+      }));
+    }
+    
     // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
-    const totalServiciosProfesionales = (serviciosProfesionales || []).reduce(
+    const totalServiciosProfesionales = serviciosProfesionales.reduce(
       (sum: number, s: any) => sum + (s.total || 0), 
       0
     );
@@ -441,7 +530,12 @@ export async function GET(request: NextRequest) {
         
         // DEBUG: Log de empresa asociada (only in dev)
         if (isDev) {
-          console.log(`🔍 [DEBUG] EMPRESA ASOCIADA: ${empresaAsociada.nombre} trabajos:`, datosEmp.trabajosPorHora.length);
+          console.log(`🔍 [DEBUG] EMPRESA ASOCIADA: ${empresaAsociada.nombre}`);
+          console.log(`   - empresaId: ${empresaAsociada.id}`);
+          console.log(`   - trabajos: ${datosEmp.trabajosPorHora.length}`);
+          console.log(`   - gastos: ${datosEmp.gastos.length}`);
+          console.log(`   - serviciosProfesionales: ${datosEmp.serviciosProfesionales.length}`);
+          console.log(`   - serviciosProfesionales data:`, JSON.stringify(datosEmp.serviciosProfesionales, null, 2));
         }
         
         // Calcular totales para esta empresa
@@ -522,7 +616,7 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    // Gran total incluyendo empresa principal y asociadas
+    // Total incluyendo empresa principal y asociadas
     const granTotalSubtotal = subtotal + totalGrupoSubtotal;
     const granTotalIVA = montoIVA + totalGrupoIVA;
     const granTotalAPagar = totalAPagar + totalGrupoAPagar;
@@ -532,7 +626,7 @@ export async function GET(request: NextRequest) {
       console.log('📊 CÁLCULO DE PAGO (MES ANTERIOR):');
       console.log('  - Mes:', mesPago, '| Total:', totalAPagar);
       if (esGrupoPrincipal) {
-        console.log('  🏢 GRUPO - Gran total:', granTotalAPagar);
+        console.log('  🏢 GRUPO - Total:', granTotalAPagar);
       }
     }
 
