@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { checkStandardRateLimit, authBurstRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
+import { isValidUUID, verifyDevAdminSession } from '@/lib/auth-utils'
 
 // Only log in development
 const isDev = process.env.NODE_ENV === 'development'
@@ -8,119 +9,36 @@ const isDev = process.env.NODE_ENV === 'development'
 // Maximum batch size for bulk operations
 const MAX_BATCH_SIZE = 500
 
-// Validate UUID format
-function isValidUUID(id: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  return uuidRegex.test(id)
-}
-
 // Validate mes format (YYYY-MM)
 function isValidMes(mes: string | null | undefined): boolean {
   if (!mes) return false
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(mes)
 }
 
-// Validate session token format
-function isValidSessionToken(token: string): boolean {
-  return typeof token === 'string' && /^[0-9a-f]{64}$/i.test(token)
-}
-
-// Parse cookies from header
-function parseCookies(cookieHeader: string): Record<string, string> {
-  const cookies: Record<string, string> = {}
-  if (!cookieHeader) return cookies
-  
-  cookieHeader.split(';').forEach(cookie => {
-    const parts = cookie.trim().split('=')
-    if (parts.length >= 2) {
-      const key = parts[0].trim()
-      const value = parts.slice(1).join('=').trim()
-      if (key) {
-        try {
-          cookies[key] = decodeURIComponent(value)
-        } catch {
-          cookies[key] = value
-        }
-      }
-    }
-  })
-  return cookies
-}
-
-// Verify dev admin session for protected endpoints
-async function verifyDevAdminSession(request: Request): Promise<{ valid: boolean; error?: string }> {
-  try {
-    if (isRedisConfigured()) {
-      const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
-                       request.headers.get('x-real-ip') || '127.0.0.1'
-      const identifier = `session-verify:${clientIP}`
-      
-      try {
-        const result = await authBurstRateLimit.limit(identifier)
-        if (!result.success) {
-          return { valid: false, error: 'Rate limit exceeded' }
-        }
-      } catch (error) {
-        if (isDev) console.error('[Session Verify] Rate limit check failed:', error)
-      }
-    }
-
-    const cookieHeader = request.headers.get('cookie')
-    if (!cookieHeader) {
-      return { valid: false, error: 'No session' }
-    }
-
-    const cookies = parseCookies(cookieHeader)
-    const devAuth = cookies['dev-auth']
-    const adminId = cookies['dev-admin-id']
-
-    if (!devAuth || !adminId) {
-      return { valid: false, error: 'Missing session' }
-    }
-
-    if (!isValidSessionToken(devAuth) || !isValidUUID(adminId)) {
-      return { valid: false, error: 'Invalid session format' }
-    }
-
-    const { data: session, error } = await supabase
-      .from('dev_sessions')
-      .select('id, is_active, expires_at')
-      .eq('session_token', devAuth)
-      .eq('admin_id', adminId)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (error || !session) {
-      return { valid: false, error: 'Invalid session' }
-    }
-
-    if (new Date() > new Date(session.expires_at)) {
-      supabase
-        .from('dev_sessions')
-        .update({ is_active: false })
-        .eq('id', session.id)
-        .then(() => {})
-      return { valid: false, error: 'Session expired' }
-    }
-
-    return { valid: true }
-  } catch (error) {
-    if (isDev) console.error('[Session Verify] Error:', error)
-    return { valid: false, error: 'Verification failed' }
-  }
-}
-
 // GET - Obtener servicios profesionales con filtros
+// Protected: Requires dev admin authentication
 export async function GET(request: NextRequest) {
   // Rate limiting: 100 requests per hour
   const rateLimitResponse = await checkStandardRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
 
+  // Verify dev admin authentication
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401 }
+    )
+  }
+
   try {
     const { searchParams } = new URL(request.url)
-    const cedulaCliente = searchParams.get('cedula') || searchParams.get('cliente')
+    // Trim and normalize params - treat whitespace-only as null
+    const cedulaRaw = searchParams.get('cedula') || searchParams.get('cliente')
+    const cedulaCliente = cedulaRaw ? cedulaRaw.trim() || null : null
     const estado = searchParams.get('estado')
-    const mes = searchParams.get('mes') // Formato: YYYY-MM
+    const mesRaw = searchParams.get('mes') // Formato: YYYY-MM
+    const mes = mesRaw ? mesRaw.trim() || null : null
     const limitParam = searchParams.get('limit')
     
     // Validate and clamp limit between 1 and 500
@@ -132,8 +50,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Validate mes format if provided (ignore empty strings)
-    if (mes && mes.trim() !== '' && !isValidMes(mes)) {
+    // Validate mes format if provided (mes is already trimmed, null if empty)
+    if (mes && !isValidMes(mes)) {
       return NextResponse.json(
         { error: 'Formato de mes inválido. Use YYYY-MM' },
         { status: 400 }
@@ -330,13 +248,21 @@ export async function PATCH(request: NextRequest) {
       })
       .eq('id', actualId)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
       if (isDev) console.error('Error al actualizar servicio profesional:', error)
       return NextResponse.json(
         { error: 'Error al actualizar estado del servicio' },
         { status: 500 }
+      )
+    }
+
+    // Handle case where no row was found
+    if (!data) {
+      return NextResponse.json(
+        { error: 'Servicio no encontrado' },
+        { status: 404 }
       )
     }
 
@@ -444,6 +370,13 @@ export async function POST(request: NextRequest) {
     }
     // Actualizar por cliente y/o mes
     else if (clienteId || mes) {
+      // Require clienteId when mes is provided (to prevent accidental mass updates)
+      if (mes && !clienteId) {
+        return NextResponse.json(
+          { error: 'Debe proporcionar clienteId cuando usa filtro por mes para evitar actualizaciones masivas accidentales' },
+          { status: 400 }
+        )
+      }
       if (clienteId) {
         query = query.eq('id_cliente', clienteId)
         description += `cliente ${clienteId.substring(0, 8)}...`

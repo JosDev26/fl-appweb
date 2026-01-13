@@ -243,10 +243,11 @@ async function getDatosCliente(
       .order('fecha', { ascending: false });
     
     // Fetch related data separately (no FK constraints exist)
-    let serviciosConRelaciones = serviciosProfesionalesEmpresa || [];
+    let serviciosConRelaciones: any[] = serviciosProfesionalesEmpresa || [];
     if (serviciosProfesionalesEmpresa && serviciosProfesionalesEmpresa.length > 0) {
-      const funcionariosIds = [...new Set(serviciosProfesionalesEmpresa.map(s => s.id_responsable).filter(Boolean))];
-      const serviciosIds = [...new Set(serviciosProfesionalesEmpresa.map(s => s.id_servicio).filter(Boolean))];
+      const serviciosData = serviciosProfesionalesEmpresa as any[];
+      const funcionariosIds = [...new Set(serviciosData.map(s => s.id_responsable).filter(Boolean))];
+      const serviciosIds = [...new Set(serviciosData.map(s => s.id_servicio).filter(Boolean))];
       
       const [funcionariosRes, serviciosRes] = await Promise.all([
         funcionariosIds.length > 0
@@ -257,10 +258,10 @@ async function getDatosCliente(
           : Promise.resolve({ data: [] })
       ]);
       
-      const funcionariosMap = new Map((funcionariosRes.data || []).map(f => [f.id, f]));
-      const serviciosMap = new Map((serviciosRes.data || []).map(s => [s.id, s]));
+      const funcionariosMap = new Map(((funcionariosRes.data || []) as any[]).map(f => [f.id, f]));
+      const serviciosMap = new Map(((serviciosRes.data || []) as any[]).map(s => [s.id, s]));
       
-      serviciosConRelaciones = serviciosProfesionalesEmpresa.map(servicio => ({
+      serviciosConRelaciones = serviciosData.map(servicio => ({
         ...servicio,
         funcionarios: servicio.id_responsable ? funcionariosMap.get(servicio.id_responsable) : null,
         lista_servicios: servicio.id_servicio ? serviciosMap.get(servicio.id_servicio) : null
@@ -341,10 +342,11 @@ async function getDatosCliente(
       .order('fecha', { ascending: false });
     
     // Fetch related data separately (no FK constraints exist)
-    let serviciosConRelaciones = serviciosProfesionalesUsuario || [];
+    let serviciosConRelaciones: any[] = serviciosProfesionalesUsuario || [];
     if (serviciosProfesionalesUsuario && serviciosProfesionalesUsuario.length > 0) {
-      const funcionariosIds = [...new Set(serviciosProfesionalesUsuario.map(s => s.id_responsable).filter(Boolean))];
-      const serviciosIds = [...new Set(serviciosProfesionalesUsuario.map(s => s.id_servicio).filter(Boolean))];
+      const serviciosData = serviciosProfesionalesUsuario as any[];
+      const funcionariosIds = [...new Set(serviciosData.map(s => s.id_responsable).filter(Boolean))];
+      const serviciosIds = [...new Set(serviciosData.map(s => s.id_servicio).filter(Boolean))];
       
       const [funcionariosRes, serviciosRes] = await Promise.all([
         funcionariosIds.length > 0
@@ -355,10 +357,10 @@ async function getDatosCliente(
           : Promise.resolve({ data: [] })
       ]);
       
-      const funcionariosMap = new Map((funcionariosRes.data || []).map(f => [f.id, f]));
-      const serviciosMap = new Map((serviciosRes.data || []).map(s => [s.id, s]));
+      const funcionariosMap = new Map(((funcionariosRes.data || []) as any[]).map(f => [f.id, f]));
+      const serviciosMap = new Map(((serviciosRes.data || []) as any[]).map(s => [s.id, s]));
       
-      serviciosConRelaciones = serviciosProfesionalesUsuario.map(servicio => ({
+      serviciosConRelaciones = serviciosData.map(servicio => ({
         ...servicio,
         funcionarios: servicio.id_responsable ? funcionariosMap.get(servicio.id_responsable) : null,
         lista_servicios: servicio.id_servicio ? serviciosMap.get(servicio.id_servicio) : null

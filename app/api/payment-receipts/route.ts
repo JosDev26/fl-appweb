@@ -1,21 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
-import { checkStandardRateLimit, authBurstRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
+import { isValidUUID, isValidSessionToken, parseCookies, verifyDevAdminSession, generateUniqueId } from '@/lib/auth-utils'
 
 // === Security Utilities ===
 const isDev = process.env.NODE_ENV === 'development'
-
-// Validar formato UUID
-function isValidUUID(id: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  return uuidRegex.test(id)
-}
-
-// Validar formato de session token (64 caracteres hexadecimales)
-function isValidSessionToken(token: string): boolean {
-  return typeof token === 'string' && /^[0-9a-f]{64}$/i.test(token)
-}
 
 // Validar formato mes_pago (YYYY-MM)
 function isValidMesPago(mes: string | null | undefined): boolean {
@@ -32,99 +22,6 @@ function sanitizeNota(nota: string | null | undefined): string | null {
     .replace(/[<>'"&]/g, '') // Remove special chars
     .substring(0, 500) // Limit length
     .trim()
-}
-
-// Parse cookies from Cookie header
-function parseCookies(cookieHeader: string): Record<string, string> {
-  const cookies: Record<string, string> = {}
-  if (!cookieHeader) return cookies
-  
-  cookieHeader.split(';').forEach(cookie => {
-    const parts = cookie.trim().split('=')
-    if (parts.length >= 2) {
-      const key = parts[0].trim()
-      const value = parts.slice(1).join('=').trim()
-      if (key) {
-        try {
-          cookies[key] = decodeURIComponent(value)
-        } catch {
-          cookies[key] = value
-        }
-      }
-    }
-  })
-  return cookies
-}
-
-// Verify dev admin session
-async function verifyDevAdminSession(request: Request): Promise<{ valid: boolean; adminId?: string; error?: string }> {
-  try {
-    // Rate limiting for session verification
-    if (isRedisConfigured()) {
-      const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
-                       request.headers.get('x-real-ip') || '127.0.0.1'
-      const identifier = `session-verify:${clientIP}`
-      
-      try {
-        const result = await authBurstRateLimit.limit(identifier)
-        if (!result.success) {
-          if (isDev) console.warn('[Session Verify] Rate limit exceeded for IP:', clientIP)
-          return { valid: false, error: 'Rate limit exceeded' }
-        }
-      } catch (error) {
-        if (isDev) console.error('[Session Verify] Rate limit check failed:', error)
-      }
-    }
-
-    const cookieHeader = request.headers.get('cookie')
-    if (!cookieHeader) {
-      return { valid: false, error: 'No session' }
-    }
-
-    const cookies = parseCookies(cookieHeader)
-    const devAuth = cookies['dev-auth']
-    const adminId = cookies['dev-admin-id']
-
-    if (!devAuth || !adminId) {
-      return { valid: false, error: 'Missing session cookies' }
-    }
-
-    if (!isValidSessionToken(devAuth) || !isValidUUID(adminId)) {
-      return { valid: false, error: 'Invalid session format' }
-    }
-
-    // Verify session in database
-    const { data: session, error } = await supabase
-      .from('dev_sessions')
-      .select('id, is_active, expires_at')
-      .eq('session_token', devAuth)
-      .eq('admin_id', adminId)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (error || !session) {
-      return { valid: false, error: 'Invalid session' }
-    }
-
-    const now = new Date()
-    const expiresAt = new Date(session.expires_at)
-
-    if (now > expiresAt) {
-      // Deactivate expired session asynchronously
-      supabase
-        .from('dev_sessions')
-        .update({ is_active: false })
-        .eq('id', session.id)
-        .then(() => {})
-
-      return { valid: false, error: 'Session expired' }
-    }
-
-    return { valid: true, adminId }
-  } catch (error) {
-    if (isDev) console.error('[Session Verify] Error:', error)
-    return { valid: false, error: 'Session verification failed' }
-  }
 }
 
 /**
@@ -268,39 +165,48 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === 'aprobar') {
-      // Aprobar: Actualizar estado y desactivar modoPago
-      const fechaAprobacion = new Date().toISOString()
-      const { error: updateReceiptError } = await supabase
-        .from('payment_receipts' as any)
-        .update({
-          estado: 'aprobado',
-          reviewed_at: fechaAprobacion,
-          nota_revision: sanitizedNota
+      // Aprobar: Usar RPC atómico para actualizar estado y desactivar modoPago
+      const { data: rpcResult, error: rpcError } = await (supabase as any)
+        .rpc('approve_payment_receipt', {
+          p_receipt_id: receiptId,
+          p_user_id: userId,
+          p_tipo_cliente: tipoCliente,
+          p_nota: sanitizedNota
         })
-        .eq('id', receiptId)
 
-      if (updateReceiptError) {
-        if (isDev) console.error('Error updating receipt:', updateReceiptError)
+      if (rpcError) {
+        if (isDev) console.error('Error in approve_payment_receipt RPC:', rpcError)
         return NextResponse.json(
-          { error: 'Error al actualizar comprobante' },
+          { error: 'Error al aprobar comprobante' },
           { status: 500 }
         )
       }
 
-      // Desactivar modoPago
-      const tabla = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
-      const { error: updateModoPagoError } = await supabase
-        .from(tabla as any)
-        .update({ modoPago: false } as any)
-        .eq('id', userId)
-
-      if (updateModoPagoError) {
-        if (isDev) console.error('Error updating modo_pago:', updateModoPagoError)
+      // Check RPC result
+      const result = rpcResult as { success: boolean; error?: string; message?: string; fecha_aprobacion?: string }
+      if (!result.success) {
+        if (isDev) console.error('RPC returned error:', result.error, result.message)
+        
+        // Map RPC errors to appropriate responses
+        if (result.error === 'receipt_not_found') {
+          return NextResponse.json(
+            { error: 'Comprobante no encontrado' },
+            { status: 404 }
+          )
+        }
+        if (result.error?.includes('client_not_found')) {
+          return NextResponse.json(
+            { error: 'Cliente no encontrado' },
+            { status: 404 }
+          )
+        }
         return NextResponse.json(
-          { error: 'Error al desactivar modo pago' },
+          { error: result.message || 'Error al aprobar comprobante' },
           { status: 500 }
         )
       }
+
+      const fechaAprobacion = result.fecha_aprobacion || new Date().toISOString()
 
       // Si es empresa, verificar si es empresa principal de un grupo
       // y desactivar modoPago de las empresas asociadas
@@ -402,12 +308,15 @@ export async function PATCH(request: NextRequest) {
 
               // BATCH: Marcar facturas, gastos y servicios de empresas del grupo
               if (mesPago) {
-                const [year, month] = mesPago.split('-')
-                const startDate = `${year}-${month}-01`
-                const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0]
+                const [yearStr, monthStr] = mesPago.split('-')
+                const yearNum = parseInt(yearStr, 10)
+                const monthNum = parseInt(monthStr, 10)
+                const startDate = `${yearStr}-${monthStr}-01`
+                // Calculate last day of month: monthNum gives us the next month's index (0-based), day 0 gives last day of previous month
+                const endDate = new Date(yearNum, monthNum, 0).toISOString().split('T')[0]
                 
                 // BATCH: Update all facturas in one query using IN clause
-                await supabase
+                const { error: facturasError } = await supabase
                   .from('invoice_payment_deadlines' as any)
                   .update({
                     estado_pago: 'pagado',
@@ -417,10 +326,14 @@ export async function PATCH(request: NextRequest) {
                   .in('client_id', empresaIds)
                   .eq('client_type', 'empresa')
 
-                if (isDev) console.log(`✅ Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
+                if (facturasError) {
+                  if (isDev) console.error(`❌ Error actualizando facturas para empresas [${empresaIds.join(', ')}]:`, facturasError)
+                } else if (isDev) {
+                  console.log(`✅ Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
+                }
 
                 // BATCH: Update all gastos in one query using IN clause
-                await supabase
+                const { error: gastosError } = await supabase
                   .from('gastos' as any)
                   .update({ 
                     estado_pago: 'pagado',
@@ -430,10 +343,14 @@ export async function PATCH(request: NextRequest) {
                   .gte('fecha', startDate)
                   .lte('fecha', endDate)
 
-                if (isDev) console.log(`✅ Gastos de ${empresaIds.length} empresas marcados como pagados`)
+                if (gastosError) {
+                  if (isDev) console.error(`❌ Error actualizando gastos para empresas [${empresaIds.join(', ')}]:`, gastosError)
+                } else if (isDev) {
+                  console.log(`✅ Gastos de ${empresaIds.length} empresas marcados como pagados`)
+                }
 
                 // BATCH: Update all servicios in one query using IN clause
-                await supabase
+                const { error: serviciosError } = await supabase
                   .from('servicios_profesionales' as any)
                   .update({ 
                     estado_pago: 'pagado',
@@ -444,7 +361,11 @@ export async function PATCH(request: NextRequest) {
                   .gte('fecha', startDate)
                   .lte('fecha', endDate)
 
-                if (isDev) console.log(`✅ Servicios de ${empresaIds.length} empresas marcados como pagados`)
+                if (serviciosError) {
+                  if (isDev) console.error(`❌ Error actualizando servicios para empresas [${empresaIds.join(', ')}]:`, serviciosError)
+                } else if (isDev) {
+                  console.log(`✅ Servicios de ${empresaIds.length} empresas marcados como pagados`)
+                }
               }
             }
           }
@@ -673,8 +594,8 @@ export async function PATCH(request: NextRequest) {
         // Total del ingreso
         const totalIngreso = honorarios + servicios + reembolsoGastos
         
-        // Generar ID único para el ingreso
-        const ingresoId = `ING-${Date.now()}-${userId.slice(-4)}`
+        // Generar ID único para el ingreso (collision-resistant)
+        const ingresoId = generateUniqueId('ING', userId.slice(-4))
         
         // Formatear fechas
         const fechaPago = new Date((receipt as any).uploaded_at).toLocaleDateString('es-CR')
@@ -768,4 +689,9 @@ export async function PATCH(request: NextRequest) {
 
   } catch (error) {
     if (isDev) console.error('Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor' },
+      { status: 500 }
+    )
+  }
 }
