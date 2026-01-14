@@ -240,7 +240,7 @@ export default function SolicitudDetalle() {
     if (solicitud.monto_iva) return solicitud.monto_iva
     // Si no hay monto_iva, calcular basado en el iva_perc del cliente
     if (solicitud.costo_neto) {
-      const ivaPerc = solicitud.cliente?.iva_perc || 0.13
+      const ivaPerc = solicitud.cliente?.iva_perc ?? 0.13
       return solicitud.costo_neto * ivaPerc
     }
     return 0
@@ -349,7 +349,7 @@ export default function SolicitudDetalle() {
             </div>
             {solicitud.se_cobra_iva && (
               <div className={styles.montoCard}>
-                <span className={styles.montoLabel}>IVA ({((solicitud.cliente?.iva_perc || 0.13) * 100).toFixed(0)}%)</span>
+                <span className={styles.montoLabel}>IVA ({((solicitud.cliente?.iva_perc ?? 0.13) * 100).toFixed(0)}%)</span>
                 <span className={styles.montoValor}>{formatMonto(calcularIVA())}</span>
               </div>
             )}

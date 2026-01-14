@@ -40,12 +40,24 @@ interface ClienteVistaPago {
   totalHoras: number;
   montoHoras: number;
   tarifaHora: number;
-  totalGastos: number;
+  
+  // Gastos desglosados
+  totalGastos: number; // Suma total (gastosCliente + gastosServiciosProfesionales)
+  gastosCliente: number; // Solo gastos de la tabla gastos
+  gastosServiciosProfesionales: number; // Campo gastos de servicios_profesionales
+  
+  // Servicios profesionales (solo costo, sin gastos ni IVA)
   totalServiciosProfesionales: number;
+  
   totalMensualidades: number;
   subtotal: number;
   ivaPerc: number;
-  iva: number;
+  
+  // IVA desglosado
+  iva: number; // Suma total (ivaHorasMensualidades + ivaServiciosProfesionales)
+  ivaHorasMensualidades: number; // IVA de horas y mensualidades
+  ivaServiciosProfesionales: number; // Campo iva de servicios_profesionales
+  
   total: number;
   
   // Internal notes
@@ -187,7 +199,7 @@ async function getDatosCliente(
       nombre = (empresaData as any).nombre || '';
       cedula = (empresaData as any).cedula || '';
       tarifaHora = (empresaData as any).tarifa_hora || 90000;
-      ivaPerc = (empresaData as any).iva_perc || 0.13;
+      ivaPerc = (empresaData as any).iva_perc ?? 0.13;
     }
     
     // Intentar obtener nota_interna_pago por separado (puede fallar si no existe la columna)
@@ -296,7 +308,7 @@ async function getDatosCliente(
     if (usuarioData) {
       nombre = (usuarioData as any).nombre || '';
       cedula = (usuarioData as any).cedula || '';
-      ivaPerc = (usuarioData as any).iva_perc || 0.13;
+      ivaPerc = (usuarioData as any).iva_perc ?? 0.13;
     }
     
     // Intentar obtener nota_interna_pago por separado (puede fallar si no existe la columna)
@@ -399,12 +411,16 @@ function calcularTotales(
   totalMinutos: number;
   totalHoras: number;
   montoHoras: number;
+  gastosCliente: number;
+  gastosServiciosProfesionales: number;
   totalGastos: number;
+  costoServiciosProfesionales: number;
+  ivaServiciosProfesionales: number;
   totalServiciosProfesionales: number;
   totalMensualidades: number;
   totalIVAMensualidades: number;
   subtotal: number;
-  ivaServicios: number;
+  ivaHorasMensualidades: number;
   iva: number;
   total: number;
   proyectos: ProyectoMensualidad[];
@@ -429,16 +445,30 @@ function calcularTotales(
   const totalHoras = totalMinutos / 60;
   const montoHoras = totalHoras * tarifaHora;
   
-  // Calcular gastos (solo NO cancelados)
-  const totalGastos = gastos
+  // Calcular gastos del cliente (solo NO cancelados)
+  const gastosCliente = gastos
     .filter((g: any) => g.estado_pago !== 'cancelado')
     .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
   
-  // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
-  const totalServiciosProfesionales = serviciosProfesionales.reduce(
-    (sum: number, s: any) => sum + (s.total || 0), 
+  // Desglosar componentes de servicios profesionales
+  const costoServiciosProfesionales = serviciosProfesionales.reduce(
+    (sum: number, s: any) => sum + (s.costo || 0), 
     0
   );
+  const gastosServiciosProfesionales = serviciosProfesionales.reduce(
+    (sum: number, s: any) => sum + (s.gastos || 0), 
+    0
+  );
+  const ivaServiciosProfesionales = serviciosProfesionales.reduce(
+    (sum: number, s: any) => sum + (s.iva || 0), 
+    0
+  );
+  
+  // Total de gastos = gastos cliente + gastos de servicios profesionales
+  const totalGastos = gastosCliente + gastosServiciosProfesionales;
+  
+  // Total servicios profesionales = solo el costo (para mostrar)
+  const totalServiciosProfesionales = costoServiciosProfesionales;
   
   // Calcular mensualidades (solo las que son tipo mensualidad)
   let totalMensualidades = 0;
@@ -460,10 +490,17 @@ function calcularTotales(
   });
   
   // Calcular totales
-  // NOTA: totalServiciosProfesionales ya es monto final (como gastos.total_cobro), no lleva IVA adicional
-  const subtotal = montoHoras + totalGastos + totalMensualidades + totalServiciosProfesionales;
-  const ivaServicios = montoHoras * ivaPerc;
-  const iva = ivaServicios + totalIVAMensualidades;
+  // IVA de horas y mensualidades (el IVA de servicios profesionales ya viene separado)
+  const ivaHorasMensualidades = (montoHoras * ivaPerc) + totalIVAMensualidades;
+  
+  // IVA total = IVA horas/mensualidades + IVA servicios profesionales
+  const iva = ivaHorasMensualidades + ivaServiciosProfesionales;
+  
+  // Subtotal = todo excepto IVA
+  // montoHoras + gastosCliente + gastosServiciosProfesionales + costoServiciosProfesionales + mensualidades
+  const subtotal = montoHoras + totalGastos + costoServiciosProfesionales + totalMensualidades;
+  
+  // Total final
   const total = subtotal + iva;
   
   // Extraer proyectos con modalidad Mensualidad
@@ -473,12 +510,16 @@ function calcularTotales(
     totalMinutos,
     totalHoras,
     montoHoras,
+    gastosCliente,
+    gastosServiciosProfesionales,
     totalGastos,
+    costoServiciosProfesionales,
+    ivaServiciosProfesionales,
     totalServiciosProfesionales,
     totalMensualidades,
     totalIVAMensualidades,
     subtotal,
-    ivaServicios,
+    ivaHorasMensualidades,
     iva,
     total,
     proyectos
@@ -585,11 +626,15 @@ export async function GET(request: NextRequest) {
         totalHoras: totales.totalHoras,
         montoHoras: totales.montoHoras,
         tarifaHora: datos.tarifaHora,
+        gastosCliente: totales.gastosCliente,
+        gastosServiciosProfesionales: totales.gastosServiciosProfesionales,
         totalGastos: totales.totalGastos,
         totalServiciosProfesionales: totales.totalServiciosProfesionales,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
         ivaPerc: datos.ivaPerc,
+        ivaHorasMensualidades: totales.ivaHorasMensualidades,
+        ivaServiciosProfesionales: totales.ivaServiciosProfesionales,
         iva: totales.iva,
         total: totales.total,
         notaInterna: datos.notaInterna || undefined,
@@ -647,11 +692,15 @@ export async function GET(request: NextRequest) {
         totalHoras: totales.totalHoras,
         montoHoras: totales.montoHoras,
         tarifaHora: datos.tarifaHora,
+        gastosCliente: totales.gastosCliente,
+        gastosServiciosProfesionales: totales.gastosServiciosProfesionales,
         totalGastos: totales.totalGastos,
         totalServiciosProfesionales: totales.totalServiciosProfesionales,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
         ivaPerc: datos.ivaPerc,
+        ivaHorasMensualidades: totales.ivaHorasMensualidades,
+        ivaServiciosProfesionales: totales.ivaServiciosProfesionales,
         iva: totales.iva,
         total: totales.total,
         notaInterna: datos.notaInterna || undefined,
@@ -710,12 +759,17 @@ export async function GET(request: NextRequest) {
       subtotal: number;
       iva: number;
       total: number;
+      totalServiciosProfesionales: number;
+      gastosCliente: number;
+      gastosServiciosProfesionales: number;
+      ivaHorasMensualidades: number;
+      ivaServiciosProfesionales: number;
     }> = {
-      'Mensualidad': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0 },
-      'Etapa Finalizada': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0 },
-      'Único Pago': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0 },
-      'Cobro por hora': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0 },
-      'Solo gastos-servicios': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0 }
+      'Mensualidad': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0, totalServiciosProfesionales: 0, gastosCliente: 0, gastosServiciosProfesionales: 0, ivaHorasMensualidades: 0, ivaServiciosProfesionales: 0 },
+      'Etapa Finalizada': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0, totalServiciosProfesionales: 0, gastosCliente: 0, gastosServiciosProfesionales: 0, ivaHorasMensualidades: 0, ivaServiciosProfesionales: 0 },
+      'Único Pago': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0, totalServiciosProfesionales: 0, gastosCliente: 0, gastosServiciosProfesionales: 0, ivaHorasMensualidades: 0, ivaServiciosProfesionales: 0 },
+      'Cobro por hora': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0, totalServiciosProfesionales: 0, gastosCliente: 0, gastosServiciosProfesionales: 0, ivaHorasMensualidades: 0, ivaServiciosProfesionales: 0 },
+      'Solo gastos-servicios': { count: 0, totalHoras: 0, montoHoras: 0, totalGastos: 0, totalMensualidades: 0, subtotal: 0, iva: 0, total: 0, totalServiciosProfesionales: 0, gastosCliente: 0, gastosServiciosProfesionales: 0, ivaHorasMensualidades: 0, ivaServiciosProfesionales: 0 }
     };
     
     let granTotal = {
@@ -726,7 +780,12 @@ export async function GET(request: NextRequest) {
       totalMensualidades: 0,
       subtotal: 0,
       iva: 0,
-      total: 0
+      total: 0,
+      totalServiciosProfesionales: 0,
+      gastosCliente: 0,
+      gastosServiciosProfesionales: 0,
+      ivaHorasMensualidades: 0,
+      ivaServiciosProfesionales: 0
     };
     
     clientes.forEach(c => {
@@ -739,6 +798,11 @@ export async function GET(request: NextRequest) {
       t.subtotal += c.subtotal;
       t.iva += c.iva;
       t.total += c.total;
+      t.totalServiciosProfesionales += c.totalServiciosProfesionales;
+      t.gastosCliente += c.gastosCliente;
+      t.gastosServiciosProfesionales += c.gastosServiciosProfesionales;
+      t.ivaHorasMensualidades += c.ivaHorasMensualidades;
+      t.ivaServiciosProfesionales += c.ivaServiciosProfesionales;
       
       granTotal.count++;
       granTotal.totalHoras += c.totalHoras;
@@ -748,6 +812,11 @@ export async function GET(request: NextRequest) {
       granTotal.subtotal += c.subtotal;
       granTotal.iva += c.iva;
       granTotal.total += c.total;
+      granTotal.totalServiciosProfesionales += c.totalServiciosProfesionales;
+      granTotal.gastosCliente += c.gastosCliente;
+      granTotal.gastosServiciosProfesionales += c.gastosServiciosProfesionales;
+      granTotal.ivaHorasMensualidades += c.ivaHorasMensualidades;
+      granTotal.ivaServiciosProfesionales += c.ivaServiciosProfesionales;
     });
     
     // 6. Calcular totales por grupo
@@ -761,6 +830,11 @@ export async function GET(request: NextRequest) {
       subtotal: number;
       iva: number;
       total: number;
+      totalServiciosProfesionales: number;
+      gastosCliente: number;
+      gastosServiciosProfesionales: number;
+      ivaHorasMensualidades: number;
+      ivaServiciosProfesionales: number;
     }> = {};
     
     clientes.filter(c => c.grupoId).forEach(c => {
@@ -774,7 +848,12 @@ export async function GET(request: NextRequest) {
           totalMensualidades: 0,
           subtotal: 0,
           iva: 0,
-          total: 0
+          total: 0,
+          totalServiciosProfesionales: 0,
+          gastosCliente: 0,
+          gastosServiciosProfesionales: 0,
+          ivaHorasMensualidades: 0,
+          ivaServiciosProfesionales: 0
         };
       }
       const g = totalesPorGrupo[c.grupoId!];
@@ -786,6 +865,11 @@ export async function GET(request: NextRequest) {
       g.subtotal += c.subtotal;
       g.iva += c.iva;
       g.total += c.total;
+      g.totalServiciosProfesionales += c.totalServiciosProfesionales;
+      g.gastosCliente += c.gastosCliente;
+      g.gastosServiciosProfesionales += c.gastosServiciosProfesionales;
+      g.ivaHorasMensualidades += c.ivaHorasMensualidades;
+      g.ivaServiciosProfesionales += c.ivaServiciosProfesionales;
     });
     
     return NextResponse.json({

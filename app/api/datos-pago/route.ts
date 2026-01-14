@@ -144,7 +144,7 @@ async function getDatosEmpresa(
     empresa: empresaData ? {
       nombre: (empresaData as any).nombre,
       tarifa_hora: (empresaData as any).tarifa_hora || 90000,
-      iva_perc: (empresaData as any).iva_perc || 0.13
+      iva_perc: (empresaData as any).iva_perc ?? 0.13
     } : null
   };
 }
@@ -233,7 +233,7 @@ export async function GET(request: NextRequest) {
           empresasDelGrupo = (empresasInfo || []).map((e: any) => ({
             id: e.id,
             nombre: e.nombre,
-            iva_perc: e.iva_perc || 0.13
+            iva_perc: e.iva_perc ?? 0.13
           }));
         }
         if (isDev) console.log('🏢 [datos-pago] Es empresa principal de grupo con', empresasDelGrupo.length, 'empresas asociadas');
@@ -293,7 +293,7 @@ export async function GET(request: NextRequest) {
       if (!empresaError && empresa) {
         nombreCliente = (empresa as any).nombre || '';
         tarifaHora = (empresa as any).tarifa_hora || 90000;
-        ivaPerc = (empresa as any).iva_perc || 0.13;
+        ivaPerc = (empresa as any).iva_perc ?? 0.13;
         darVistoBueno = (empresa as any).darVistoBueno || false;
       }
     } else {

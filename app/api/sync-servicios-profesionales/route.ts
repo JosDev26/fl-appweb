@@ -180,7 +180,18 @@ async function syncServiciosProfesionales() {
         const costo = parseMonto(costoStr)
         const gastos = parseMonto(gastosStr)
         const iva = parseMonto(ivaStr)
-        const total = parseMonto(totalStr)
+        let total = parseMonto(totalStr)
+
+        // Si tenemos los componentes pero el total parece redondeado, recalcularlo
+        // Esto corrige problemas de decimales cuando Google Sheets redondea el total
+        if (costo !== null || gastos !== null || iva !== null) {
+          const totalCalculado = (costo || 0) + (gastos || 0) + (iva || 0)
+          // Si el total de Sheets difiere del calculado por menos de 1 (problema de redondeo),
+          // usar el calculado que preserva decimales
+          if (total === null || Math.abs(totalCalculado - total) < 1) {
+            total = totalCalculado
+          }
+        }
 
         // Validar que el funcionario existe usando el batch lookup
         let responsableValido = null

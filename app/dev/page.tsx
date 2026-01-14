@@ -143,6 +143,7 @@ interface DeudaCliente {
     montoHoras: number
     totalGastos: number
     totalMensualidades: number
+    totalServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -153,6 +154,7 @@ interface DeudaCliente {
     montoHoras: number
     totalGastos: number
     totalMensualidades: number
+    totalServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -166,6 +168,7 @@ interface TotalesDeudas {
     montoHoras: number
     totalGastos: number
     totalMensualidades: number
+    totalServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -176,6 +179,7 @@ interface TotalesDeudas {
     montoHoras: number
     totalGastos: number
     totalMensualidades: number
+    totalServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -212,11 +216,18 @@ interface ClienteVistaPago {
   totalHoras: number
   montoHoras: number
   tarifaHora: number
+  // Gastos desglosados
+  gastosCliente: number
+  gastosServiciosProfesionales: number
   totalGastos: number
+  // Servicios profesionales (solo costo, sin gastos ni IVA)
   totalServiciosProfesionales: number
   totalMensualidades: number
   subtotal: number
   ivaPerc: number
+  // IVA desglosado
+  ivaHorasMensualidades: number
+  ivaServiciosProfesionales: number
   iva: number
   total: number
   notaInterna?: string
@@ -236,6 +247,12 @@ interface TotalesPorModalidad {
   subtotal: number
   iva: number
   total: number
+  // Campos desglosados
+  totalServiciosProfesionales: number
+  gastosCliente: number
+  gastosServiciosProfesionales: number
+  ivaHorasMensualidades: number
+  ivaServiciosProfesionales: number
 }
 
 interface TotalesPorGrupo {
@@ -248,6 +265,12 @@ interface TotalesPorGrupo {
   subtotal: number
   iva: number
   total: number
+  // Campos desglosados
+  totalServiciosProfesionales: number
+  gastosCliente: number
+  gastosServiciosProfesionales: number
+  ivaHorasMensualidades: number
+  ivaServiciosProfesionales: number
 }
 
 type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'servicios-estado' | 'vista-pago'
@@ -1047,7 +1070,7 @@ export default function DevPage() {
         setEmpresasDisponibles(empresasList.map((e: any) => ({
           id: e.id,
           nombre: e.nombre,
-          iva_perc: e.iva_perc || 0.13
+          iva_perc: e.iva_perc ?? 0.13
         })))
       } else {
         console.warn('No hay empresas en la base de datos')
@@ -2990,6 +3013,12 @@ export default function DevPage() {
                     </p>
                   </div>
                   <div>
+                    <strong>Servicios Prof.:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.totalServiciosProfesionales || 0 : totalesDeudas.mesActual.totalServiciosProfesionales || 0)}
+                    </p>
+                  </div>
+                  <div>
                     <strong>Subtotal:</strong>
                     <p className={styles.deudasResumenValue}>
                       {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.subtotal : totalesDeudas.mesActual.subtotal)}
@@ -3033,6 +3062,7 @@ export default function DevPage() {
                       <th style={{ textAlign: 'right' }}>Monto Horas</th>
                       <th style={{ textAlign: 'right' }}>Gastos</th>
                       <th style={{ textAlign: 'right' }}>Mensualidades</th>
+                      <th style={{ textAlign: 'right' }}>Servicios Prof.</th>
                       <th style={{ textAlign: 'right' }}>Subtotal</th>
                       <th style={{ textAlign: 'right' }}>IVA</th>
                       <th style={{ textAlign: 'right' }}>Total</th>
@@ -3078,6 +3108,7 @@ export default function DevPage() {
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.montoHoras)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalGastos)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalMensualidades)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalServiciosProfesionales || 0)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.subtotal)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.iva)}</td>
                             <td style={{ textAlign: 'right', fontWeight: 600 }} className={styles.textSuccess}>
@@ -3104,7 +3135,7 @@ export default function DevPage() {
                                   <td style={{ textAlign: 'right', fontWeight: 600 }}>
                                     {formatHoras(grupoTotal.totalHoras)}
                                   </td>
-                                  <td colSpan={5}></td>
+                                  <td colSpan={6}></td>
                                   <td style={{ textAlign: 'right', fontWeight: 700 }} className={styles.textSuccess}>
                                     {formatCurrency(grupoTotal.total)}
                                   </td>
@@ -3611,6 +3642,15 @@ export default function DevPage() {
                     <div>
                       <strong>Gastos:</strong>
                       <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.totalGastos)}</p>
+                      {(granTotalPago.gastosCliente > 0 || granTotalPago.gastosServiciosProfesionales > 0) && (
+                        <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
+                          (Cliente: {formatCurrency(granTotalPago.gastosCliente)} / Serv.: {formatCurrency(granTotalPago.gastosServiciosProfesionales)})
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <strong>Servicios Prof.:</strong>
+                      <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.totalServiciosProfesionales)}</p>
                     </div>
                     <div>
                       <strong>Mensualidades:</strong>
@@ -3623,6 +3663,11 @@ export default function DevPage() {
                     <div>
                       <strong>IVA:</strong>
                       <p className={styles.deudasResumenValue}>{formatCurrency(granTotalPago.iva)}</p>
+                      {(granTotalPago.ivaHorasMensualidades > 0 || granTotalPago.ivaServiciosProfesionales > 0) && (
+                        <p style={{ fontSize: '0.75rem', color: '#888', margin: 0 }}>
+                          (Hrs/Mens: {formatCurrency(granTotalPago.ivaHorasMensualidades)} / Serv.: {formatCurrency(granTotalPago.ivaServiciosProfesionales)})
+                        </p>
+                      )}
                     </div>
                     <div className={styles.deudasResumenTotal}>
                       <strong>TOTAL A COBRAR:</strong>
@@ -3779,7 +3824,8 @@ export default function DevPage() {
                           {clienteExpandido === cliente.id && (
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid rgba(0, 0, 0, 0.12)' }} className="dark:border-opacity-20 dark:border-white">
                               {/* Desglose de costos */}
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                                {/* Horas */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Horas</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
@@ -3789,36 +3835,71 @@ export default function DevPage() {
                                     {formatCurrency(cliente.montoHoras)}
                                   </p>
                                 </div>
-                                <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
-                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Gastos</p>
+                                
+                                {/* Gastos con desglose */}
+                                <div style={{ padding: '0.75rem', background: 'rgba(255, 152, 0, 0.1)', borderRadius: '6px', border: '1px solid rgba(255, 152, 0, 0.3)' }}>
+                                  <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Gastos Total</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
                                     {formatCurrency(cliente.totalGastos)}
                                   </p>
+                                  {(cliente.gastosCliente > 0 || cliente.gastosServiciosProfesionales > 0) && (
+                                    <div style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: '0.25rem', lineHeight: 1.3 }}>
+                                      {cliente.gastosCliente > 0 && (
+                                        <div>• Cliente: {formatCurrency(cliente.gastosCliente)}</div>
+                                      )}
+                                      {cliente.gastosServiciosProfesionales > 0 && (
+                                        <div>• Serv.Prof: {formatCurrency(cliente.gastosServiciosProfesionales)}</div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
+                                
+                                {/* Servicios Profesionales (solo costo) */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(156, 39, 176, 0.1)', borderRadius: '6px', border: '1px solid rgba(156, 39, 176, 0.3)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Servicios Prof.</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
                                     {formatCurrency(cliente.totalServiciosProfesionales || 0)}
                                   </p>
+                                  <p style={{ fontSize: '0.7rem', opacity: 0.5, margin: 0 }}>
+                                    (solo costo)
+                                  </p>
                                 </div>
+                                
+                                {/* Mensualidades */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Mensualidades</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
                                     {formatCurrency(cliente.totalMensualidades)}
                                   </p>
                                 </div>
-                                <div style={{ padding: '0.75rem', background: 'rgba(0, 0, 0, 0.04)', borderRadius: '6px', border: '1px solid rgba(0, 0, 0, 0.08)' }}>
+                                
+                                {/* IVA con desglose */}
+                                <div style={{ padding: '0.75rem', background: 'rgba(33, 150, 243, 0.1)', borderRadius: '6px', border: '1px solid rgba(33, 150, 243, 0.3)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>IVA ({Math.round(cliente.ivaPerc * 100)}%)</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
                                     {formatCurrency(cliente.iva)}
                                   </p>
+                                  {(cliente.ivaHorasMensualidades > 0 || cliente.ivaServiciosProfesionales > 0) && (
+                                    <div style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: '0.25rem', lineHeight: 1.3 }}>
+                                      {cliente.ivaHorasMensualidades > 0 && (
+                                        <div>• Horas/Mens: {formatCurrency(cliente.ivaHorasMensualidades)}</div>
+                                      )}
+                                      {cliente.ivaServiciosProfesionales > 0 && (
+                                        <div>• Serv.Prof: {formatCurrency(cliente.ivaServiciosProfesionales)}</div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
+                                
+                                {/* Subtotal */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(76, 175, 80, 0.15)', borderRadius: '6px', border: '1px solid rgba(76, 175, 80, 0.3)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Subtotal</p>
                                   <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0' }}>
                                     {formatCurrency(cliente.subtotal)}
                                   </p>
                                 </div>
+                                
+                                {/* Total */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(76, 175, 80, 0.25)', borderRadius: '6px', border: '1px solid rgba(76, 175, 80, 0.4)' }}>
                                   <p style={{ fontSize: '0.8rem', color: '#2e7d32', margin: 0, fontWeight: 600 }}>TOTAL</p>
                                   <p style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0.25rem 0 0', color: '#2e7d32' }}>
