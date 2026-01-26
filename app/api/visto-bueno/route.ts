@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
         client_type: tipoCliente,
         mes: mes,
         dado: true,
+        estado: 'aprobado',
         fecha_visto_bueno: fechaVistoBueno
       }, {
         onConflict: 'client_id,client_type,mes'
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest) {
                   client_type: 'empresa',
                   mes: mes,
                   dado: true,
+                  estado: 'aprobado',
                   fecha_visto_bueno: fechaVistoBueno
                 }, {
                   onConflict: 'client_id,client_type,mes'
