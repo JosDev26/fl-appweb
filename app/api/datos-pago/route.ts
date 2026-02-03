@@ -12,10 +12,12 @@ const isDev = process.env.NODE_ENV === 'development';
 async function getDatosEmpresa(
   empresaId: string, 
   inicioMes: string, 
-  finMes: string
+  finMes: string,
+  fechaLimite12MesesStr: string
 ): Promise<{
   trabajosPorHora: any[];
   gastos: any[];
+  gastosPendientesAnteriores: any[];
   solicitudes: any[];
   serviciosProfesionales: any[];
   empresa: { nombre: string; tarifa_hora: number; iva_perc: number } | null;
@@ -70,6 +72,34 @@ async function getDatosEmpresa(
     gastos = (gastosRaw as any[]).map(g => ({
       ...g,
       funcionarios: g.id_responsable ? { nombre: gastosFuncionariosMap.get(g.id_responsable) || 'Sin asignar' } : null
+    }));
+  }
+
+  // Obtener gastos pendientes de meses anteriores (hasta 12 meses atrás)
+  const { data: gastosPendientesRaw } = await supabase
+    .from('gastos' as any)
+    .select('id, producto, fecha, total_cobro, estado_pago, id_responsable')
+    .eq('id_cliente', empresaId)
+    .eq('estado_pago', 'pendiente')
+    .lt('fecha', inicioMes)
+    .gte('fecha', fechaLimite12MesesStr)
+    .order('fecha', { ascending: false });
+
+  // Enriquecer gastos pendientes con nombres de funcionarios
+  let gastosPendientesAnteriores: any[] = [];
+  if (gastosPendientesRaw && gastosPendientesRaw.length > 0) {
+    const gastosPendientesResponsableIds = [...new Set((gastosPendientesRaw as any[]).map(g => g.id_responsable).filter(Boolean))];
+    let gastosPendientesFuncionariosMap = new Map<string, string>();
+    if (gastosPendientesResponsableIds.length > 0) {
+      const { data: gastosPendientesFuncionarios } = await supabase
+        .from('funcionarios')
+        .select('id, nombre')
+        .in('id', gastosPendientesResponsableIds);
+      (gastosPendientesFuncionarios || []).forEach((f: any) => gastosPendientesFuncionariosMap.set(f.id, f.nombre));
+    }
+    gastosPendientesAnteriores = (gastosPendientesRaw as any[]).map(g => ({
+      ...g,
+      funcionarios: g.id_responsable ? { nombre: gastosPendientesFuncionariosMap.get(g.id_responsable) || 'Sin asignar' } : null
     }));
   }
 
@@ -139,6 +169,7 @@ async function getDatosEmpresa(
   return {
     trabajosPorHora: trabajosPorHora || [],
     gastos: gastos || [],
+    gastosPendientesAnteriores: gastosPendientesAnteriores || [],
     solicitudes: solicitudes || [],
     serviciosProfesionales,
     empresa: empresaData ? {
@@ -341,6 +372,48 @@ export async function GET(request: NextRequest) {
     
     const totalGastos = gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
+    // ========== GASTOS PENDIENTES DE MESES ANTERIORES ==========
+    // Buscar gastos con estado_pago = 'pendiente' de hasta 12 meses atrás
+    const fechaLimite12Meses = new Date(year, month - 12, 1); // 12 meses antes del mes de reporte
+    const fechaLimite12MesesStr = fechaLimite12Meses.toISOString().split('T')[0];
+    
+    const { data: gastosPendientesAnterioresRaw, error: gastosPendientesError } = await supabase
+      .from('gastos' as any)
+      .select('id, producto, fecha, total_cobro, estado_pago, id_responsable')
+      .eq('id_cliente', userId)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMesStr) // Antes del mes de reporte actual
+      .gte('fecha', fechaLimite12MesesStr) // Máximo 12 meses atrás
+      .order('fecha', { ascending: false });
+    
+    if (gastosPendientesError && isDev) {
+      console.error('Error al obtener gastos pendientes anteriores:', gastosPendientesError);
+    }
+    
+    // Enriquecer gastos pendientes anteriores con nombres de funcionarios
+    let gastosPendientesAnteriores: any[] = [];
+    if (gastosPendientesAnterioresRaw && gastosPendientesAnterioresRaw.length > 0) {
+      const responsableIdsPendientes = [...new Set((gastosPendientesAnterioresRaw as any[]).map(g => g.id_responsable).filter(Boolean))];
+      let funcionariosPendientesMap = new Map<string, string>();
+      if (responsableIdsPendientes.length > 0) {
+        const { data: funcionariosPendientes } = await supabase
+          .from('funcionarios')
+          .select('id, nombre')
+          .in('id', responsableIdsPendientes);
+        (funcionariosPendientes || []).forEach((f: any) => funcionariosPendientesMap.set(f.id, f.nombre));
+      }
+      gastosPendientesAnteriores = (gastosPendientesAnterioresRaw as any[]).map(g => ({
+        ...g,
+        funcionarios: g.id_responsable ? { nombre: funcionariosPendientesMap.get(g.id_responsable) || 'Sin asignar' } : null
+      }));
+    }
+    
+    const totalGastosPendientesAnteriores = gastosPendientesAnteriores.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+    
+    if (isDev && gastosPendientesAnteriores.length > 0) {
+      console.log('📋 Gastos pendientes de meses anteriores:', gastosPendientesAnteriores.length, '| Total:', totalGastosPendientesAnteriores);
+    }
+
     // Obtener servicios profesionales del mes anterior (NO cancelados) - SIN FK joins
     const { data: serviciosProfesionalesRawMain, error: serviciosError } = await supabase
       .from('servicios_profesionales' as any)
@@ -482,9 +555,9 @@ export async function GET(request: NextRequest) {
     const ahorroComparativo = costoServiciosEstandar - costoServiciosTarifa;
 
     // Calcular totales
-    // Subtotal (sin IVA): servicios tarifa_hora + gastos + mensualidades + servicios profesionales
+    // Subtotal (sin IVA): servicios tarifa_hora + gastos + gastos pendientes anteriores + mensualidades + servicios profesionales
     // NOTA: totalServiciosProfesionales ya es el monto final (como gastos.total_cobro), no lleva IVA adicional
-    const subtotal = costoServiciosTarifa + totalGastos + totalMensualidades + totalServiciosProfesionales;
+    const subtotal = costoServiciosTarifa + totalGastos + totalGastosPendientesAnteriores + totalMensualidades + totalServiciosProfesionales;
     
     // IVA total: IVA solo de servicios + IVA extraído de mensualidades
     // IMPORTANTE: Los gastos NO llevan IVA porque total_cobro ya es el monto final
@@ -501,6 +574,7 @@ export async function GET(request: NextRequest) {
       ivaPerc: number;
       trabajosPorHora: any[];
       gastos: any[];
+      gastosPendientesAnteriores: any[];
       solicitudes: any[];
       serviciosProfesionales: any[];
       totalServiciosProfesionales: number;
@@ -509,6 +583,7 @@ export async function GET(request: NextRequest) {
       tarifaHora: number;
       costoServicios: number;
       totalGastos: number;
+      totalGastosPendientesAnteriores: number;
       totalMensualidades: number;
       totalIVAMensualidades: number;
       subtotal: number;
@@ -526,7 +601,7 @@ export async function GET(request: NextRequest) {
       if (isDev) console.log('🏢 [datos-pago] Cargando datos de', empresasDelGrupo.length, 'empresas asociadas...');
       
       for (const empresaAsociada of empresasDelGrupo) {
-        const datosEmp = await getDatosEmpresa(empresaAsociada.id, inicioMesStr, finMesStr);
+        const datosEmp = await getDatosEmpresa(empresaAsociada.id, inicioMesStr, finMesStr, fechaLimite12MesesStr);
         
         // DEBUG: Log de empresa asociada (only in dev)
         if (isDev) {
@@ -534,6 +609,7 @@ export async function GET(request: NextRequest) {
           console.log(`   - empresaId: ${empresaAsociada.id}`);
           console.log(`   - trabajos: ${datosEmp.trabajosPorHora.length}`);
           console.log(`   - gastos: ${datosEmp.gastos.length}`);
+          console.log(`   - gastosPendientesAnteriores: ${datosEmp.gastosPendientesAnteriores.length}`);
           console.log(`   - serviciosProfesionales: ${datosEmp.serviciosProfesionales.length}`);
           console.log(`   - serviciosProfesionales data:`, JSON.stringify(datosEmp.serviciosProfesionales, null, 2));
         }
@@ -560,6 +636,7 @@ export async function GET(request: NextRequest) {
         const empTotalHoras = empTotalMinutos / 60;
         const empCostoServicios = empTotalHoras * empTarifaHora;
         const empTotalGastos = datosEmp.gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+        const empTotalGastosPendientesAnteriores = datosEmp.gastosPendientesAnteriores.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
         
         // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
         const empTotalServiciosProfesionales = datosEmp.serviciosProfesionales.reduce(
@@ -581,7 +658,8 @@ export async function GET(request: NextRequest) {
           }
         });
         
-        const empSubtotal = empCostoServicios + empTotalGastos + empTotalMensualidades + empTotalServiciosProfesionales;
+        // Subtotal incluye gastos pendientes de meses anteriores
+        const empSubtotal = empCostoServicios + empTotalGastos + empTotalGastosPendientesAnteriores + empTotalMensualidades + empTotalServiciosProfesionales;
         const empIvaServicios = empCostoServicios * empIvaPerc;
         const empMontoIVA = empIvaServicios + empTotalIVAMensualidades;
         const empTotal = empSubtotal + empMontoIVA;
@@ -592,6 +670,7 @@ export async function GET(request: NextRequest) {
           ivaPerc: empIvaPerc,
           trabajosPorHora: datosEmp.trabajosPorHora,
           gastos: datosEmp.gastos,
+          gastosPendientesAnteriores: datosEmp.gastosPendientesAnteriores,
           solicitudes: datosEmp.solicitudes,
           serviciosProfesionales: datosEmp.serviciosProfesionales,
           totalServiciosProfesionales: empTotalServiciosProfesionales,
@@ -600,6 +679,7 @@ export async function GET(request: NextRequest) {
           tarifaHora: empTarifaHora,
           costoServicios: empCostoServicios,
           totalGastos: empTotalGastos,
+          totalGastosPendientesAnteriores: empTotalGastosPendientesAnteriores,
           totalMensualidades: empTotalMensualidades,
           totalIVAMensualidades: empTotalIVAMensualidades,
           subtotal: empSubtotal,
@@ -641,6 +721,8 @@ export async function GET(request: NextRequest) {
       totalIVAMensualidades,
       gastos: gastos || [],
       totalGastos,
+      gastosPendientesAnteriores: gastosPendientesAnteriores || [],
+      totalGastosPendientesAnteriores,
       serviciosProfesionales: serviciosProfesionales || [],
       totalServiciosProfesionales,
       totalMinutosGlobal,

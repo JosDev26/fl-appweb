@@ -84,6 +84,8 @@ interface DatosPago {
   totalIVAMensualidades: number
   gastos: Gasto[]
   totalGastos: number
+  gastosPendientesAnteriores: Gasto[]
+  totalGastosPendientesAnteriores: number
   serviciosProfesionales: ServicioProfesional[]
   totalServiciosProfesionales: number
   totalMinutosGlobal: number
@@ -116,6 +118,7 @@ interface DatosEmpresaGrupo {
   ivaPerc: number
   trabajosPorHora: any[]
   gastos: any[]
+  gastosPendientesAnteriores: Gasto[]
   solicitudes: any[]
   serviciosProfesionales: ServicioProfesional[]
   totalServiciosProfesionales: number
@@ -124,6 +127,7 @@ interface DatosEmpresaGrupo {
   tarifaHora: number
   costoServicios: number
   totalGastos: number
+  totalGastosPendientesAnteriores: number
   totalMensualidades: number
   totalIVAMensualidades: number
   subtotal: number
@@ -594,6 +598,32 @@ export default function PagoPage() {
                 </div>
               )}
               
+              {/* Gastos de meses anteriores (pendientes de pago) */}
+              {datosPago.gastosPendientesAnteriores && datosPago.gastosPendientesAnteriores.length > 0 && (
+                <>
+                  <div className={styles.divider} />
+                  <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
+                    <span>⚠️ Gastos de Meses Anteriores:</span>
+                    <strong className={styles.montoAlerta}>{formatMonto(datosPago.totalGastosPendientesAnteriores)}</strong>
+                  </div>
+                  
+                  {/* Detalle de gastos pendientes anteriores */}
+                  <div className={`${styles.detalleGastos} ${styles.gastosAnteriores}`}>
+                    {datosPago.gastosPendientesAnteriores.map((gasto) => (
+                      <div key={gasto.id} className={`${styles.gastoItem} ${styles.gastoItemAnterior}`}>
+                        <div className={styles.gastoInfo}>
+                          <span className={styles.gastoProducto}>{gasto.producto || 'Sin descripción'}</span>
+                          <span className={styles.gastoMeta}>
+                            {formatFecha(gasto.fecha)} • {gasto.funcionarios?.nombre || 'Sin responsable'}
+                          </span>
+                        </div>
+                        <span className={styles.gastoMonto}>{formatMonto(gasto.total_cobro)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              
               {/* Servicios Profesionales */}
               {datosPago.serviciosProfesionales && datosPago.serviciosProfesionales.length > 0 && (
                 <>
@@ -686,6 +716,14 @@ export default function PagoPage() {
                     <div className={styles.costoItem}>
                       <span>Gastos:</span>
                       <strong>{formatMonto(empresaGrupo.totalGastos)}</strong>
+                    </div>
+                  )}
+                  
+                  {/* Gastos de meses anteriores */}
+                  {empresaGrupo.totalGastosPendientesAnteriores > 0 && (
+                    <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
+                      <span>⚠️ Gastos de Meses Anteriores:</span>
+                      <strong className={styles.montoAlerta}>{formatMonto(empresaGrupo.totalGastosPendientesAnteriores)}</strong>
                     </div>
                   )}
                   

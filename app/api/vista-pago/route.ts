@@ -46,6 +46,9 @@ interface ClienteVistaPago {
   gastosCliente: number; // Solo gastos de la tabla gastos
   gastosServiciosProfesionales: number; // Campo gastos de servicios_profesionales
   
+  // Gastos pendientes de meses anteriores
+  gastosPendientesAnteriores: number; // Total de gastos con estado_pago='pendiente' de meses anteriores
+  
   // Servicios profesionales (solo costo, sin gastos ni IVA)
   totalServiciosProfesionales: number;
   
@@ -66,6 +69,7 @@ interface ClienteVistaPago {
   // Detalle de trabajos y gastos
   trabajosPorHora?: any[];
   gastos?: any[];
+  gastosAnteriores?: any[]; // Gastos pendientes de meses anteriores (detalle)
   serviciosProfesionales?: any[];
   solicitudes?: any[];
   
@@ -169,10 +173,12 @@ async function getDatosCliente(
   clienteId: string,
   tipo: 'usuario' | 'empresa',
   inicioMes: string,
-  finMes: string
+  finMes: string,
+  fechaLimite12Meses: string
 ): Promise<{
   trabajosPorHora: any[];
   gastos: any[];
+  gastosPendientesAnteriores: any[];
   serviciosProfesionales: any[];
   solicitudes: any[];
   tarifaHora: number;
@@ -244,6 +250,16 @@ async function getDatosCliente(
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     
+    // Obtener gastos pendientes de meses anteriores (hasta 12 meses atrás)
+    const { data: gastosPendientesAnterioresEmp } = await supabase
+      .from('gastos' as any)
+      .select(`id, producto, fecha, total_cobro, estado_pago, funcionarios:id_responsable (nombre)`)
+      .eq('id_cliente', clienteId)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12Meses)
+      .order('fecha', { ascending: false });
+    
     // Obtener servicios profesionales (NO cancelados)
     const { data: serviciosProfesionalesEmpresa } = await supabase
       .from('servicios_profesionales' as any)
@@ -289,6 +305,7 @@ async function getDatosCliente(
     return {
       trabajosPorHora: trabajosPorHora || [],
       gastos: gastos || [],
+      gastosPendientesAnteriores: gastosPendientesAnterioresEmp || [],
       serviciosProfesionales: serviciosConRelaciones,
       solicitudes: solicitudes || [],
       tarifaHora,
@@ -343,6 +360,16 @@ async function getDatosCliente(
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     
+    // Obtener gastos pendientes de meses anteriores (hasta 12 meses atrás)
+    const { data: gastosPendientesAnterioresUsr } = await supabase
+      .from('gastos' as any)
+      .select(`id, producto, fecha, total_cobro, estado_pago, funcionarios:id_responsable (nombre)`)
+      .eq('id_cliente', clienteId)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12Meses)
+      .order('fecha', { ascending: false });
+    
     // Obtener servicios profesionales (NO cancelados)
     const { data: serviciosProfesionalesUsuario } = await supabase
       .from('servicios_profesionales' as any)
@@ -388,6 +415,7 @@ async function getDatosCliente(
     return {
       trabajosPorHora: trabajosPorHora || [],
       gastos: gastos || [],
+      gastosPendientesAnteriores: gastosPendientesAnterioresUsr || [],
       serviciosProfesionales: serviciosConRelaciones,
       solicitudes: solicitudes || [],
       tarifaHora,
@@ -403,6 +431,7 @@ async function getDatosCliente(
 function calcularTotales(
   trabajosPorHora: any[],
   gastos: any[],
+  gastosPendientesAnteriores: any[],
   serviciosProfesionales: any[],
   solicitudes: any[],
   tarifaHora: number,
@@ -424,6 +453,7 @@ function calcularTotales(
   iva: number;
   total: number;
   proyectos: ProyectoMensualidad[];
+  totalGastosPendientesAnteriores: number;
 } {
   // Calcular horas
   let totalMinutos = 0;
@@ -448,6 +478,10 @@ function calcularTotales(
   // Calcular gastos del cliente (solo NO cancelados)
   const gastosCliente = gastos
     .filter((g: any) => g.estado_pago !== 'cancelado')
+    .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+  
+  // Calcular gastos pendientes de meses anteriores
+  const totalGastosPendientesAnteriores = gastosPendientesAnteriores
     .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
   
   // Desglosar componentes de servicios profesionales
@@ -497,8 +531,8 @@ function calcularTotales(
   const iva = ivaHorasMensualidades + ivaServiciosProfesionales;
   
   // Subtotal = todo excepto IVA
-  // montoHoras + gastosCliente + gastosServiciosProfesionales + costoServiciosProfesionales + mensualidades
-  const subtotal = montoHoras + totalGastos + costoServiciosProfesionales + totalMensualidades;
+  // montoHoras + gastosCliente + gastosServiciosProfesionales + gastosPendientesAnteriores + costoServiciosProfesionales + mensualidades
+  const subtotal = montoHoras + totalGastos + totalGastosPendientesAnteriores + costoServiciosProfesionales + totalMensualidades;
   
   // Total final
   const total = subtotal + iva;
@@ -522,7 +556,8 @@ function calcularTotales(
     ivaHorasMensualidades,
     iva,
     total,
-    proyectos
+    proyectos,
+    totalGastosPendientesAnteriores
   };
 }
 
@@ -592,16 +627,22 @@ export async function GET(request: NextRequest) {
       const { year, month, mesPago } = calcularMesAMostrar(fechaActivacion, now);
       const { inicioMes, finMes } = getRangoMes(year, month);
       
+      // Calcular fecha límite de 12 meses atrás
+      const fechaLimite12Meses = new Date(year, month - 12, 1);
+      const fechaLimite12MesesStr = fechaLimite12Meses.toISOString().split('T')[0];
+      
       const datos = await getDatosCliente(
         (usuario as any).id,
         'usuario',
         inicioMes,
-        finMes
+        finMes,
+        fechaLimite12MesesStr
       );
       
       const totales = calcularTotales(
         datos.trabajosPorHora,
         datos.gastos,
+        datos.gastosPendientesAnteriores,
         datos.serviciosProfesionales,
         datos.solicitudes,
         datos.tarifaHora,
@@ -629,6 +670,7 @@ export async function GET(request: NextRequest) {
         gastosCliente: totales.gastosCliente,
         gastosServiciosProfesionales: totales.gastosServiciosProfesionales,
         totalGastos: totales.totalGastos,
+        gastosPendientesAnteriores: totales.totalGastosPendientesAnteriores,
         totalServiciosProfesionales: totales.totalServiciosProfesionales,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
@@ -640,6 +682,7 @@ export async function GET(request: NextRequest) {
         notaInterna: datos.notaInterna || undefined,
         trabajosPorHora: datos.trabajosPorHora,
         gastos: datos.gastos,
+        gastosAnteriores: datos.gastosPendientesAnteriores,
         serviciosProfesionales: datos.serviciosProfesionales,
         solicitudes: datos.solicitudes,
         proyectos: totales.proyectos
@@ -653,16 +696,22 @@ export async function GET(request: NextRequest) {
       const { year, month, mesPago } = calcularMesAMostrar(fechaActivacion, now);
       const { inicioMes, finMes } = getRangoMes(year, month);
       
+      // Calcular fecha límite de 12 meses atrás
+      const fechaLimite12Meses = new Date(year, month - 12, 1);
+      const fechaLimite12MesesStr = fechaLimite12Meses.toISOString().split('T')[0];
+      
       const datos = await getDatosCliente(
         (empresa as any).id,
         'empresa',
         inicioMes,
-        finMes
+        finMes,
+        fechaLimite12MesesStr
       );
       
       const totales = calcularTotales(
         datos.trabajosPorHora,
         datos.gastos,
+        datos.gastosPendientesAnteriores,
         datos.serviciosProfesionales,
         datos.solicitudes,
         datos.tarifaHora,
@@ -695,6 +744,7 @@ export async function GET(request: NextRequest) {
         gastosCliente: totales.gastosCliente,
         gastosServiciosProfesionales: totales.gastosServiciosProfesionales,
         totalGastos: totales.totalGastos,
+        gastosPendientesAnteriores: totales.totalGastosPendientesAnteriores,
         totalServiciosProfesionales: totales.totalServiciosProfesionales,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
@@ -706,6 +756,7 @@ export async function GET(request: NextRequest) {
         notaInterna: datos.notaInterna || undefined,
         trabajosPorHora: datos.trabajosPorHora,
         gastos: datos.gastos,
+        gastosAnteriores: datos.gastosPendientesAnteriores,
         serviciosProfesionales: datos.serviciosProfesionales,
         solicitudes: datos.solicitudes,
         proyectos: totales.proyectos

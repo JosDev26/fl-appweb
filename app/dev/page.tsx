@@ -220,6 +220,8 @@ interface ClienteVistaPago {
   gastosCliente: number
   gastosServiciosProfesionales: number
   totalGastos: number
+  // Gastos pendientes de meses anteriores
+  gastosPendientesAnteriores: number
   // Servicios profesionales (solo costo, sin gastos ni IVA)
   totalServiciosProfesionales: number
   totalMensualidades: number
@@ -233,6 +235,7 @@ interface ClienteVistaPago {
   notaInterna?: string
   trabajosPorHora?: any[]
   gastos?: any[]
+  gastosAnteriores?: any[]
   serviciosProfesionales?: any[]
   solicitudes?: any[]
   proyectos?: ProyectoMensualidad[]
@@ -3854,6 +3857,19 @@ export default function DevPage() {
                                   )}
                                 </div>
                                 
+                                {/* Gastos Pendientes de Meses Anteriores */}
+                                {cliente.gastosPendientesAnteriores > 0 && (
+                                  <div style={{ padding: '0.75rem', background: 'rgba(244, 67, 54, 0.15)', borderRadius: '6px', border: '1px solid rgba(244, 67, 54, 0.4)' }}>
+                                    <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>⚠️ Gastos Meses Ant.</p>
+                                    <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0', color: '#d32f2f' }}>
+                                      {formatCurrency(cliente.gastosPendientesAnteriores)}
+                                    </p>
+                                    <p style={{ fontSize: '0.7rem', opacity: 0.6, margin: 0 }}>
+                                      (pendientes de pago)
+                                    </p>
+                                  </div>
+                                )}
+                                
                                 {/* Servicios Profesionales (solo costo) */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(156, 39, 176, 0.1)', borderRadius: '6px', border: '1px solid rgba(156, 39, 176, 0.3)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Servicios Prof.</p>
@@ -4054,6 +4070,35 @@ export default function DevPage() {
                                       </thead>
                                       <tbody>
                                         {cliente.gastos.map((g: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{g.fecha ? new Date(g.fecha).toLocaleDateString('es-CR') : '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{g.producto || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{formatCurrency(g.total_cobro || 0)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
+                              {/* Detalle de gastos de meses anteriores */}
+                              {cliente.gastosAnteriores && cliente.gastosAnteriores.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem', color: '#d32f2f' }}>
+                                    ⚠️ Gastos de Meses Anteriores ({cliente.gastosAnteriores.length}) - {formatCurrency(cliente.gastosPendientesAnteriores || 0)}
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(244, 67, 54, 0.08)', border: '1px solid rgba(244, 67, 54, 0.3)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Fecha</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Producto</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Monto</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.gastosAnteriores.map((g: any, idx: number) => (
                                           <tr key={idx}>
                                             <td style={{ padding: '0.25rem' }}>{g.fecha ? new Date(g.fecha).toLocaleDateString('es-CR') : '—'}</td>
                                             <td style={{ padding: '0.25rem' }}>{g.producto || '—'}</td>

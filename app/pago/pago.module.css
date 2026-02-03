@@ -568,6 +568,32 @@
   white-space: nowrap;
 }
 
+/* Estilos para Gastos de Meses Anteriores */
+.costoItemAlerta {
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.montoAlerta {
+  color: #d97706 !important;
+}
+
+.gastosAnteriores {
+  background: rgba(245, 158, 11, 0.05);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.gastoItemAnterior {
+  border-left-color: #f59e0b !important;
+  background: rgba(255, 251, 235, 0.9);
+}
+
+.gastoItemAnterior:hover {
+  background: rgba(254, 243, 199, 1);
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
