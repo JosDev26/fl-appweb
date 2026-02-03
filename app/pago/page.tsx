@@ -437,9 +437,10 @@ export default function PagoPage() {
   const tieneTrabajosHora = datosPago.trabajosPorHora.length > 0
   const tieneMensualidades = datosPago.solicitudesMensuales.length > 0
   const tieneGastos = datosPago.gastos && datosPago.gastos.length > 0
+  const tieneGastosAnteriores = datosPago.gastosPendientesAnteriores && datosPago.gastosPendientesAnteriores.length > 0
   const tieneServiciosProfesionales = datosPago.serviciosProfesionales && datosPago.serviciosProfesionales.length > 0
-  // Mostrar contenido si hay cualquier tipo de dato de pago
-  const tieneContenidoPago = tieneTrabajosHora || tieneMensualidades || tieneGastos || tieneServiciosProfesionales
+  // Mostrar contenido si hay cualquier tipo de dato de pago (incluyendo gastos de meses anteriores)
+  const tieneContenidoPago = tieneTrabajosHora || tieneMensualidades || tieneGastos || tieneGastosAnteriores || tieneServiciosProfesionales
 
   return (
     <div className={styles.container}>
@@ -575,11 +576,13 @@ export default function PagoPage() {
                 </>
               )}
               
-              {/* Gastos */}
-              <div className={styles.costoItem}>
-                <span>Gastos del Mes:</span>
-                <strong>{formatMonto(datosPago.totalGastos)}</strong>
-              </div>
+              {/* Gastos del Mes - solo mostrar si hay gastos o si no hay gastos anteriores */}
+              {(tieneGastos || !tieneGastosAnteriores) && (
+                <div className={styles.costoItem}>
+                  <span>Gastos del Mes:</span>
+                  <strong>{formatMonto(datosPago.totalGastos)}</strong>
+                </div>
+              )}
               
               {/* Detalle de gastos */}
               {datosPago.gastos && datosPago.gastos.length > 0 && (
@@ -599,9 +602,9 @@ export default function PagoPage() {
               )}
               
               {/* Gastos de meses anteriores (pendientes de pago) */}
-              {datosPago.gastosPendientesAnteriores && datosPago.gastosPendientesAnteriores.length > 0 && (
+              {tieneGastosAnteriores && (
                 <>
-                  <div className={styles.divider} />
+                  {tieneGastos && <div className={styles.divider} />}
                   <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
                     <span>⚠️ Gastos de Meses Anteriores:</span>
                     <strong className={styles.montoAlerta}>{formatMonto(datosPago.totalGastosPendientesAnteriores)}</strong>
