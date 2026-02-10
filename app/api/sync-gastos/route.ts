@@ -39,12 +39,20 @@ async function syncGastos() {
 
     console.log(`📊 Encontrados ${sheetData.length} registros en Sheets`)
 
-    // 1.1 Obtener gastos existentes en Supabase
+    // 1.1 Obtener gastos existentes en Supabase (incluyendo estado_pago para preservarlo)
     const { data: existingGastos, error: fetchError } = await supabase
       .from('gastos' as any)
-      .select('id')
+      .select('id, estado_pago')
 
     if (fetchError) throw fetchError
+
+    // Crear mapa de estado_pago existentes para preservarlos durante el upsert
+    const existingEstadoPagoMap = new Map<string, string>()
+    for (const gasto of (existingGastos || []) as any[]) {
+      if (gasto.id && gasto.estado_pago) {
+        existingEstadoPagoMap.set(gasto.id, gasto.estado_pago)
+      }
+    }
 
     // Crear set de IDs de Sheets
     const sheetsIdSet = new Set<string>()
@@ -163,6 +171,8 @@ async function syncGastos() {
         }
 
         // Preparar datos para insertar/actualizar
+        // Preservar estado_pago existente, solo usar 'pendiente' para gastos nuevos
+        const existingEstadoPago = existingEstadoPagoMap.get(id)
         const gastoData = {
           id,
           id_asociacion: idAsociacion || null,
@@ -172,7 +182,7 @@ async function syncGastos() {
           fecha: fecha,
           producto: producto || null,
           total_cobro: totalCobro,
-          estado_pago: 'pendiente', // Por defecto los gastos nuevos están pendientes
+          estado_pago: existingEstadoPago || 'pendiente', // Preservar estado existente, 'pendiente' solo para nuevos
           updated_at: new Date().toISOString()
         }
 
