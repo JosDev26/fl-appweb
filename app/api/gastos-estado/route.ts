@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { checkStandardRateLimit } from '@/lib/rate-limit'
+import { verifyDevAdminSession } from '@/lib/auth-utils'
+
+// Only log in development
+const isDev = process.env.NODE_ENV === 'development'
 
 // GET - Obtener gastos con filtros
+// Protected: Requires dev admin authentication
 export async function GET(request: NextRequest) {
   // Rate limiting: 100 requests per hour
   const rateLimitResponse = await checkStandardRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
+
+  // Verify dev admin authentication
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401 }
+    )
+  }
 
   try {
     const { searchParams } = new URL(request.url)
@@ -76,7 +90,7 @@ export async function GET(request: NextRequest) {
     const { data: gastos, error } = await query
 
     if (error) {
-      console.error('Error al obtener gastos:', error)
+      if (isDev) console.error('Error al obtener gastos:', error)
       return NextResponse.json(
         { error: 'Error al obtener gastos' },
         { status: 500 }
@@ -117,7 +131,7 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error en GET /api/gastos-estado:', error)
+    if (isDev) console.error('Error en GET /api/gastos-estado:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }
@@ -126,22 +140,40 @@ export async function GET(request: NextRequest) {
 }
 
 // PATCH - Actualizar estado de pago de un gasto
+// Protected: Requires dev admin authentication
 export async function PATCH(request: NextRequest) {
   // Rate limiting: 100 requests per hour
   const rateLimitResponse = await checkStandardRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
+
+  // Verify dev admin authentication
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401 }
+    )
+  }
 
   try {
     const body = await request.json()
     const { id, gastoId, estado, nuevoEstado } = body
     
     // Aceptar ambos formatos de parámetros
-    const actualId = id || gastoId
+    const actualId = (id || gastoId || '').toString().trim()
     const actualEstado = estado || nuevoEstado
 
-    if (!actualId || !actualEstado) {
+    // Validate id is not empty (gastos uses text IDs, not UUIDs)
+    if (!actualId) {
       return NextResponse.json(
-        { error: 'id y estado son requeridos' },
+        { error: 'id es requerido' },
+        { status: 400 }
+      )
+    }
+
+    if (!actualEstado) {
+      return NextResponse.json(
+        { error: 'estado es requerido' },
         { status: 400 }
       )
     }
@@ -162,24 +194,32 @@ export async function PATCH(request: NextRequest) {
       })
       .eq('id', actualId)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
-      console.error('Error al actualizar gasto:', error)
+      if (isDev) console.error('Error al actualizar gasto:', error)
       return NextResponse.json(
         { error: 'Error al actualizar estado del gasto' },
         { status: 500 }
       )
     }
 
+    // Handle case where no row was found
+    if (!data) {
+      return NextResponse.json(
+        { error: 'Gasto no encontrado' },
+        { status: 404 }
+      )
+    }
+
     return NextResponse.json({
       success: true,
-      message: `Gasto ${actualId} actualizado a estado: ${actualEstado}`,
+      message: `Gasto actualizado a estado: ${actualEstado}`,
       gasto: data
     })
 
   } catch (error) {
-    console.error('Error en PATCH /api/gastos-estado:', error)
+    if (isDev) console.error('Error en PATCH /api/gastos-estado:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }
@@ -188,10 +228,20 @@ export async function PATCH(request: NextRequest) {
 }
 
 // POST - Actualizar múltiples gastos
+// Protected: Requires dev admin authentication
 export async function POST(request: NextRequest) {
   // Rate limiting: 100 requests per hour
   const rateLimitResponse = await checkStandardRateLimit(request)
   if (rateLimitResponse) return rateLimitResponse
+
+  // Verify dev admin authentication
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json(
+      { error: 'No autorizado' },
+      { status: 401 }
+    )
+  }
 
   try {
     const body = await request.json()
@@ -225,10 +275,18 @@ export async function POST(request: NextRequest) {
 
     let description = ''
 
-    // Actualizar por lista de IDs
+    // Actualizar por lista de IDs (gastos uses text IDs from Google Sheets, not UUIDs)
     if (actualIds && actualIds.length > 0) {
-      query = query.in('id', actualIds)
-      description = `${actualIds.length} gastos seleccionados`
+      // Validate all IDs are non-empty strings
+      const validIds = actualIds.map((id: string) => (id || '').toString().trim()).filter(Boolean)
+      if (validIds.length === 0) {
+        return NextResponse.json(
+          { error: 'No se proporcionaron IDs válidos' },
+          { status: 400 }
+        )
+      }
+      query = query.in('id', validIds)
+      description = `${validIds.length} gastos seleccionados`
     }
     // Actualizar por cliente y/o mes
     else if (clienteId || mes) {
@@ -253,7 +311,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await query.select()
 
     if (error) {
-      console.error('Error al actualizar gastos:', error)
+      if (isDev) console.error('Error al actualizar gastos:', error)
       return NextResponse.json(
         { error: 'Error al actualizar gastos' },
         { status: 500 }
@@ -267,7 +325,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error en POST /api/gastos-estado:', error)
+    if (isDev) console.error('Error en POST /api/gastos-estado:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }
