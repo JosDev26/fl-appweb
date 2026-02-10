@@ -6,6 +6,101 @@ import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
+// Only log in development
+const isDev = process.env.NODE_ENV === 'development';
+
+// ============================================================================
+// FUNCIÓN AUXILIAR: Obtener datos de una empresa específica
+// ============================================================================
+async function getDatosEmpresa(
+  empresaId: string, 
+  inicioMes: string, 
+  finMes: string,
+  fechaLimite12MesesStr: string
+): Promise<{
+  trabajosPorHora: any[];
+  gastos: any[];
+  gastosPendientesAnteriores: any[];
+  solicitudes: any[];
+  serviciosProfesionales: any[];
+  empresa: { nombre: string; tarifa_hora: number; iva_perc: number } | null;
+}> {
+  // Obtener info de la empresa
+  const { data: empresaData } = await supabase
+    .from('empresas')
+    .select('nombre, tarifa_hora, iva_perc')
+    .eq('id', empresaId)
+    .maybeSingle();
+
+  // Obtener casos de la empresa
+  const { data: casos } = await supabase
+    .from('casos')
+    .select('id')
+    .eq('id_cliente', empresaId);
+
+  let trabajosPorHora: any[] = [];
+  if (casos && casos.length > 0) {
+    const casoIds = casos.map(c => c.id);
+    const { data } = await supabase
+      .from('trabajos_por_hora')
+      .select('*, casos!fk_caso(nombre, expediente)')
+      .in('caso_asignado', casoIds)
+      .gte('fecha', inicioMes)
+      .lte('fecha', finMes)
+      .order('fecha', { ascending: false });
+    trabajosPorHora = data || [];
+  }
+
+  // Obtener gastos
+  const { data: gastos } = await supabase
+    .from('gastos' as any)
+    .select('id, producto, fecha, total_cobro, estado_pago, id_responsable')
+    .eq('id_cliente', empresaId)
+    .gte('fecha', inicioMes)
+    .lte('fecha', finMes)
+    .order('fecha', { ascending: false });
+
+  // Obtener gastos pendientes de meses anteriores
+  const { data: gastosPendientesAnteriores } = await supabase
+    .from('gastos' as any)
+    .select('id, producto, fecha, total_cobro, estado_pago, id_responsable')
+    .eq('id_cliente', empresaId)
+    .eq('estado_pago', 'pendiente')
+    .lt('fecha', inicioMes)
+    .gte('fecha', fechaLimite12MesesStr)
+    .order('fecha', { ascending: false });
+
+  // Obtener solicitudes mensuales
+  const { data: solicitudes } = await supabase
+    .from('solicitudes')
+    .select('*')
+    .eq('id_cliente', empresaId)
+    .ilike('modalidad_pago', 'mensualidad');
+
+  // Obtener servicios profesionales (NO cancelados)
+  const { data: serviciosProfesionales } = await supabase
+    .from('servicios_profesionales' as any)
+    .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
+    .eq('id_cliente', empresaId)
+    .neq('estado_pago', 'cancelado')
+    .gte('fecha', inicioMes)
+    .lte('fecha', finMes)
+    .order('fecha', { ascending: false });
+
+  return {
+    trabajosPorHora: trabajosPorHora || [],
+    gastos: gastos || [],
+    gastosPendientesAnteriores: gastosPendientesAnteriores || [],
+    solicitudes: solicitudes || [],
+    serviciosProfesionales: serviciosProfesionales || [],
+    empresa: empresaData ? {
+      nombre: (empresaData as any).nombre,
+      tarifa_hora: (empresaData as any).tarifa_hora || 90000,
+      iva_perc: (empresaData as any).iva_perc ?? 0.13
+    } : null
+  };
+}
+
 // ============================================================================
 // VERIFICACIÓN DE SESIÓN DE ADMIN (dev-auth)
 // Solo usuarios con sesión activa en /dev pueden acceder a este endpoint
@@ -200,7 +295,93 @@ export async function GET(request: NextRequest) {
     const fechaLimite12Meses = new Date(year, month - 12, 1);
     const fechaLimite12MesesStr = fechaLimite12Meses.toISOString().split('T')[0];
     
-    // Obtener gastos del mes actual
+    const ivaPerc = cliente.iva_perc ?? 0.13;
+    const tarifaHora = cliente.tarifa_hora || 90000;
+
+    // ========== VERIFICAR SI ES LÍDER DE UN GRUPO DE EMPRESAS ==========
+    let esGrupoPrincipal = false;
+    let grupoInfo: { id: string; nombre: string } | null = null;
+    let empresasDelGrupo: { id: string; nombre: string; iva_perc: number }[] = [];
+    
+    if (cliente.tipo === 'empresa') {
+      const { data: grupo } = await supabase
+        .from('grupos_empresas' as any)
+        .select(`
+          id,
+          nombre,
+          miembros:grupos_empresas_miembros(empresa_id)
+        `)
+        .eq('empresa_principal_id', cliente.id)
+        .maybeSingle();
+
+      if (grupo) {
+        esGrupoPrincipal = true;
+        grupoInfo = { id: (grupo as any).id, nombre: (grupo as any).nombre };
+        // Obtener info de las empresas miembros
+        const empresaIds = ((grupo as any).miembros || []).map((m: any) => m.empresa_id);
+        if (empresaIds.length > 0) {
+          const { data: empresasInfo } = await supabase
+            .from('empresas')
+            .select('id, nombre, iva_perc, tarifa_hora, modoPago')
+            .in('id', empresaIds);
+          empresasDelGrupo = (empresasInfo || []).map((e: any) => ({
+            id: e.id,
+            nombre: e.nombre,
+            iva_perc: e.iva_perc ?? 0.13,
+            tarifa_hora: e.tarifa_hora || 90000,
+            modoPago: e.modoPago ?? false
+          }));
+        }
+      }
+    }
+
+    // ========== TRABAJOS POR HORA ==========
+    let trabajosPorHora: any[] = [];
+    if (cliente.tipo === 'usuario') {
+      const { data } = await supabase
+        .from('trabajos_por_hora')
+        .select('*, casos!fk_caso(nombre, expediente)')
+        .eq('id_cliente', cliente.id)
+        .gte('fecha', inicioMes)
+        .lte('fecha', finMes)
+        .order('fecha', { ascending: false });
+      trabajosPorHora = data || [];
+    } else {
+      // Para empresas, buscar casos de la empresa y luego sus trabajos
+      const { data: casos } = await supabase
+        .from('casos')
+        .select('id')
+        .eq('id_cliente', cliente.id);
+
+      if (casos && casos.length > 0) {
+        const casoIds = casos.map(c => c.id);
+        const { data } = await supabase
+          .from('trabajos_por_hora')
+          .select('*, casos!fk_caso(nombre, expediente)')
+          .in('caso_asignado', casoIds)
+          .gte('fecha', inicioMes)
+          .lte('fecha', finMes)
+          .order('fecha', { ascending: false });
+        trabajosPorHora = data || [];
+      }
+    }
+
+    // Calcular total minutos y horas
+    let totalMinutos = 0;
+    trabajosPorHora.forEach((t: any) => {
+      if (t.duracion) {
+        if (t.duracion.includes(':')) {
+          const [h, m] = t.duracion.split(':').map(Number);
+          totalMinutos += (h * 60) + m;
+        } else {
+          totalMinutos += Math.round(parseFloat(t.duracion) * 60);
+        }
+      }
+    });
+    const totalHoras = totalMinutos / 60;
+    const costoServicios = totalHoras * tarifaHora;
+
+    // ========== GASTOS ==========
     const { data: gastosMesActual, error: errorGastos } = await supabase
       .from('gastos' as any)
       .select(`id, producto, fecha, total_cobro, estado_pago, funcionarios:id_responsable (nombre)`)
@@ -209,7 +390,6 @@ export async function GET(request: NextRequest) {
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     
-    // Obtener gastos pendientes de meses anteriores
     const { data: gastosPendientesAnteriores, error: errorGastosAnt } = await supabase
       .from('gastos' as any)
       .select(`id, producto, fecha, total_cobro, estado_pago, funcionarios:id_responsable (nombre)`)
@@ -219,16 +399,160 @@ export async function GET(request: NextRequest) {
       .gte('fecha', fechaLimite12MesesStr)
       .order('fecha', { ascending: false });
     
-    // Calcular totales
     const totalGastosMesActual = (gastosMesActual || [])
       .filter((g: any) => g.estado_pago !== 'cancelado')
       .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
     
     const totalGastosPendientesAnteriores = (gastosPendientesAnteriores || [])
       .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+
+    // ========== SERVICIOS PROFESIONALES ==========
+    const { data: serviciosProfesionales } = await supabase
+      .from('servicios_profesionales' as any)
+      .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
+      .eq('id_cliente', cliente.id)
+      .neq('estado_pago', 'cancelado')
+      .gte('fecha', inicioMes)
+      .lte('fecha', finMes)
+      .order('fecha', { ascending: false });
     
-    const ivaPerc = cliente.iva_perc ?? 0.13;
-    const subtotalGastos = totalGastosMesActual + totalGastosPendientesAnteriores;
+    const totalServiciosProfesionales = (serviciosProfesionales || [])
+      .reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+
+    // ========== SOLICITUDES / MENSUALIDADES ==========
+    const { data: solicitudes } = await supabase
+      .from('solicitudes')
+      .select('*')
+      .eq('id_cliente', cliente.id)
+      .ilike('modalidad_pago', 'mensualidad');
+    
+    let totalMensualidades = 0;
+    let totalIVAMensualidades = 0;
+    (solicitudes || []).forEach((s: any) => {
+      const montoCuota = s.monto_por_cuota || 0;
+      if (s.se_cobra_iva) {
+        const subtotalCuota = montoCuota / (1 + ivaPerc);
+        totalMensualidades += subtotalCuota;
+        totalIVAMensualidades += montoCuota - subtotalCuota;
+      } else {
+        totalMensualidades += montoCuota;
+      }
+    });
+
+    // ========== CALCULAR TOTALES EMPRESA PRINCIPAL ==========
+    const subtotalPrincipal = costoServicios + totalGastosMesActual + totalGastosPendientesAnteriores + totalMensualidades + totalServiciosProfesionales;
+    const ivaServiciosPrincipal = costoServicios * ivaPerc;
+    const ivaTotalPrincipal = ivaServiciosPrincipal + totalIVAMensualidades;
+    const totalPrincipal = subtotalPrincipal + ivaTotalPrincipal;
+
+    // ========== DATOS DE EMPRESAS ASOCIADAS (GRUPOS) ==========
+    interface DatosEmpresaGrupo {
+      empresaId: string;
+      empresaNombre: string;
+      ivaPerc: number;
+      tarifaHora: number;
+      trabajosPorHora: any[];
+      gastos: any[];
+      gastosPendientesAnteriores: any[];
+      solicitudes: any[];
+      serviciosProfesionales: any[];
+      totalMinutos: number;
+      totalHoras: number;
+      costoServicios: number;
+      totalGastos: number;
+      totalGastosPendientesAnteriores: number;
+      totalServiciosProfesionales: number;
+      totalMensualidades: number;
+      totalIVAMensualidades: number;
+      subtotal: number;
+      ivaServicios: number;
+      montoIVA: number;
+      total: number;
+    }
+    
+    let datosEmpresasGrupo: DatosEmpresaGrupo[] = [];
+    let totalGrupoSubtotal = 0;
+    let totalGrupoIVA = 0;
+    let totalGrupoAPagar = 0;
+    
+    if (esGrupoPrincipal && empresasDelGrupo.length > 0) {
+      for (const empresaAsociada of empresasDelGrupo) {
+        const datosEmp = await getDatosEmpresa(empresaAsociada.id, inicioMes, finMes, fechaLimite12MesesStr);
+        
+        // Calcular totales para esta empresa
+        let empTotalMinutos = 0;
+        datosEmp.trabajosPorHora.forEach((t: any) => {
+          if (t.duracion) {
+            if (t.duracion.includes(':')) {
+              const [h, m] = t.duracion.split(':').map(Number);
+              empTotalMinutos += (h * 60) + m;
+            } else {
+              empTotalMinutos += Math.round(parseFloat(t.duracion) * 60);
+            }
+          }
+        });
+        
+        const empTarifaHora = datosEmp.empresa?.tarifa_hora || 90000;
+        const empIvaPerc = empresaAsociada.iva_perc;
+        const empTotalHoras = empTotalMinutos / 60;
+        const empCostoServicios = empTotalHoras * empTarifaHora;
+        const empTotalGastos = datosEmp.gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+        const empTotalGastosPendientesAnteriores = datosEmp.gastosPendientesAnteriores.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+        const empTotalServiciosProfesionales = datosEmp.serviciosProfesionales.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+        
+        // Calcular mensualidades de la empresa asociada
+        let empTotalMensualidades = 0;
+        let empTotalIVAMensualidades = 0;
+        datosEmp.solicitudes.forEach((s: any) => {
+          const montoCuota = s.monto_por_cuota || 0;
+          if (s.se_cobra_iva) {
+            const subtotalCuota = montoCuota / (1 + empIvaPerc);
+            empTotalMensualidades += subtotalCuota;
+            empTotalIVAMensualidades += montoCuota - subtotalCuota;
+          } else {
+            empTotalMensualidades += montoCuota;
+          }
+        });
+        
+        const empSubtotal = empCostoServicios + empTotalGastos + empTotalGastosPendientesAnteriores + empTotalMensualidades + empTotalServiciosProfesionales;
+        const empIvaServicios = empCostoServicios * empIvaPerc;
+        const empMontoIVA = empIvaServicios + empTotalIVAMensualidades;
+        const empTotal = empSubtotal + empMontoIVA;
+        
+        datosEmpresasGrupo.push({
+          empresaId: empresaAsociada.id,
+          empresaNombre: empresaAsociada.nombre,
+          ivaPerc: empIvaPerc,
+          tarifaHora: empTarifaHora,
+          trabajosPorHora: datosEmp.trabajosPorHora,
+          gastos: datosEmp.gastos,
+          gastosPendientesAnteriores: datosEmp.gastosPendientesAnteriores,
+          serviciosProfesionales: datosEmp.serviciosProfesionales,
+          solicitudes: datosEmp.solicitudes,
+          totalMinutos: empTotalMinutos,
+          totalHoras: empTotalHoras,
+          costoServicios: empCostoServicios,
+          totalGastos: empTotalGastos,
+          totalGastosPendientesAnteriores: empTotalGastosPendientesAnteriores,
+          totalServiciosProfesionales: empTotalServiciosProfesionales,
+          totalMensualidades: empTotalMensualidades,
+          totalIVAMensualidades: empTotalIVAMensualidades,
+          subtotal: empSubtotal,
+          ivaServicios: empIvaServicios,
+          montoIVA: empMontoIVA,
+          total: empTotal
+        });
+        
+        totalGrupoSubtotal += empSubtotal;
+        totalGrupoIVA += empMontoIVA;
+        totalGrupoAPagar += empTotal;
+      }
+    }
+
+    // ========== GRAN TOTAL (Principal + Asociadas) ==========
+    const granTotalSubtotal = subtotalPrincipal + totalGrupoSubtotal;
+    const granTotalIVA = ivaTotalPrincipal + totalGrupoIVA;
+    const granTotalAPagar = totalPrincipal + totalGrupoAPagar;
     
     return NextResponse.json({
       _auth: {
@@ -240,7 +564,7 @@ export async function GET(request: NextRequest) {
         nombre: cliente.nombre,
         tipo: cliente.tipo,
         ivaPerc,
-        tarifaHora: cliente.tarifa_hora || 90000,
+        tarifaHora,
         modoPago: cliente.modo_pago ?? false,
         avisoModoPago: !cliente.modo_pago ? "⚠️ Este cliente NO tiene modoPago activo, no aparecerá en /vista-pago" : "✅ Activo en modo pago"
       },
@@ -251,28 +575,81 @@ export async function GET(request: NextRequest) {
         fechaLimite12Meses: fechaLimite12MesesStr,
         fechaActual: now.toISOString().split('T')[0]
       },
-      gastosMesActual: {
-        cantidad: (gastosMesActual || []).length,
-        cantidadNoCancelados: (gastosMesActual || []).filter((g: any) => g.estado_pago !== 'cancelado').length,
-        total: totalGastosMesActual,
-        detalle: gastosMesActual || [],
-        error: errorGastos?.message
+      // ========== GRUPO DE EMPRESAS (si aplica) ==========
+      grupoEmpresas: esGrupoPrincipal ? {
+        esLider: true,
+        grupoId: grupoInfo?.id,
+        grupoNombre: grupoInfo?.nombre,
+        cantidadEmpresasAsociadas: empresasDelGrupo.length,
+        empresasAsociadas: empresasDelGrupo.map(e => ({ id: e.id, nombre: e.nombre, iva_perc: e.iva_perc })),
+        avisoGrupo: `✅ Este cliente es LÍDER del grupo "${grupoInfo?.nombre}" con ${empresasDelGrupo.length} empresa(s) asociada(s). Los totales incluyen a todas las empresas.`
+      } : {
+        esLider: false,
+        avisoGrupo: "ℹ️ Este cliente NO es líder de ningún grupo de empresas"
       },
-      gastosPendientesAnteriores: {
-        cantidad: (gastosPendientesAnteriores || []).length,
-        total: totalGastosPendientesAnteriores,
-        detalle: gastosPendientesAnteriores || [],
-        error: errorGastosAnt?.message
+      // ========== DATOS DE LA EMPRESA PRINCIPAL ==========
+      empresaPrincipal: {
+        trabajosPorHora: {
+          cantidad: trabajosPorHora.length,
+          totalMinutos,
+          totalHoras: parseFloat(totalHoras.toFixed(2)),
+          costoServicios,
+          detalle: trabajosPorHora
+        },
+        gastosMesActual: {
+          cantidad: (gastosMesActual || []).length,
+          cantidadNoCancelados: (gastosMesActual || []).filter((g: any) => g.estado_pago !== 'cancelado').length,
+          total: totalGastosMesActual,
+          detalle: gastosMesActual || [],
+          error: errorGastos?.message
+        },
+        gastosPendientesAnteriores: {
+          cantidad: (gastosPendientesAnteriores || []).length,
+          total: totalGastosPendientesAnteriores,
+          detalle: gastosPendientesAnteriores || [],
+          error: errorGastosAnt?.message
+        },
+        serviciosProfesionales: {
+          cantidad: (serviciosProfesionales || []).length,
+          total: totalServiciosProfesionales,
+          detalle: serviciosProfesionales || []
+        },
+        solicitudesMensualidades: {
+          cantidad: (solicitudes || []).length,
+          totalMensualidades,
+          totalIVAMensualidades,
+          detalle: solicitudes || []
+        },
+        totalesPrincipal: {
+          subtotal: subtotalPrincipal,
+          ivaServicios: ivaServiciosPrincipal,
+          ivaTotalPrincipal,
+          total: totalPrincipal
+        }
       },
-      resumen: {
-        "📋 Gastos Mes Actual": totalGastosMesActual,
-        "⚠️ Gastos Meses Anteriores (pendientes)": totalGastosPendientesAnteriores,
-        "📊 Subtotal Gastos": subtotalGastos,
-        "✅ TOTAL INCLUYE ANTERIORES": totalGastosPendientesAnteriores > 0 ? "SÍ - Los gastos de meses anteriores están incluidos" : "N/A (no hay gastos pendientes anteriores)"
+      // ========== DATOS DE EMPRESAS ASOCIADAS (solo si es líder) ==========
+      empresasAsociadasDetalle: esGrupoPrincipal ? datosEmpresasGrupo : null,
+      totalesGrupo: esGrupoPrincipal ? {
+        "📊 Subtotal Empresas Asociadas": totalGrupoSubtotal,
+        "💰 IVA Empresas Asociadas": totalGrupoIVA,
+        "💵 Total Empresas Asociadas": totalGrupoAPagar
+      } : null,
+      // ========== RESUMEN FINAL ==========
+      resumenFinal: {
+        "📋 Subtotal Empresa Principal": subtotalPrincipal,
+        "📋 Subtotal Empresas Asociadas": esGrupoPrincipal ? totalGrupoSubtotal : 0,
+        "📊 GRAN SUBTOTAL": granTotalSubtotal,
+        "💰 IVA Total": granTotalIVA,
+        "💵 GRAN TOTAL A PAGAR": granTotalAPagar,
+        "ℹ️ Nota": esGrupoPrincipal 
+          ? `Incluye ${empresasDelGrupo.length} empresa(s) asociada(s) al grupo "${grupoInfo?.nombre}"`
+          : "Solo incluye datos de este cliente (no es líder de grupo)"
       },
       debug: {
         queryGastosMes: `id_cliente='${cliente.id}' AND fecha >= '${inicioMes}' AND fecha <= '${finMes}'`,
-        queryGastosAnteriores: `id_cliente='${cliente.id}' AND estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}'`
+        queryGastosAnteriores: `id_cliente='${cliente.id}' AND estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}'`,
+        esGrupoPrincipal,
+        empresasEnGrupo: esGrupoPrincipal ? empresasDelGrupo.map(e => e.nombre) : []
       }
     });
     
