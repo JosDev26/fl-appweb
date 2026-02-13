@@ -90,11 +90,14 @@ export function shouldDeactivateModoPago(
   // Sin mes activo → conservar estado (no desactivar)
   if (!mesActivo) return false
 
-  // Si el cliente tiene datos pendientes en el mes activo, NO desactivar
-  if (datosPendientes.tieneDatos) return false
+  // Rama 1: mesPago > mesActivo → caso raro (pago adelantado), desactivar siempre
+  if (mesPago > mesActivo) return true
 
-  // Si no tiene datos pendientes, desactivar
-  return true
+  // Rama 2: mesPago < mesActivo → pagó un mes viejo, solo desactivar si NO tiene datos pendientes
+  if (mesPago < mesActivo) return !datosPendientes.tieneDatos
+
+  // Rama 3: mesPago === mesActivo → pagó el mes actual, desactivar solo si no quedan pendientes
+  return !datosPendientes.tieneDatos
 }
 
 /**
