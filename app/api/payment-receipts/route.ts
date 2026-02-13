@@ -165,12 +165,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === 'aprobar') {
-      // Aprobar: Usar RPC atómico para actualizar estado y desactivar modoPago
+      // Aprobar: Usar RPC atómico para actualizar estado y desactivar modoPago condicionalmente
       const { data: rpcResult, error: rpcError } = await (supabase as any)
         .rpc('approve_payment_receipt', {
           p_receipt_id: receiptId,
           p_user_id: userId,
           p_tipo_cliente: tipoCliente,
+          p_mes_pago: mesPago || null,
           p_nota: sanitizedNota
         })
 
@@ -183,7 +184,7 @@ export async function PATCH(request: NextRequest) {
       }
 
       // Check RPC result
-      const result = rpcResult as { success: boolean; error?: string; message?: string; fecha_aprobacion?: string }
+      const result = rpcResult as { success: boolean; error?: string; message?: string; fecha_aprobacion?: string; modo_pago_desactivado?: boolean; datos_pendientes?: any }
       if (!result.success) {
         if (isDev) console.error('RPC returned error:', result.error, result.message)
         
@@ -230,18 +231,51 @@ export async function PATCH(request: NextRequest) {
 
             if (!miembrosError && miembros && miembros.length > 0) {
               const empresaIds = (miembros as any[]).map((m: any) => m.empresa_id)
-              if (isDev) console.log('🏢 Desactivando modoPago de empresas asociadas:', empresaIds.length)
+              if (isDev) console.log('🏢 Verificando modoPago de empresas asociadas:', empresaIds.length)
 
-              // BATCH: Desactivar modoPago de todas las empresas asociadas (single query)
-              const { error: updateGrupoError } = await supabase
-                .from('empresas' as any)
-                .update({ modoPago: false } as any)
-                .in('id', empresaIds)
+              // FIX: Verificar datos pendientes por cada empresa del grupo antes de desactivar
+              // Usar la misma lógica que el RPC: solo desactivar si no tiene datos pendientes
+              const empresasADesactivar: string[] = []
+              
+              for (const empresaId of empresaIds) {
+                try {
+                  const { data: pendientesResult, error: pendientesError } = await (supabase as any)
+                    .rpc('cliente_tiene_datos_pendientes', {
+                      p_client_id: empresaId,
+                      p_tipo_cliente: 'empresa'
+                    })
+                  
+                  if (pendientesError) {
+                    if (isDev) console.error(`❌ Error verificando datos pendientes para empresa ${empresaId}:`, pendientesError)
+                    // En caso de error, NO desactivar (conservador)
+                    continue
+                  }
+                  
+                  const tieneDatos = pendientesResult?.tieneDatos || false
+                  if (!tieneDatos) {
+                    empresasADesactivar.push(empresaId)
+                  } else {
+                    if (isDev) console.log(`⚠️ Empresa ${empresaId} tiene datos pendientes, modoPago permanece activo`)
+                  }
+                } catch (err) {
+                  if (isDev) console.error(`❌ Error inesperado verificando empresa ${empresaId}:`, err)
+                }
+              }
 
-              if (updateGrupoError) {
-                if (isDev) console.error('❌ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
+              if (empresasADesactivar.length > 0) {
+                // BATCH: Desactivar modoPago solo de empresas SIN datos pendientes
+                const { error: updateGrupoError } = await supabase
+                  .from('empresas' as any)
+                  .update({ modoPago: false } as any)
+                  .in('id', empresasADesactivar)
+
+                if (updateGrupoError) {
+                  if (isDev) console.error('❌ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
+                } else {
+                  if (isDev) console.log('✅ modoPago desactivado para', empresasADesactivar.length, 'de', empresaIds.length, 'empresas del grupo')
+                }
               } else {
-                if (isDev) console.log('✅ modoPago desactivado para', empresaIds.length, 'empresas del grupo')
+                if (isDev) console.log('ℹ️ Ninguna empresa del grupo fue desactivada (todas tienen datos pendientes)')
               }
 
               // BATCH: Get ALL solicitudes for all empresas in one query
