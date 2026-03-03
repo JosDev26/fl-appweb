@@ -120,10 +120,10 @@ async function syncControlHoras() {
       console.log(`📋 Primer registro:`, transformedData[0]);
     }
 
-    // Obtener trabajos existentes (id + estado_pago needed for existence check)
+    // Obtener trabajos existentes
     const { data: existingTrabajos, error: fetchError } = await supabase
       .from('trabajos_por_hora')
-      .select('id, estado_pago')
+      .select('id')
 
     if (fetchError) throw fetchError
 
