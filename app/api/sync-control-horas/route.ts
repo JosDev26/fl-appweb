@@ -120,10 +120,10 @@ async function syncControlHoras() {
       console.log(`📋 Primer registro:`, transformedData[0]);
     }
 
-    // Obtener trabajos existentes
+    // Obtener trabajos existentes (id + estado_pago needed for existence check)
     const { data: existingTrabajos, error: fetchError } = await supabase
       .from('trabajos_por_hora')
-      .select('*')
+      .select('id, estado_pago')
 
     if (fetchError) throw fetchError
 
@@ -156,7 +156,7 @@ async function syncControlHoras() {
       const existing = existingMap.get(trabajo.id)
       
       if (existing) {
-        // Actualizar si existe
+        // Actualizar si existe — preservar estado_pago existente
         const { error } = await supabase
           .from('trabajos_por_hora')
           .update({
@@ -169,6 +169,7 @@ async function syncControlHoras() {
             fecha: trabajo.fecha,
             duracion: trabajo.duracion,
             updated_at: new Date().toISOString()
+            // NOTA: NO se incluye estado_pago aquí para preservar el valor existente
           })
           .eq('id', trabajo.id)
         
@@ -179,10 +180,13 @@ async function syncControlHoras() {
           updated++
         }
       } else {
-        // Insertar si no existe
+        // Insertar si no existe — nuevos registros inician como 'pendiente'
         const { error } = await supabase
           .from('trabajos_por_hora')
-          .insert(trabajo)
+          .insert({
+            ...trabajo,
+            estado_pago: 'pendiente'
+          })
         
         if (error) {
           errors++

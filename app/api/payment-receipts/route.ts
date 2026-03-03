@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { GoogleSheetsService } from '@/lib/googleSheets'
 import { checkStandardRateLimit } from '@/lib/rate-limit'
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    if (isDev) console.error('Unexpected error:', error)
+    console.error('Unexpected error:', error)
     return NextResponse.json(
       { error: 'Error inesperado' },
       { status: 500 }
@@ -165,7 +165,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (action === 'aprobar') {
-      // Aprobar: Usar RPC atómico para actualizar estado y desactivar modoPago condicionalmente
+      // Aprobar: Usar RPC atÃ³mico para actualizar estado y desactivar modoPago condicionalmente
       const { data: rpcResult, error: rpcError } = await (supabase as any)
         .rpc('approve_payment_receipt', {
           p_receipt_id: receiptId,
@@ -176,7 +176,7 @@ export async function PATCH(request: NextRequest) {
         })
 
       if (rpcError) {
-        if (isDev) console.error('Error in approve_payment_receipt RPC:', rpcError)
+        console.error('Error in approve_payment_receipt RPC:', rpcError)
         return NextResponse.json(
           { error: 'Error al aprobar comprobante' },
           { status: 500 }
@@ -186,7 +186,7 @@ export async function PATCH(request: NextRequest) {
       // Check RPC result
       const result = rpcResult as { success: boolean; error?: string; message?: string; fecha_aprobacion?: string; modo_pago_desactivado?: boolean; datos_pendientes?: any }
       if (!result.success) {
-        if (isDev) console.error('RPC returned error:', result.error, result.message)
+        console.error('RPC returned error:', result.error, result.message)
         
         // Map RPC errors to appropriate responses
         if (result.error === 'receipt_not_found') {
@@ -213,7 +213,7 @@ export async function PATCH(request: NextRequest) {
       // y desactivar modoPago de las empresas asociadas
       if (tipoCliente === 'empresa') {
         try {
-          // Buscar si esta empresa es principal de algún grupo
+          // Buscar si esta empresa es principal de algÃºn grupo
           const { data: grupo, error: grupoError } = await supabase
             .from('grupos_empresas' as any)
             .select('id, nombre')
@@ -221,7 +221,7 @@ export async function PATCH(request: NextRequest) {
             .maybeSingle()
 
           if (!grupoError && grupo) {
-            if (isDev) console.log('🏢 Empresa es principal del grupo:', (grupo as any).nombre)
+            if (isDev) console.log('ðŸ¢ Empresa es principal del grupo:', (grupo as any).nombre)
             
             // Obtener las empresas miembros del grupo
             const { data: miembros, error: miembrosError } = await supabase
@@ -231,10 +231,10 @@ export async function PATCH(request: NextRequest) {
 
             if (!miembrosError && miembros && miembros.length > 0) {
               const empresaIds = (miembros as any[]).map((m: any) => m.empresa_id)
-              if (isDev) console.log('🏢 Verificando modoPago de empresas asociadas:', empresaIds.length)
+              if (isDev) console.log('ðŸ¢ Verificando modoPago de empresas asociadas:', empresaIds.length)
 
               // FIX: Verificar datos pendientes por cada empresa del grupo antes de desactivar
-              // Usar la misma lógica que el RPC: solo desactivar si no tiene datos pendientes
+              // Usar la misma lÃ³gica que el RPC: solo desactivar si no tiene datos pendientes
               const empresasADesactivar: string[] = []
               
               for (const empresaId of empresaIds) {
@@ -246,7 +246,7 @@ export async function PATCH(request: NextRequest) {
                     })
                   
                   if (pendientesError) {
-                    if (isDev) console.error(`❌ Error verificando datos pendientes para empresa ${empresaId}:`, pendientesError)
+                    console.error(`âŒ Error verificando datos pendientes para empresa ${empresaId}:`, pendientesError)
                     // En caso de error, NO desactivar (conservador)
                     continue
                   }
@@ -255,10 +255,10 @@ export async function PATCH(request: NextRequest) {
                   if (!tieneDatos) {
                     empresasADesactivar.push(empresaId)
                   } else {
-                    if (isDev) console.log(`⚠️ Empresa ${empresaId} tiene datos pendientes, modoPago permanece activo`)
+                    if (isDev) console.log(`âš ï¸ Empresa ${empresaId} tiene datos pendientes, modoPago permanece activo`)
                   }
                 } catch (err) {
-                  if (isDev) console.error(`❌ Error inesperado verificando empresa ${empresaId}:`, err)
+                  console.error(`âŒ Error inesperado verificando empresa ${empresaId}:`, err)
                 }
               }
 
@@ -270,12 +270,12 @@ export async function PATCH(request: NextRequest) {
                   .in('id', empresasADesactivar)
 
                 if (updateGrupoError) {
-                  if (isDev) console.error('❌ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
+                  console.error('âŒ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
                 } else {
-                  if (isDev) console.log('✅ modoPago desactivado para', empresasADesactivar.length, 'de', empresaIds.length, 'empresas del grupo')
+                  if (isDev) console.log('âœ… modoPago desactivado para', empresasADesactivar.length, 'de', empresaIds.length, 'empresas del grupo')
                 }
               } else {
-                if (isDev) console.log('ℹ️ Ninguna empresa del grupo fue desactivada (todas tienen datos pendientes)')
+                if (isDev) console.log('â„¹ï¸ Ninguna empresa del grupo fue desactivada (todas tienen datos pendientes)')
               }
 
               // BATCH: Get ALL solicitudes for all empresas in one query
@@ -286,7 +286,7 @@ export async function PATCH(request: NextRequest) {
                 .ilike('modalidad_pago', 'mensualidad')
 
               if (!solError && todasSolicitudes && todasSolicitudes.length > 0) {
-                if (isDev) console.log(`📋 Actualizando ${todasSolicitudes.length} solicitudes de empresas del grupo`)
+                if (isDev) console.log(`ðŸ“‹ Actualizando ${todasSolicitudes.length} solicitudes de empresas del grupo`)
                 
                 // Process each solicitud and batch updates
                 const updates = todasSolicitudes.map(solicitud => {
@@ -334,9 +334,9 @@ export async function PATCH(request: NextRequest) {
                   .map(({ updateId }) => updateId)
                 
                 if (failedGrupoUpdates.length > 0) {
-                  if (isDev) console.error(`❌ ${failedGrupoUpdates.length} solicitudes de grupo fallaron:`, failedGrupoUpdates)
+                  console.error(`âŒ ${failedGrupoUpdates.length} solicitudes de grupo fallaron:`, failedGrupoUpdates)
                 } else if (isDev) {
-                  console.log(`✅ ${updates.length} solicitudes de grupo actualizadas`)
+                  console.log(`âœ… ${updates.length} solicitudes de grupo actualizadas`)
                 }
               }
 
@@ -361,9 +361,9 @@ export async function PATCH(request: NextRequest) {
                   .eq('client_type', 'empresa')
 
                 if (facturasError) {
-                  if (isDev) console.error(`❌ Error actualizando facturas para empresas [${empresaIds.join(', ')}]:`, facturasError)
+                  console.error(`âŒ Error actualizando facturas para empresas [${empresaIds.join(', ')}]:`, facturasError)
                 } else if (isDev) {
-                  console.log(`✅ Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
+                  console.log(`âœ… Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
                 }
 
                 // BATCH: Update all gastos in one query using IN clause
@@ -378,9 +378,9 @@ export async function PATCH(request: NextRequest) {
                   .lte('fecha', endDate)
 
                 if (gastosError) {
-                  if (isDev) console.error(`❌ Error actualizando gastos para empresas [${empresaIds.join(', ')}]:`, gastosError)
+                  console.error(`âŒ Error actualizando gastos para empresas [${empresaIds.join(', ')}]:`, gastosError)
                 } else if (isDev) {
-                  console.log(`✅ Gastos de ${empresaIds.length} empresas marcados como pagados`)
+                  console.log(`âœ… Gastos de ${empresaIds.length} empresas marcados como pagados`)
                 }
 
                 // BATCH: Update all servicios in one query using IN clause
@@ -396,21 +396,105 @@ export async function PATCH(request: NextRequest) {
                   .lte('fecha', endDate)
 
                 if (serviciosError) {
-                  if (isDev) console.error(`❌ Error actualizando servicios para empresas [${empresaIds.join(', ')}]:`, serviciosError)
+                  console.error(`âŒ Error actualizando servicios para empresas [${empresaIds.join(', ')}]:`, serviciosError)
                 } else if (isDev) {
-                  console.log(`✅ Servicios de ${empresaIds.length} empresas marcados como pagados`)
+                  console.log(`âœ… Servicios de ${empresaIds.length} empresas marcados como pagados`)
+                }
+
+                // BATCH: Mark carry-forward gastos (from previous months, still pending) as paid
+                const fechaLimite12Meses = new Date(yearNum, monthNum - 12, 1).toISOString().split('T')[0]
+                
+                const { error: gastosCarryError } = await supabase
+                  .from('gastos' as any)
+                  .update({ 
+                    estado_pago: 'pagado',
+                    updated_at: fechaAprobacion
+                  })
+                  .in('id_cliente', empresaIds)
+                  .eq('estado_pago', 'pendiente')
+                  .lt('fecha', startDate)
+                  .gte('fecha', fechaLimite12Meses)
+
+                if (gastosCarryError) {
+                  console.error(`âŒ Error actualizando gastos carry-forward para empresas:`, gastosCarryError)
+                } else if (isDev) {
+                  console.log(`âœ… Gastos carry-forward de empresas del grupo marcados como pagados`)
+                }
+
+                // BATCH: Mark carry-forward servicios profesionales (from previous months, still pending) as paid
+                const { error: serviciosCarryError } = await supabase
+                  .from('servicios_profesionales' as any)
+                  .update({ 
+                    estado_pago: 'pagado',
+                    updated_at: fechaAprobacion
+                  })
+                  .in('id_cliente', empresaIds)
+                  .eq('estado_pago', 'pendiente')
+                  .lt('fecha', startDate)
+                  .gte('fecha', fechaLimite12Meses)
+
+                if (serviciosCarryError) {
+                  console.error(`âŒ Error actualizando servicios carry-forward para empresas:`, serviciosCarryError)
+                } else if (isDev) {
+                  console.log(`âœ… Servicios carry-forward de empresas del grupo marcados como pagados`)
+                }
+
+                // BATCH: Mark trabajos_por_hora (current month + carry-forward) as paid
+                // For empresas, TPH are linked via caso_asignado, so we need to get all caso IDs first
+                const { data: casosBatch } = await supabase
+                  .from('casos')
+                  .select('id')
+                  .in('id_cliente', empresaIds)
+                
+                if (casosBatch && casosBatch.length > 0) {
+                  const allCasoIds = casosBatch.map((c: any) => c.id)
+                  
+                  // Current month TPH
+                  const { error: tphError } = await supabase
+                    .from('trabajos_por_hora')
+                    .update({ 
+                      estado_pago: 'pagado',
+                      updated_at: fechaAprobacion
+                    })
+                    .in('caso_asignado', allCasoIds)
+                    .gte('fecha', startDate)
+                    .lte('fecha', endDate)
+                  
+                  if (tphError) {
+                    console.error(`âŒ Error actualizando TPH para empresas:`, tphError)
+                  } else if (isDev) {
+                    console.log(`âœ… TPH de empresas del grupo marcados como pagados`)
+                  }
+                  
+                  // Carry-forward TPH
+                  const { error: tphCarryError } = await supabase
+                    .from('trabajos_por_hora')
+                    .update({ 
+                      estado_pago: 'pagado',
+                      updated_at: fechaAprobacion
+                    })
+                    .in('caso_asignado', allCasoIds)
+                    .eq('estado_pago', 'pendiente')
+                    .lt('fecha', startDate)
+                    .gte('fecha', fechaLimite12Meses)
+                  
+                  if (tphCarryError) {
+                    console.error(`âŒ Error actualizando TPH carry-forward para empresas:`, tphCarryError)
+                  } else if (isDev) {
+                    console.log(`âœ… TPH carry-forward de empresas del grupo marcados como pagados`)
+                  }
                 }
               }
             }
           }
         } catch (grupoErr) {
-          if (isDev) console.error('❌ Error al procesar grupo de empresas:', grupoErr)
+          console.error('âŒ Error al procesar grupo de empresas:', grupoErr)
         }
       }
 
       // Actualizar solicitudes con modalidad mensual
       // IMPORTANTE: Los gastos NO se incluyen en monto_pagado
-      if (isDev) console.log('💰 Actualizando solicitudes mensualidades del cliente:', userId)
+      if (isDev) console.log('ðŸ’° Actualizando solicitudes mensualidades del cliente:', userId)
       try {
         const { data: solicitudesMensuales, error: solicitudesError } = await supabase
           .from('solicitudes')
@@ -419,9 +503,9 @@ export async function PATCH(request: NextRequest) {
           .ilike('modalidad_pago', 'mensualidad')
 
         if (solicitudesError) {
-          if (isDev) console.error('❌ Error al obtener solicitudes:', solicitudesError)
+          console.error('âŒ Error al obtener solicitudes:', solicitudesError)
         } else if (solicitudesMensuales && solicitudesMensuales.length > 0) {
-          if (isDev) console.log(`📋 Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
+          if (isDev) console.log(`ðŸ“‹ Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
           
           // Calculate all updates first
           const solicitudUpdates = solicitudesMensuales.map(solicitud => {
@@ -460,15 +544,15 @@ export async function PATCH(request: NextRequest) {
           
           const failures = results.filter(r => r.status === 'rejected').length
           if (failures > 0 && isDev) {
-            console.error(`❌ ${failures} solicitudes fallaron al actualizar`)
+            console.error(`âŒ ${failures} solicitudes fallaron al actualizar`)
           } else if (isDev) {
-            console.log(`✅ ${solicitudUpdates.length} solicitudes actualizadas`)
+            console.log(`âœ… ${solicitudUpdates.length} solicitudes actualizadas`)
           }
         } else {
-          if (isDev) console.log('ℹ️ No se encontraron solicitudes mensualidades para actualizar')
+          if (isDev) console.log('â„¹ï¸ No se encontraron solicitudes mensualidades para actualizar')
         }
       } catch (err) {
-        if (isDev) console.error('❌ Error al actualizar solicitudes:', err)
+        console.error('âŒ Error al actualizar solicitudes:', err)
       }
 
       // Marcar gastos del mes como pagados
@@ -477,9 +561,9 @@ export async function PATCH(request: NextRequest) {
           // Parsear mes_pago (formato: "YYYY-MM")
           const [year, month] = mesPago.split('-')
           const startDate = `${year}-${month}-01`
-          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0] // Último día del mes
+          const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0] // Ãšltimo dÃ­a del mes
           
-          if (isDev) console.log(`💰 Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
+          if (isDev) console.log(`ðŸ’° Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
           
           // Marcar gastos del mes como pagados
           const { error: gastosError } = await supabase
@@ -493,13 +577,13 @@ export async function PATCH(request: NextRequest) {
             .lte('fecha', endDate)
           
           if (gastosError) {
-            if (isDev) console.error('❌ Error al marcar gastos como pagados:', gastosError)
+            console.error('âŒ Error al marcar gastos como pagados:', gastosError)
           } else {
-            if (isDev) console.log(`✅ Gastos del mes ${mesPago} marcados como pagados`)
+            if (isDev) console.log(`âœ… Gastos del mes ${mesPago} marcados como pagados`)
           }
           
           // Marcar servicios profesionales del mes como pagados
-          if (isDev) console.log(`💰 Marcando servicios profesionales del mes ${mesPago} como pagados para cliente ${userId}...`)
+          if (isDev) console.log(`ðŸ’° Marcando servicios profesionales del mes ${mesPago} como pagados para cliente ${userId}...`)
           
           const { error: serviciosError } = await supabase
             .from('servicios_profesionales' as any)
@@ -513,17 +597,135 @@ export async function PATCH(request: NextRequest) {
             .lte('fecha', endDate)
           
           if (serviciosError) {
-            if (isDev) console.error('❌ Error al marcar servicios como pagados:', serviciosError)
+            console.error('âŒ Error al marcar servicios como pagados:', serviciosError)
           } else {
-            if (isDev) console.log(`✅ Servicios profesionales del mes ${mesPago} marcados como pagados`)
+            if (isDev) console.log(`âœ… Servicios profesionales del mes ${mesPago} marcados como pagados`)
+          }
+
+          // ===== FIX: Marcar gastos carry-forward (meses anteriores, aÃºn pendientes) como pagados =====
+          const fechaLimite12Meses = new Date(parseInt(year), parseInt(month) - 12, 1).toISOString().split('T')[0]
+          
+          if (isDev) console.log(`ðŸ’° Marcando gastos carry-forward como pagados para cliente ${userId}...`)
+          
+          const { error: gastosCarryError } = await supabase
+            .from('gastos' as any)
+            .update({ 
+              estado_pago: 'pagado',
+              updated_at: fechaAprobacion
+            })
+            .eq('id_cliente', userId)
+            .eq('estado_pago', 'pendiente')
+            .lt('fecha', startDate)
+            .gte('fecha', fechaLimite12Meses)
+          
+          if (gastosCarryError) {
+            console.error('âŒ Error al marcar gastos carry-forward como pagados:', gastosCarryError)
+          } else {
+            if (isDev) console.log(`âœ… Gastos carry-forward marcados como pagados`)
+          }
+
+          // ===== FIX: Marcar servicios profesionales carry-forward como pagados =====
+          if (isDev) console.log(`ðŸ’° Marcando servicios profesionales carry-forward como pagados para cliente ${userId}...`)
+          
+          const { error: serviciosCarryError } = await supabase
+            .from('servicios_profesionales' as any)
+            .update({ 
+              estado_pago: 'pagado',
+              updated_at: fechaAprobacion
+            })
+            .eq('id_cliente', userId)
+            .eq('estado_pago', 'pendiente')
+            .lt('fecha', startDate)
+            .gte('fecha', fechaLimite12Meses)
+          
+          if (serviciosCarryError) {
+            console.error('âŒ Error al marcar servicios carry-forward como pagados:', serviciosCarryError)
+          } else {
+            if (isDev) console.log(`âœ… Servicios profesionales carry-forward marcados como pagados`)
+          }
+
+          // ===== Marcar trabajos_por_hora del mes + carry-forward como pagados =====
+          if (tipoCliente === 'usuario') {
+            // For usuarios, TPH has id_cliente directly
+            if (isDev) console.log(`ðŸ’° Marcando trabajos por hora como pagados para usuario ${userId}...`)
+            
+            // Current month TPH
+            const { error: tphError } = await supabase
+              .from('trabajos_por_hora')
+              .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+              .eq('id_cliente', userId)
+              .gte('fecha', startDate)
+              .lte('fecha', endDate)
+            
+            if (tphError) {
+              console.error('âŒ Error al marcar TPH del mes como pagados:', tphError)
+            } else {
+              if (isDev) console.log(`âœ… TPH del mes marcados como pagados (usuario)`)
+            }
+            
+            // Carry-forward TPH
+            const { error: tphCarryError } = await supabase
+              .from('trabajos_por_hora')
+              .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+              .eq('id_cliente', userId)
+              .eq('estado_pago', 'pendiente')
+              .lt('fecha', startDate)
+              .gte('fecha', fechaLimite12Meses)
+            
+            if (tphCarryError) {
+              console.error('âŒ Error al marcar TPH carry-forward como pagados:', tphCarryError)
+            } else {
+              if (isDev) console.log(`âœ… TPH carry-forward marcados como pagados (usuario)`)
+            }
+          } else {
+            // For empresas, TPH are linked via caso_asignado
+            if (isDev) console.log(`ðŸ’° Marcando trabajos por hora como pagados para empresa ${userId}...`)
+            
+            const { data: casosCliente } = await supabase
+              .from('casos')
+              .select('id')
+              .eq('id_cliente', userId)
+            
+            if (casosCliente && casosCliente.length > 0) {
+              const casoIds = casosCliente.map((c: any) => c.id)
+              
+              // Current month TPH
+              const { error: tphError } = await supabase
+                .from('trabajos_por_hora')
+                .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                .in('caso_asignado', casoIds)
+                .gte('fecha', startDate)
+                .lte('fecha', endDate)
+              
+              if (tphError) {
+                console.error('âŒ Error al marcar TPH del mes como pagados:', tphError)
+              } else {
+                if (isDev) console.log(`âœ… TPH del mes marcados como pagados (empresa)`)
+              }
+              
+              // Carry-forward TPH
+              const { error: tphCarryError } = await supabase
+                .from('trabajos_por_hora')
+                .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                .in('caso_asignado', casoIds)
+                .eq('estado_pago', 'pendiente')
+                .lt('fecha', startDate)
+                .gte('fecha', fechaLimite12Meses)
+              
+              if (tphCarryError) {
+                console.error('âŒ Error al marcar TPH carry-forward como pagados:', tphCarryError)
+              } else {
+                if (isDev) console.log(`âœ… TPH carry-forward marcados como pagados (empresa)`)
+              }
+            }
           }
         } catch (err) {
-          if (isDev) console.error('❌ Error al procesar gastos:', err)
+          console.error('âŒ Error al procesar gastos:', err)
         }
       }
 
       // Marcar factura como pagada directamente en la base de datos
-      if (isDev) console.log('🔍 Intentando actualizar factura con mes_pago:', mesPago)
+      if (isDev) console.log('ðŸ” Intentando actualizar factura con mes_pago:', mesPago)
       
       if (mesPago) {
         try {
@@ -536,7 +738,7 @@ export async function PATCH(request: NextRequest) {
             .eq('client_type', tipoCliente)
             .single()
 
-          if (isDev) console.log('🔍 Búsqueda de factura existente:', { 
+          if (isDev) console.log('ðŸ” BÃºsqueda de factura existente:', { 
             encontrada: !!existingDeadline, 
             error: checkError?.message
           })
@@ -553,23 +755,23 @@ export async function PATCH(request: NextRequest) {
               .eq('client_type', tipoCliente)
 
             if (invoiceError) {
-              if (isDev) console.error('❌ Error al actualizar estado de factura:', invoiceError)
+              console.error('âŒ Error al actualizar estado de factura:', invoiceError)
             } else {
-              if (isDev) console.log('✅ Estado de factura actualizado a pagado')
+              if (isDev) console.log('âœ… Estado de factura actualizado a pagado')
             }
           } else {
-            if (isDev) console.warn('⚠️ No se encontró factura para actualizar')
+            if (isDev) console.warn('âš ï¸ No se encontrÃ³ factura para actualizar')
           }
         } catch (err) {
-          if (isDev) console.error('❌ Error al actualizar estado de factura:', err)
+          console.error('âŒ Error al actualizar estado de factura:', err)
         }
       } else {
-        if (isDev) console.warn('⚠️ El comprobante no tiene mes_pago asociado')
+        if (isDev) console.warn('âš ï¸ El comprobante no tiene mes_pago asociado')
       }
 
       // ===== ESCRIBIR EN HOJA "Ingresos" DE GOOGLE SHEETS =====
       try {
-        if (isDev) console.log('📝 Preparando registro de ingreso para Google Sheets...')
+        if (isDev) console.log('ðŸ“ Preparando registro de ingreso para Google Sheets...')
         
         // Obtener datos del cliente
         const tablaCliente = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
@@ -585,7 +787,7 @@ export async function PATCH(request: NextRequest) {
           .select('modalidad_pago, monto_por_cuota, costo_neto')
           .eq('id_cliente', userId)
         
-        // Calcular honorarios (suma de cuotas o costos según modalidad)
+        // Calcular honorarios (suma de cuotas o costos segÃºn modalidad)
         let honorarios = 0
         let modalidadPago = 'Mensualidad' // default
         
@@ -620,9 +822,9 @@ export async function PATCH(request: NextRequest) {
         }
         
         // Moneda del cliente
-        const moneda = (clienteData as any)?.esDolar ? 'Dólares' : 'Colones'
+        const moneda = (clienteData as any)?.esDolar ? 'DÃ³lares' : 'Colones'
         
-        // Servicios (por ahora 0, se implementará después)
+        // Servicios (por ahora 0, se implementarÃ¡ despuÃ©s)
         const servicios = 0
         
         // Total del ingreso
@@ -650,13 +852,13 @@ export async function PATCH(request: NextRequest) {
           totalIngreso                  // J: Total_Ingreso
         ]
         
-        if (isDev) console.log('📊 Datos del ingreso:', { id: ingresoId, total: totalIngreso })
+        if (isDev) console.log('ðŸ“Š Datos del ingreso:', { id: ingresoId, total: totalIngreso })
         
         // Escribir en Google Sheets
         await GoogleSheetsService.appendRow('Ingresos', rowData)
-        if (isDev) console.log('✅ Ingreso registrado en Google Sheets')
+        if (isDev) console.log('âœ… Ingreso registrado en Google Sheets')
         
-        // También guardar en Supabase para consultas rápidas
+        // TambiÃ©n guardar en Supabase para consultas rÃ¡pidas
         await (supabase as any)
           .from('ingresos')
           .upsert({
@@ -673,11 +875,11 @@ export async function PATCH(request: NextRequest) {
             total_ingreso: totalIngreso
           }, { onConflict: 'id' })
         
-        if (isDev) console.log('✅ Ingreso guardado en Supabase')
+        if (isDev) console.log('âœ… Ingreso guardado en Supabase')
         
       } catch (ingresosError) {
         // No fallar la aprobación si falla el registro de ingresos
-        if (isDev) console.error('❌ Error registrando ingreso (no crítico):', ingresosError)
+        console.error('❌ Error registrando ingreso (no crítico):', ingresosError instanceof Error ? ingresosError.message : String(ingresosError))
       }
 
       return NextResponse.json({
@@ -706,7 +908,7 @@ export async function PATCH(request: NextRequest) {
         .eq('id', receiptId)
 
       if (updateReceiptError) {
-        if (isDev) console.error('Error updating receipt:', updateReceiptError)
+        console.error('Error updating receipt:', updateReceiptError)
         return NextResponse.json(
           { error: 'Error al actualizar comprobante' },
           { status: 500 }
@@ -722,7 +924,7 @@ export async function PATCH(request: NextRequest) {
     }
 
   } catch (error) {
-    if (isDev) console.error('Unexpected error:', error)
+    console.error('Unexpected error:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }

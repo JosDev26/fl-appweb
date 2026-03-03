@@ -49,8 +49,16 @@ interface ClienteVistaPago {
   // Gastos pendientes de meses anteriores
   gastosPendientesAnteriores: number; // Total de gastos con estado_pago='pendiente' de meses anteriores
   
+  // Trabajos por hora pendientes de meses anteriores
+  trabajosPendientesAnteriores: number;
+  totalHorasAnteriores: number;
+  montoHorasAnteriores: number;
+  
   // Servicios profesionales (solo costo, sin gastos ni IVA)
   totalServiciosProfesionales: number;
+  
+  // Servicios profesionales pendientes de meses anteriores
+  serviciosPendientesAnteriores: number;
   
   totalMensualidades: number;
   subtotal: number;
@@ -71,6 +79,8 @@ interface ClienteVistaPago {
   gastos?: any[];
   gastosAnteriores?: any[]; // Gastos pendientes de meses anteriores (detalle)
   serviciosProfesionales?: any[];
+  serviciosAnteriores?: any[]; // Servicios profesionales pendientes de meses anteriores (detalle)
+  trabajosAnteriores?: any[]; // Trabajos por hora pendientes de meses anteriores (detalle)
   solicitudes?: any[];
   
   // Proyectos con modalidad Mensualidad
@@ -177,9 +187,11 @@ async function getDatosCliente(
   fechaLimite12Meses: string
 ): Promise<{
   trabajosPorHora: any[];
+  trabajosPendientesAnteriores: any[];
   gastos: any[];
   gastosPendientesAnteriores: any[];
   serviciosProfesionales: any[];
+  serviciosPendientesAnteriores: any[];
   solicitudes: any[];
   tarifaHora: number;
   ivaPerc: number;
@@ -229,6 +241,7 @@ async function getDatosCliente(
       .eq('id_cliente', clienteId);
     
     let trabajosPorHora: any[] = [];
+    let trabajosPendientesAnterioresEmp: any[] = [];
     if (casos && casos.length > 0) {
       const casoIds = casos.map(c => c.id);
       const { data } = await supabase
@@ -239,6 +252,17 @@ async function getDatosCliente(
         .lte('fecha', finMes)
         .order('fecha', { ascending: false });
       trabajosPorHora = data || [];
+      
+      // Obtener trabajos por hora pendientes de meses anteriores
+      const { data: tphAnt } = await supabase
+        .from('trabajos_por_hora')
+        .select('*, casos!fk_caso(nombre, expediente)')
+        .in('caso_asignado', casoIds)
+        .eq('estado_pago', 'pendiente')
+        .lt('fecha', inicioMes)
+        .gte('fecha', fechaLimite12Meses)
+        .order('fecha', { ascending: false });
+      trabajosPendientesAnterioresEmp = tphAnt || [];
     }
     
     // Obtener gastos
@@ -270,6 +294,16 @@ async function getDatosCliente(
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     
+    // Obtener servicios profesionales pendientes de meses anteriores (hasta 12 meses atrás)
+    const { data: serviciosPendientesAnterioresEmp } = await supabase
+      .from('servicios_profesionales' as any)
+      .select('*')
+      .eq('id_cliente', clienteId)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12Meses)
+      .order('fecha', { ascending: false });
+    
     // Fetch related data separately (no FK constraints exist)
     let serviciosConRelaciones: any[] = serviciosProfesionalesEmpresa || [];
     if (serviciosProfesionalesEmpresa && serviciosProfesionalesEmpresa.length > 0) {
@@ -296,6 +330,32 @@ async function getDatosCliente(
       }));
     }
     
+    // Enriquecer servicios pendientes anteriores con relaciones
+    let serviciosPendientesConRelacionesEmp: any[] = serviciosPendientesAnterioresEmp || [];
+    if (serviciosPendientesAnterioresEmp && serviciosPendientesAnterioresEmp.length > 0) {
+      const spPendData = serviciosPendientesAnterioresEmp as any[];
+      const spPendFuncIds = [...new Set(spPendData.map(s => s.id_responsable).filter(Boolean))];
+      const spPendServIds = [...new Set(spPendData.map(s => s.id_servicio).filter(Boolean))];
+
+      const [spPendFuncRes, spPendServRes] = await Promise.all([
+        spPendFuncIds.length > 0
+          ? supabase.from('funcionarios').select('id, nombre').in('id', spPendFuncIds)
+          : Promise.resolve({ data: [] }),
+        spPendServIds.length > 0
+          ? supabase.from('lista_servicios' as any).select('id, titulo').in('id', spPendServIds)
+          : Promise.resolve({ data: [] })
+      ]);
+
+      const spPendFuncMap = new Map(((spPendFuncRes.data || []) as any[]).map(f => [f.id, f]));
+      const spPendServMap = new Map(((spPendServRes.data || []) as any[]).map(s => [s.id, s]));
+
+      serviciosPendientesConRelacionesEmp = spPendData.map(servicio => ({
+        ...servicio,
+        funcionarios: servicio.id_responsable ? spPendFuncMap.get(servicio.id_responsable) : null,
+        lista_servicios: servicio.id_servicio ? spPendServMap.get(servicio.id_servicio) : null
+      }));
+    }
+    
     // Obtener solicitudes
     const { data: solicitudes } = await supabase
       .from('solicitudes')
@@ -304,9 +364,11 @@ async function getDatosCliente(
     
     return {
       trabajosPorHora: trabajosPorHora || [],
+      trabajosPendientesAnteriores: trabajosPendientesAnterioresEmp,
       gastos: gastos || [],
       gastosPendientesAnteriores: gastosPendientesAnterioresEmp || [],
       serviciosProfesionales: serviciosConRelaciones,
+      serviciosPendientesAnteriores: serviciosPendientesConRelacionesEmp,
       solicitudes: solicitudes || [],
       tarifaHora,
       ivaPerc,
@@ -351,6 +413,16 @@ async function getDatosCliente(
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     
+    // Obtener trabajos por hora pendientes de meses anteriores
+    const { data: trabajosPendientesAnterioresUsr } = await supabase
+      .from('trabajos_por_hora')
+      .select('*, casos!fk_caso(nombre, expediente)')
+      .eq('id_cliente', clienteId)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12Meses)
+      .order('fecha', { ascending: false });
+    
     // Obtener gastos
     const { data: gastos } = await supabase
       .from('gastos' as any)
@@ -380,6 +452,16 @@ async function getDatosCliente(
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     
+    // Obtener servicios profesionales pendientes de meses anteriores (hasta 12 meses atrás)
+    const { data: serviciosPendientesAnterioresUsr } = await supabase
+      .from('servicios_profesionales' as any)
+      .select('*')
+      .eq('id_cliente', clienteId)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12Meses)
+      .order('fecha', { ascending: false });
+    
     // Fetch related data separately (no FK constraints exist)
     let serviciosConRelaciones: any[] = serviciosProfesionalesUsuario || [];
     if (serviciosProfesionalesUsuario && serviciosProfesionalesUsuario.length > 0) {
@@ -406,6 +488,32 @@ async function getDatosCliente(
       }));
     }
     
+    // Enriquecer servicios pendientes anteriores con relaciones
+    let serviciosPendientesConRelacionesUsr: any[] = serviciosPendientesAnterioresUsr || [];
+    if (serviciosPendientesAnterioresUsr && serviciosPendientesAnterioresUsr.length > 0) {
+      const spPendData = serviciosPendientesAnterioresUsr as any[];
+      const spPendFuncIds = [...new Set(spPendData.map(s => s.id_responsable).filter(Boolean))];
+      const spPendServIds = [...new Set(spPendData.map(s => s.id_servicio).filter(Boolean))];
+
+      const [spPendFuncRes, spPendServRes] = await Promise.all([
+        spPendFuncIds.length > 0
+          ? supabase.from('funcionarios').select('id, nombre').in('id', spPendFuncIds)
+          : Promise.resolve({ data: [] }),
+        spPendServIds.length > 0
+          ? supabase.from('lista_servicios' as any).select('id, titulo').in('id', spPendServIds)
+          : Promise.resolve({ data: [] })
+      ]);
+
+      const spPendFuncMap = new Map(((spPendFuncRes.data || []) as any[]).map(f => [f.id, f]));
+      const spPendServMap = new Map(((spPendServRes.data || []) as any[]).map(s => [s.id, s]));
+
+      serviciosPendientesConRelacionesUsr = spPendData.map(servicio => ({
+        ...servicio,
+        funcionarios: servicio.id_responsable ? spPendFuncMap.get(servicio.id_responsable) : null,
+        lista_servicios: servicio.id_servicio ? spPendServMap.get(servicio.id_servicio) : null
+      }));
+    }
+    
     // Obtener solicitudes
     const { data: solicitudes } = await supabase
       .from('solicitudes')
@@ -414,9 +522,11 @@ async function getDatosCliente(
     
     return {
       trabajosPorHora: trabajosPorHora || [],
+      trabajosPendientesAnteriores: trabajosPendientesAnterioresUsr || [],
       gastos: gastos || [],
       gastosPendientesAnteriores: gastosPendientesAnterioresUsr || [],
       serviciosProfesionales: serviciosConRelaciones,
+      serviciosPendientesAnteriores: serviciosPendientesConRelacionesUsr,
       solicitudes: solicitudes || [],
       tarifaHora,
       ivaPerc,
@@ -430,9 +540,11 @@ async function getDatosCliente(
 // Calcular totales de un cliente
 function calcularTotales(
   trabajosPorHora: any[],
+  trabajosPendientesAnteriores: any[],
   gastos: any[],
   gastosPendientesAnteriores: any[],
   serviciosProfesionales: any[],
+  serviciosPendientesAnteriores: any[],
   solicitudes: any[],
   tarifaHora: number,
   ivaPerc: number
@@ -440,6 +552,9 @@ function calcularTotales(
   totalMinutos: number;
   totalHoras: number;
   montoHoras: number;
+  totalMinutosAnteriores: number;
+  totalHorasAnteriores: number;
+  montoHorasAnteriores: number;
   gastosCliente: number;
   gastosServiciosProfesionales: number;
   totalGastos: number;
@@ -454,6 +569,8 @@ function calcularTotales(
   total: number;
   proyectos: ProyectoMensualidad[];
   totalGastosPendientesAnteriores: number;
+  totalServiciosPendientesAnteriores: number;
+  ivaServiciosPendientesAnteriores: number;
 } {
   // Calcular horas
   let totalMinutos = 0;
@@ -475,6 +592,26 @@ function calcularTotales(
   const totalHoras = totalMinutos / 60;
   const montoHoras = totalHoras * tarifaHora;
   
+  // Calcular horas de meses anteriores (carry-forward)
+  let totalMinutosAnteriores = 0;
+  trabajosPendientesAnteriores.forEach((t: any) => {
+    if (t.duracion) {
+      const duracion = t.duracion;
+      let minutos = 0;
+      if (duracion.includes(':')) {
+        const [h, m] = duracion.split(':').map(Number);
+        minutos = (h * 60) + m;
+      } else {
+        const horas = parseFloat(duracion);
+        minutos = Math.round(horas * 60);
+      }
+      totalMinutosAnteriores += minutos;
+    }
+  });
+  
+  const totalHorasAnteriores = totalMinutosAnteriores / 60;
+  const montoHorasAnteriores = totalHorasAnteriores * tarifaHora;
+  
   // Calcular gastos del cliente (solo NO cancelados)
   const gastosCliente = gastos
     .filter((g: any) => g.estado_pago !== 'cancelado')
@@ -483,6 +620,15 @@ function calcularTotales(
   // Calcular gastos pendientes de meses anteriores
   const totalGastosPendientesAnteriores = gastosPendientesAnteriores
     .reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+  
+  // Calcular servicios profesionales pendientes de meses anteriores
+  const costoServiciosPendientesAnteriores = serviciosPendientesAnteriores
+    .reduce((sum: number, s: any) => sum + (s.costo || 0), 0);
+  const gastosServiciosPendientesAnteriores = serviciosPendientesAnteriores
+    .reduce((sum: number, s: any) => sum + (s.gastos || 0), 0);
+  const ivaServiciosPendientesAnteriores = serviciosPendientesAnteriores
+    .reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
+  const totalServiciosPendientesAnteriores = costoServiciosPendientesAnteriores;
   
   // Desglosar componentes de servicios profesionales
   const costoServiciosProfesionales = serviciosProfesionales.reduce(
@@ -527,12 +673,14 @@ function calcularTotales(
   // IVA de horas y mensualidades (el IVA de servicios profesionales ya viene separado)
   const ivaHorasMensualidades = (montoHoras * ivaPerc) + totalIVAMensualidades;
   
-  // IVA total = IVA horas/mensualidades + IVA servicios profesionales
-  const iva = ivaHorasMensualidades + ivaServiciosProfesionales;
+  // IVA de horas de meses anteriores
+  const ivaHorasAnteriores = montoHorasAnteriores * ivaPerc;
+  
+  // IVA total = IVA horas/mensualidades + IVA servicios profesionales + IVA servicios pendientes anteriores + IVA horas anteriores
+  const iva = ivaHorasMensualidades + ivaServiciosProfesionales + ivaServiciosPendientesAnteriores + ivaHorasAnteriores;
   
   // Subtotal = todo excepto IVA
-  // montoHoras + gastosCliente + gastosServiciosProfesionales + gastosPendientesAnteriores + costoServiciosProfesionales + mensualidades
-  const subtotal = montoHoras + totalGastos + totalGastosPendientesAnteriores + costoServiciosProfesionales + totalMensualidades;
+  const subtotal = montoHoras + montoHorasAnteriores + totalGastos + totalGastosPendientesAnteriores + costoServiciosProfesionales + totalMensualidades + totalServiciosPendientesAnteriores + gastosServiciosPendientesAnteriores;
   
   // Total final
   const total = subtotal + iva;
@@ -544,6 +692,9 @@ function calcularTotales(
     totalMinutos,
     totalHoras,
     montoHoras,
+    totalMinutosAnteriores,
+    totalHorasAnteriores,
+    montoHorasAnteriores,
     gastosCliente,
     gastosServiciosProfesionales,
     totalGastos,
@@ -557,7 +708,9 @@ function calcularTotales(
     iva,
     total,
     proyectos,
-    totalGastosPendientesAnteriores
+    totalGastosPendientesAnteriores,
+    totalServiciosPendientesAnteriores,
+    ivaServiciosPendientesAnteriores
   };
 }
 
@@ -641,9 +794,11 @@ export async function GET(request: NextRequest) {
       
       const totales = calcularTotales(
         datos.trabajosPorHora,
+        datos.trabajosPendientesAnteriores,
         datos.gastos,
         datos.gastosPendientesAnteriores,
         datos.serviciosProfesionales,
+        datos.serviciosPendientesAnteriores,
         datos.solicitudes,
         datos.tarifaHora,
         datos.ivaPerc
@@ -667,11 +822,15 @@ export async function GET(request: NextRequest) {
         totalHoras: totales.totalHoras,
         montoHoras: totales.montoHoras,
         tarifaHora: datos.tarifaHora,
+        trabajosPendientesAnteriores: totales.montoHorasAnteriores,
+        totalHorasAnteriores: totales.totalHorasAnteriores,
+        montoHorasAnteriores: totales.montoHorasAnteriores,
         gastosCliente: totales.gastosCliente,
         gastosServiciosProfesionales: totales.gastosServiciosProfesionales,
         totalGastos: totales.totalGastos,
         gastosPendientesAnteriores: totales.totalGastosPendientesAnteriores,
         totalServiciosProfesionales: totales.totalServiciosProfesionales,
+        serviciosPendientesAnteriores: totales.totalServiciosPendientesAnteriores,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
         ivaPerc: datos.ivaPerc,
@@ -684,6 +843,8 @@ export async function GET(request: NextRequest) {
         gastos: datos.gastos,
         gastosAnteriores: datos.gastosPendientesAnteriores,
         serviciosProfesionales: datos.serviciosProfesionales,
+        serviciosAnteriores: datos.serviciosPendientesAnteriores,
+        trabajosAnteriores: datos.trabajosPendientesAnteriores,
         solicitudes: datos.solicitudes,
         proyectos: totales.proyectos
       });
@@ -710,9 +871,11 @@ export async function GET(request: NextRequest) {
       
       const totales = calcularTotales(
         datos.trabajosPorHora,
+        datos.trabajosPendientesAnteriores,
         datos.gastos,
         datos.gastosPendientesAnteriores,
         datos.serviciosProfesionales,
+        datos.serviciosPendientesAnteriores,
         datos.solicitudes,
         datos.tarifaHora,
         datos.ivaPerc
@@ -741,11 +904,15 @@ export async function GET(request: NextRequest) {
         totalHoras: totales.totalHoras,
         montoHoras: totales.montoHoras,
         tarifaHora: datos.tarifaHora,
+        trabajosPendientesAnteriores: totales.montoHorasAnteriores,
+        totalHorasAnteriores: totales.totalHorasAnteriores,
+        montoHorasAnteriores: totales.montoHorasAnteriores,
         gastosCliente: totales.gastosCliente,
         gastosServiciosProfesionales: totales.gastosServiciosProfesionales,
         totalGastos: totales.totalGastos,
         gastosPendientesAnteriores: totales.totalGastosPendientesAnteriores,
         totalServiciosProfesionales: totales.totalServiciosProfesionales,
+        serviciosPendientesAnteriores: totales.totalServiciosPendientesAnteriores,
         totalMensualidades: totales.totalMensualidades,
         subtotal: totales.subtotal,
         ivaPerc: datos.ivaPerc,
@@ -758,6 +925,8 @@ export async function GET(request: NextRequest) {
         gastos: datos.gastos,
         gastosAnteriores: datos.gastosPendientesAnteriores,
         serviciosProfesionales: datos.serviciosProfesionales,
+        serviciosAnteriores: datos.serviciosPendientesAnteriores,
+        trabajosAnteriores: datos.trabajosPendientesAnteriores,
         solicitudes: datos.solicitudes,
         proyectos: totales.proyectos
       });

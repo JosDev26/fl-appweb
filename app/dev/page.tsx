@@ -224,6 +224,12 @@ interface ClienteVistaPago {
   gastosPendientesAnteriores: number
   // Servicios profesionales (solo costo, sin gastos ni IVA)
   totalServiciosProfesionales: number
+  // Servicios profesionales pendientes de meses anteriores
+  serviciosPendientesAnteriores?: number
+  // Trabajos por hora pendientes de meses anteriores
+  trabajosPendientesAnteriores?: number
+  totalHorasAnteriores?: number
+  montoHorasAnteriores?: number
   totalMensualidades: number
   subtotal: number
   ivaPerc: number
@@ -237,6 +243,8 @@ interface ClienteVistaPago {
   gastos?: any[]
   gastosAnteriores?: any[]
   serviciosProfesionales?: any[]
+  serviciosAnteriores?: any[]
+  trabajosAnteriores?: any[]
   solicitudes?: any[]
   proyectos?: ProyectoMensualidad[]
 }
@@ -3870,6 +3878,32 @@ export default function DevPage() {
                                   </div>
                                 )}
                                 
+                                {/* Horas Pendientes de Meses Anteriores */}
+                                {(cliente.montoHorasAnteriores || 0) > 0 && (
+                                  <div style={{ padding: '0.75rem', background: 'rgba(244, 67, 54, 0.15)', borderRadius: '6px', border: '1px solid rgba(244, 67, 54, 0.4)' }}>
+                                    <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>⚠️ Horas Meses Ant.</p>
+                                    <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0', color: '#d32f2f' }}>
+                                      {formatCurrency(cliente.montoHorasAnteriores || 0)}
+                                    </p>
+                                    <p style={{ fontSize: '0.7rem', opacity: 0.6, margin: 0 }}>
+                                      {formatHoras(cliente.totalHorasAnteriores || 0)} (pendientes)
+                                    </p>
+                                  </div>
+                                )}
+                                
+                                {/* Servicios Profesionales Pendientes de Meses Anteriores */}
+                                {(cliente.serviciosPendientesAnteriores || 0) > 0 && (
+                                  <div style={{ padding: '0.75rem', background: 'rgba(244, 67, 54, 0.15)', borderRadius: '6px', border: '1px solid rgba(244, 67, 54, 0.4)' }}>
+                                    <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>⚠️ Serv.Prof. Meses Ant.</p>
+                                    <p style={{ fontSize: '1.1rem', fontWeight: 600, margin: '0.25rem 0 0', color: '#d32f2f' }}>
+                                      {formatCurrency(cliente.serviciosPendientesAnteriores || 0)}
+                                    </p>
+                                    <p style={{ fontSize: '0.7rem', opacity: 0.6, margin: 0 }}>
+                                      (pendientes de pago)
+                                    </p>
+                                  </div>
+                                )}
+                                
                                 {/* Servicios Profesionales (solo costo) */}
                                 <div style={{ padding: '0.75rem', background: 'rgba(156, 39, 176, 0.1)', borderRadius: '6px', border: '1px solid rgba(156, 39, 176, 0.3)' }}>
                                   <p style={{ fontSize: '0.8rem', opacity: 0.7, margin: 0 }}>Servicios Prof.</p>
@@ -4053,6 +4087,35 @@ export default function DevPage() {
                                 </details>
                               )}
 
+                              {/* Detalle de trabajos por hora de meses anteriores */}
+                              {cliente.trabajosAnteriores && cliente.trabajosAnteriores.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem', color: '#d32f2f' }}>
+                                    ⚠️ Trabajos por hora de Meses Anteriores ({cliente.trabajosAnteriores.length}) - {formatCurrency(cliente.montoHorasAnteriores || 0)}
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(244, 67, 54, 0.08)', border: '1px solid rgba(244, 67, 54, 0.3)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Fecha</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Descripción</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Duración</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.trabajosAnteriores.map((t: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{t.fecha ? new Date(t.fecha).toLocaleDateString('es-CR') : '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{t.descripcion || t.titulo || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{t.duracion || '—'}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
                               {/* Detalle de gastos */}
                               {cliente.gastos && cliente.gastos.length > 0 && (
                                 <details style={{ marginBottom: '0.75rem' }}>
@@ -4129,6 +4192,37 @@ export default function DevPage() {
                                       </thead>
                                       <tbody>
                                         {cliente.serviciosProfesionales.map((sp: any, idx: number) => (
+                                          <tr key={idx}>
+                                            <td style={{ padding: '0.25rem' }}>{sp.fecha ? new Date(sp.fecha).toLocaleDateString('es-CR') : '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{sp.lista_servicios?.titulo || '—'}</td>
+                                            <td style={{ padding: '0.25rem' }}>{sp.funcionarios?.nombre || '—'}</td>
+                                            <td style={{ textAlign: 'right', padding: '0.25rem' }}>{formatCurrency(sp.total || 0)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </details>
+                              )}
+
+                              {/* Detalle de servicios profesionales de meses anteriores */}
+                              {cliente.serviciosAnteriores && cliente.serviciosAnteriores.length > 0 && (
+                                <details style={{ marginBottom: '0.75rem' }}>
+                                  <summary style={{ cursor: 'pointer', fontWeight: 600, marginBottom: '0.5rem', color: '#d32f2f' }}>
+                                    ⚠️ Servicios Prof. Meses Anteriores ({cliente.serviciosAnteriores.length}) - {formatCurrency(cliente.serviciosPendientesAnteriores || 0)}
+                                  </summary>
+                                  <div style={{ maxHeight: '200px', overflow: 'auto', background: 'rgba(244, 67, 54, 0.08)', border: '1px solid rgba(244, 67, 54, 0.3)', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                                      <thead>
+                                        <tr>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Fecha</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Servicio</th>
+                                          <th style={{ textAlign: 'left', padding: '0.25rem' }}>Responsable</th>
+                                          <th style={{ textAlign: 'right', padding: '0.25rem' }}>Total</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cliente.serviciosAnteriores.map((sp: any, idx: number) => (
                                           <tr key={idx}>
                                             <td style={{ padding: '0.25rem' }}>{sp.fecha ? new Date(sp.fecha).toLocaleDateString('es-CR') : '—'}</td>
                                             <td style={{ padding: '0.25rem' }}>{sp.lista_servicios?.titulo || '—'}</td>

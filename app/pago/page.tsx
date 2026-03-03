@@ -88,6 +88,11 @@ interface DatosPago {
   totalGastosPendientesAnteriores: number
   serviciosProfesionales: ServicioProfesional[]
   totalServiciosProfesionales: number
+  serviciosPendientesAnteriores: ServicioProfesional[]
+  totalServiciosPendientesAnteriores: number
+  trabajosPendientesAnteriores: any[]
+  totalHorasTPHAnteriores: number
+  montoTPHAnteriores: number
   totalMinutosGlobal: number
   totalHorasDecimal: number
   tarifaHora: number
@@ -117,11 +122,16 @@ interface DatosEmpresaGrupo {
   empresaNombre: string
   ivaPerc: number
   trabajosPorHora: any[]
+  trabajosPendientesAnteriores: any[]
+  totalHorasAnteriores: number
+  montoHorasAnteriores: number
   gastos: any[]
   gastosPendientesAnteriores: Gasto[]
   solicitudes: any[]
   serviciosProfesionales: ServicioProfesional[]
   totalServiciosProfesionales: number
+  serviciosPendientesAnteriores: ServicioProfesional[]
+  totalServiciosPendientesAnteriores: number
   totalMinutos: number
   totalHoras: number
   tarifaHora: number
@@ -439,8 +449,10 @@ export default function PagoPage() {
   const tieneGastos = datosPago.gastos && datosPago.gastos.length > 0
   const tieneGastosAnteriores = datosPago.gastosPendientesAnteriores && datosPago.gastosPendientesAnteriores.length > 0
   const tieneServiciosProfesionales = datosPago.serviciosProfesionales && datosPago.serviciosProfesionales.length > 0
+  const tieneServiciosAnteriores = datosPago.serviciosPendientesAnteriores && datosPago.serviciosPendientesAnteriores.length > 0
+  const tieneTrabajosAnteriores = datosPago.trabajosPendientesAnteriores && datosPago.trabajosPendientesAnteriores.length > 0
   // Mostrar contenido si hay cualquier tipo de dato de pago (incluyendo gastos de meses anteriores)
-  const tieneContenidoPago = tieneTrabajosHora || tieneMensualidades || tieneGastos || tieneGastosAnteriores || tieneServiciosProfesionales
+  const tieneContenidoPago = tieneTrabajosHora || tieneTrabajosAnteriores || tieneMensualidades || tieneGastos || tieneGastosAnteriores || tieneServiciosProfesionales || tieneServiciosAnteriores
 
   return (
     <div className={styles.container}>
@@ -565,6 +577,34 @@ export default function PagoPage() {
                 </>
               )}
               
+              {/* Trabajos por hora de meses anteriores (pendientes de pago) */}
+              {tieneTrabajosAnteriores && (
+                <>
+                  <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
+                    <span>⚠️ Horas de Meses Anteriores ({datosPago.totalHorasTPHAnteriores.toFixed(2)}h):</span>
+                    <strong className={styles.montoAlerta}>{formatMonto(datosPago.montoTPHAnteriores)}</strong>
+                  </div>
+                  
+                  {/* Detalle de trabajos pendientes anteriores */}
+                  <div className={`${styles.detalleGastos} ${styles.gastosAnteriores}`}>
+                    {datosPago.trabajosPendientesAnteriores.map((trabajo: any, idx: number) => (
+                      <div key={trabajo.id || idx} className={`${styles.gastoItem} ${styles.gastoItemAnterior}`}>
+                        <div className={styles.gastoInfo}>
+                          <span className={styles.gastoProducto}>
+                            {trabajo.casos?.nombre || trabajo.descripcion || 'Trabajo sin descripción'}
+                          </span>
+                          <span className={styles.gastoMeta}>
+                            {formatFecha(trabajo.fecha)} • {trabajo.duracion || '0:00'}h
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className={styles.divider} />
+                </>
+              )}
+              
               {/* Mensualidades */}
               {tieneMensualidades && (
                 <>
@@ -655,6 +695,34 @@ export default function PagoPage() {
                 </>
               )}
               
+              {/* Servicios Profesionales de meses anteriores (pendientes de pago) */}
+              {tieneServiciosAnteriores && (
+                <>
+                  {(tieneServiciosProfesionales || tieneGastos || tieneGastosAnteriores) && <div className={styles.divider} />}
+                  <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
+                    <span>⚠️ Servicios Prof. Meses Anteriores:</span>
+                    <strong className={styles.montoAlerta}>{formatMonto(datosPago.totalServiciosPendientesAnteriores)}</strong>
+                  </div>
+                  
+                  {/* Detalle de servicios profesionales pendientes anteriores */}
+                  <div className={`${styles.detalleGastos} ${styles.gastosAnteriores}`}>
+                    {datosPago.serviciosPendientesAnteriores.map((servicio) => (
+                      <div key={servicio.id} className={`${styles.gastoItem} ${styles.gastoItemAnterior}`}>
+                        <div className={styles.gastoInfo}>
+                          <span className={styles.gastoProducto}>
+                            {servicio.lista_servicios?.titulo || 'Servicio sin título'}
+                          </span>
+                          <span className={styles.gastoMeta}>
+                            {formatFecha(servicio.fecha)} • {servicio.funcionarios?.nombre || 'Sin responsable'}
+                          </span>
+                        </div>
+                        <span className={styles.gastoMonto}>{formatMonto(servicio.total)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              
               <div className={styles.divider} />
               
               {/* Subtotal */}
@@ -706,6 +774,14 @@ export default function PagoPage() {
                     </div>
                   )}
                   
+                  {/* Horas de meses anteriores */}
+                  {empresaGrupo.montoHorasAnteriores > 0 && (
+                    <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
+                      <span>⚠️ Horas Anteriores ({empresaGrupo.totalHorasAnteriores.toFixed(1)}h):</span>
+                      <strong className={styles.montoAlerta}>{formatMonto(empresaGrupo.montoHorasAnteriores)}</strong>
+                    </div>
+                  )}
+                  
                   {/* Mensualidades */}
                   {empresaGrupo.totalMensualidades > 0 && (
                     <div className={styles.costoItem}>
@@ -735,6 +811,14 @@ export default function PagoPage() {
                     <div className={styles.costoItem}>
                       <span>Servicios Profesionales:</span>
                       <strong>{formatMonto(empresaGrupo.totalServiciosProfesionales)}</strong>
+                    </div>
+                  )}
+                  
+                  {/* Servicios Profesionales de meses anteriores */}
+                  {empresaGrupo.totalServiciosPendientesAnteriores > 0 && (
+                    <div className={`${styles.costoItem} ${styles.costoItemAlerta}`}>
+                      <span>⚠️ Servicios Prof. Anteriores:</span>
+                      <strong className={styles.montoAlerta}>{formatMonto(empresaGrupo.totalServiciosPendientesAnteriores)}</strong>
                     </div>
                   )}
                   

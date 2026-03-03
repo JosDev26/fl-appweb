@@ -19,10 +19,12 @@ async function getDatosEmpresa(
   fechaLimite12MesesStr: string
 ): Promise<{
   trabajosPorHora: any[];
+  trabajosPendientesAnteriores: any[];
   gastos: any[];
   gastosPendientesAnteriores: any[];
   solicitudes: any[];
   serviciosProfesionales: any[];
+  serviciosPendientesAnteriores: any[];
   empresa: { nombre: string; tarifa_hora: number; iva_perc: number } | null;
 }> {
   // Obtener info de la empresa
@@ -39,6 +41,7 @@ async function getDatosEmpresa(
     .eq('id_cliente', empresaId);
 
   let trabajosPorHora: any[] = [];
+  let trabajosPendientesAnteriores: any[] = [];
   if (casos && casos.length > 0) {
     const casoIds = casos.map(c => c.id);
     const { data } = await supabase
@@ -49,6 +52,17 @@ async function getDatosEmpresa(
       .lte('fecha', finMes)
       .order('fecha', { ascending: false });
     trabajosPorHora = data || [];
+
+    // Trabajos por hora pendientes de meses anteriores
+    const { data: tphAnt } = await supabase
+      .from('trabajos_por_hora')
+      .select('*, casos!fk_caso(nombre, expediente)')
+      .in('caso_asignado', casoIds)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12MesesStr)
+      .order('fecha', { ascending: false });
+    trabajosPendientesAnteriores = tphAnt || [];
   }
 
   // Obtener gastos
@@ -87,12 +101,24 @@ async function getDatosEmpresa(
     .lte('fecha', finMes)
     .order('fecha', { ascending: false });
 
+  // Obtener servicios profesionales pendientes de meses anteriores
+  const { data: serviciosPendientesAnteriores } = await supabase
+    .from('servicios_profesionales' as any)
+    .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
+    .eq('id_cliente', empresaId)
+    .eq('estado_pago', 'pendiente')
+    .lt('fecha', inicioMes)
+    .gte('fecha', fechaLimite12MesesStr)
+    .order('fecha', { ascending: false });
+
   return {
     trabajosPorHora: trabajosPorHora || [],
+    trabajosPendientesAnteriores: trabajosPendientesAnteriores || [],
     gastos: gastos || [],
     gastosPendientesAnteriores: gastosPendientesAnteriores || [],
     solicitudes: solicitudes || [],
     serviciosProfesionales: serviciosProfesionales || [],
+    serviciosPendientesAnteriores: serviciosPendientesAnteriores || [],
     empresa: empresaData ? {
       nombre: (empresaData as any).nombre,
       tarifa_hora: (empresaData as any).tarifa_hora || 90000,
@@ -337,6 +363,7 @@ export async function GET(request: NextRequest) {
 
     // ========== TRABAJOS POR HORA ==========
     let trabajosPorHora: any[] = [];
+    let trabajosPendientesAnteriores: any[] = [];
     if (cliente.tipo === 'usuario') {
       const { data } = await supabase
         .from('trabajos_por_hora')
@@ -346,6 +373,17 @@ export async function GET(request: NextRequest) {
         .lte('fecha', finMes)
         .order('fecha', { ascending: false });
       trabajosPorHora = data || [];
+
+      // Trabajos por hora pendientes de meses anteriores
+      const { data: tphAnt } = await supabase
+        .from('trabajos_por_hora')
+        .select('*, casos!fk_caso(nombre, expediente)')
+        .eq('id_cliente', cliente.id)
+        .eq('estado_pago', 'pendiente')
+        .lt('fecha', inicioMes)
+        .gte('fecha', fechaLimite12MesesStr)
+        .order('fecha', { ascending: false });
+      trabajosPendientesAnteriores = tphAnt || [];
     } else {
       // Para empresas, buscar casos de la empresa y luego sus trabajos
       const { data: casos } = await supabase
@@ -363,6 +401,17 @@ export async function GET(request: NextRequest) {
           .lte('fecha', finMes)
           .order('fecha', { ascending: false });
         trabajosPorHora = data || [];
+
+        // Trabajos por hora pendientes de meses anteriores
+        const { data: tphAnt } = await supabase
+          .from('trabajos_por_hora')
+          .select('*, casos!fk_caso(nombre, expediente)')
+          .in('caso_asignado', casoIds)
+          .eq('estado_pago', 'pendiente')
+          .lt('fecha', inicioMes)
+          .gte('fecha', fechaLimite12MesesStr)
+          .order('fecha', { ascending: false });
+        trabajosPendientesAnteriores = tphAnt || [];
       }
     }
 
@@ -380,6 +429,21 @@ export async function GET(request: NextRequest) {
     });
     const totalHoras = totalMinutos / 60;
     const costoServicios = totalHoras * tarifaHora;
+
+    // Calcular carry-forward de trabajos por hora
+    let totalMinutosTPHAnteriores = 0;
+    trabajosPendientesAnteriores.forEach((t: any) => {
+      if (t.duracion) {
+        if (t.duracion.includes(':')) {
+          const [h, m] = t.duracion.split(':').map(Number);
+          totalMinutosTPHAnteriores += (h * 60) + m;
+        } else {
+          totalMinutosTPHAnteriores += Math.round(parseFloat(t.duracion) * 60);
+        }
+      }
+    });
+    const totalHorasTPHAnteriores = totalMinutosTPHAnteriores / 60;
+    const montoTPHAnteriores = totalHorasTPHAnteriores * tarifaHora;
 
     // ========== GASTOS ==========
     const { data: gastosMesActual, error: errorGastos } = await supabase
@@ -419,6 +483,24 @@ export async function GET(request: NextRequest) {
     const totalServiciosProfesionales = (serviciosProfesionales || [])
       .reduce((sum: number, s: any) => sum + (s.total || 0), 0);
 
+    // ========== SERVICIOS PROFESIONALES PENDIENTES DE MESES ANTERIORES ==========
+    const { data: serviciosPendientesAnteriores, error: errorServiciosAnt } = await supabase
+      .from('servicios_profesionales' as any)
+      .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
+      .eq('id_cliente', cliente.id)
+      .eq('estado_pago', 'pendiente')
+      .lt('fecha', inicioMes)
+      .gte('fecha', fechaLimite12MesesStr)
+      .order('fecha', { ascending: false });
+    
+    const costoServiciosPendientesAnteriores = (serviciosPendientesAnteriores || [])
+      .reduce((sum: number, s: any) => sum + (s.costo || 0), 0);
+    const gastosServiciosPendientesAnteriores = (serviciosPendientesAnteriores || [])
+      .reduce((sum: number, s: any) => sum + (s.gastos || 0), 0);
+    const ivaServiciosPendientesAnterioresStored = (serviciosPendientesAnteriores || [])
+      .reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
+    const totalServiciosPendientesAnteriores = costoServiciosPendientesAnteriores;
+
     // ========== SOLICITUDES / MENSUALIDADES ==========
     const { data: solicitudes } = await supabase
       .from('solicitudes')
@@ -440,9 +522,11 @@ export async function GET(request: NextRequest) {
     });
 
     // ========== CALCULAR TOTALES EMPRESA PRINCIPAL ==========
-    const subtotalPrincipal = costoServicios + totalGastosMesActual + totalGastosPendientesAnteriores + totalMensualidades + totalServiciosProfesionales;
+    const subtotalPrincipal = costoServicios + montoTPHAnteriores + totalGastosMesActual + totalGastosPendientesAnteriores + totalMensualidades + totalServiciosProfesionales + totalServiciosPendientesAnteriores + gastosServiciosPendientesAnteriores;
     const ivaServiciosPrincipal = costoServicios * ivaPerc;
-    const ivaTotalPrincipal = ivaServiciosPrincipal + totalIVAMensualidades;
+    const ivaTPHAnterioresPrincipal = montoTPHAnteriores * ivaPerc;
+    const ivaServiciosPendientesPrincipal = ivaServiciosPendientesAnterioresStored;
+    const ivaTotalPrincipal = ivaServiciosPrincipal + ivaTPHAnterioresPrincipal + totalIVAMensualidades + ivaServiciosPendientesPrincipal;
     const totalPrincipal = subtotalPrincipal + ivaTotalPrincipal;
 
     // ========== DATOS DE EMPRESAS ASOCIADAS (GRUPOS) ==========
@@ -452,16 +536,21 @@ export async function GET(request: NextRequest) {
       ivaPerc: number;
       tarifaHora: number;
       trabajosPorHora: any[];
+      trabajosPendientesAnteriores: any[];
+      totalHorasAnteriores: number;
+      montoHorasAnteriores: number;
       gastos: any[];
       gastosPendientesAnteriores: any[];
       solicitudes: any[];
       serviciosProfesionales: any[];
+      serviciosPendientesAnteriores: any[];
       totalMinutos: number;
       totalHoras: number;
       costoServicios: number;
       totalGastos: number;
       totalGastosPendientesAnteriores: number;
       totalServiciosProfesionales: number;
+      totalServiciosPendientesAnteriores: number;
       totalMensualidades: number;
       totalIVAMensualidades: number;
       subtotal: number;
@@ -499,6 +588,10 @@ export async function GET(request: NextRequest) {
         const empTotalGastos = datosEmp.gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
         const empTotalGastosPendientesAnteriores = datosEmp.gastosPendientesAnteriores.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
         const empTotalServiciosProfesionales = datosEmp.serviciosProfesionales.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+        const empCostoServiciosPendientes = datosEmp.serviciosPendientesAnteriores.reduce((sum: number, s: any) => sum + (s.costo || 0), 0);
+        const empGastosServiciosPendientes = datosEmp.serviciosPendientesAnteriores.reduce((sum: number, s: any) => sum + (s.gastos || 0), 0);
+        const empIvaServiciosPendientesStored = datosEmp.serviciosPendientesAnteriores.reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
+        const empTotalServiciosPendientesAnteriores = empCostoServiciosPendientes;
         
         // Calcular mensualidades de la empresa asociada
         let empTotalMensualidades = 0;
@@ -514,9 +607,26 @@ export async function GET(request: NextRequest) {
           }
         });
         
-        const empSubtotal = empCostoServicios + empTotalGastos + empTotalGastosPendientesAnteriores + empTotalMensualidades + empTotalServiciosProfesionales;
+        // Calcular carry-forward de trabajos por hora de empresa asociada
+        let empMinutosTPHAnteriores = 0;
+        datosEmp.trabajosPendientesAnteriores.forEach((t: any) => {
+          if (t.duracion) {
+            if (t.duracion.includes(':')) {
+              const [h, m] = t.duracion.split(':').map(Number);
+              empMinutosTPHAnteriores += (h * 60) + m;
+            } else {
+              empMinutosTPHAnteriores += Math.round(parseFloat(t.duracion) * 60);
+            }
+          }
+        });
+        const empHorasTPHAnteriores = empMinutosTPHAnteriores / 60;
+        const empMontoTPHAnteriores = empHorasTPHAnteriores * empTarifaHora;
+
+        const empSubtotal = empCostoServicios + empMontoTPHAnteriores + empTotalGastos + empTotalGastosPendientesAnteriores + empTotalMensualidades + empTotalServiciosProfesionales + empTotalServiciosPendientesAnteriores + empGastosServiciosPendientes;
         const empIvaServicios = empCostoServicios * empIvaPerc;
-        const empMontoIVA = empIvaServicios + empTotalIVAMensualidades;
+        const empIvaTPHAnteriores = empMontoTPHAnteriores * empIvaPerc;
+        const empIvaServiciosPendientes = empIvaServiciosPendientesStored;
+        const empMontoIVA = empIvaServicios + empIvaTPHAnteriores + empTotalIVAMensualidades + empIvaServiciosPendientes;
         const empTotal = empSubtotal + empMontoIVA;
         
         datosEmpresasGrupo.push({
@@ -525,9 +635,13 @@ export async function GET(request: NextRequest) {
           ivaPerc: empIvaPerc,
           tarifaHora: empTarifaHora,
           trabajosPorHora: datosEmp.trabajosPorHora,
+          trabajosPendientesAnteriores: datosEmp.trabajosPendientesAnteriores,
+          totalHorasAnteriores: empHorasTPHAnteriores,
+          montoHorasAnteriores: empMontoTPHAnteriores,
           gastos: datosEmp.gastos,
           gastosPendientesAnteriores: datosEmp.gastosPendientesAnteriores,
           serviciosProfesionales: datosEmp.serviciosProfesionales,
+          serviciosPendientesAnteriores: datosEmp.serviciosPendientesAnteriores,
           solicitudes: datosEmp.solicitudes,
           totalMinutos: empTotalMinutos,
           totalHoras: empTotalHoras,
@@ -535,6 +649,7 @@ export async function GET(request: NextRequest) {
           totalGastos: empTotalGastos,
           totalGastosPendientesAnteriores: empTotalGastosPendientesAnteriores,
           totalServiciosProfesionales: empTotalServiciosProfesionales,
+          totalServiciosPendientesAnteriores: empTotalServiciosPendientesAnteriores,
           totalMensualidades: empTotalMensualidades,
           totalIVAMensualidades: empTotalIVAMensualidades,
           subtotal: empSubtotal,
@@ -596,6 +711,13 @@ export async function GET(request: NextRequest) {
           costoServicios,
           detalle: trabajosPorHora
         },
+        trabajosPendientesAnteriores: {
+          cantidad: trabajosPendientesAnteriores.length,
+          totalMinutosTPHAnteriores,
+          totalHorasTPHAnteriores: parseFloat(totalHorasTPHAnteriores.toFixed(2)),
+          montoTPHAnteriores,
+          detalle: trabajosPendientesAnteriores
+        },
         gastosMesActual: {
           cantidad: (gastosMesActual || []).length,
           cantidadNoCancelados: (gastosMesActual || []).filter((g: any) => g.estado_pago !== 'cancelado').length,
@@ -613,6 +735,12 @@ export async function GET(request: NextRequest) {
           cantidad: (serviciosProfesionales || []).length,
           total: totalServiciosProfesionales,
           detalle: serviciosProfesionales || []
+        },
+        serviciosPendientesAnteriores: {
+          cantidad: (serviciosPendientesAnteriores || []).length,
+          total: totalServiciosPendientesAnteriores,
+          detalle: serviciosPendientesAnteriores || [],
+          error: errorServiciosAnt?.message
         },
         solicitudesMensualidades: {
           cantidad: (solicitudes || []).length,
@@ -648,6 +776,8 @@ export async function GET(request: NextRequest) {
       debug: {
         queryGastosMes: `id_cliente='${cliente.id}' AND fecha >= '${inicioMes}' AND fecha <= '${finMes}'`,
         queryGastosAnteriores: `id_cliente='${cliente.id}' AND estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}'`,
+        queryServiciosAnteriores: `id_cliente='${cliente.id}' AND estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}' (servicios_profesionales)`,
+        queryTPHAnteriores: `estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}' (trabajos_por_hora)`,
         esGrupoPrincipal,
         empresasEnGrupo: esGrupoPrincipal ? empresasDelGrupo.map(e => e.nombre) : []
       }
