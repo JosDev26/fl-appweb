@@ -13,9 +13,15 @@ export async function GET(
     if (rateLimitResponse) return rateLimitResponse
 
     const { id: casoId } = await params
+    console.log(`🔍 Solicitando caso individual: ${casoId}`)
+    
+    // Debug: log all cookies
+    const allCookies = request.cookies.getAll()
+    console.log(`🍪 Cookies recibidas:`, allCookies.map(c => c.name).join(', ') || 'NINGUNA')
 
     // IDOR Protection: Validate user has access to this caso using server-side session
     const accessCheck = await checkCasoAccess(request, casoId)
+    console.log(`🔐 Resultado access check:`, accessCheck.authorized ? 'autorizado' : `denegado - ${(accessCheck as any).error}`)
     if (!accessCheck.authorized) {
       return NextResponse.json(
         { error: accessCheck.error },

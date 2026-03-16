@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { checkCasoAccess } from '@/lib/auth-helpers'
+import { checkSolicitudAccess } from '@/lib/auth-helpers'
 import { checkStandardRateLimit } from '@/lib/rate-limit'
 
 export async function GET(
@@ -17,8 +17,8 @@ export async function GET(
     const clienteId = searchParams.get('clienteId')
     const tipoCliente = searchParams.get('tipoCliente') || 'cliente'
 
-    // IDOR Protection: Validate user has access to this solicitud/caso
-    const accessCheck = await checkCasoAccess(request, solicitudId)
+    // IDOR Protection: Validate user has access to this solicitud
+    const accessCheck = await checkSolicitudAccess(request, solicitudId)
     if (!accessCheck.authorized) {
       return NextResponse.json(
         { error: accessCheck.error },

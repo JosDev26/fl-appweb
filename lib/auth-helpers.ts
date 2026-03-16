@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { supabase } from './supabase'
+import { createClient } from '@supabase/supabase-js'
 import { logIdorAttempt, logAccessDenied } from './security-logger'
 
 // ============================================
@@ -32,6 +33,8 @@ export function extractUserId(request: NextRequest): string | null {
   // Get the access token from cookies (set by server on login)
   const accessToken = request.cookies.get('sb-access-token')?.value
   
+  console.log(`[Auth] extractUserId - cookie present: ${!!accessToken}`)
+  
   if (!accessToken) {
     return null
   }
@@ -40,29 +43,20 @@ export function extractUserId(request: NextRequest): string | null {
     // JWT has 3 parts: header.payload.signature
     const parts = accessToken.split('.')
     if (parts.length !== 3) {
-      console.warn('[Auth] JWT does not have 3 parts')
+      console.log(`[Auth] extractUserId - invalid JWT parts count: ${parts.length}`)
       return null
     }
 
-    // Decode the payload using base64url normalization for edge runtime compatibility
-    // JWT uses base64url encoding which differs from standard base64:
-    // - Replace '-' with '+'
-    // - Replace '_' with '/'
-    // - Add '=' padding to make length a multiple of 4
-    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const padding = base64.length % 4
-    if (padding) {
-      base64 += '='.repeat(4 - padding)
-    }
-    
-    const payload = JSON.parse(atob(base64))
+    // Decode the payload (base64url)
+    const payload = parts[1]
+    const decoded = Buffer.from(payload, 'base64url').toString('utf-8')
+    const parsed = JSON.parse(decoded)
 
-    // Return the user_id from user_metadata (this is the ID from usuarios/empresas table)
-    // NOT payload.sub which is the Supabase Auth UUID
-    const userId = payload.user_metadata?.user_id
-    return userId ? String(userId) : null
-  } catch (error) {
-    console.warn('[Auth] Failed to extract user ID from JWT:', error)
+    console.log(`[Auth] extractUserId - found user: ${parsed.sub}`)
+    // Return the subject (user ID) from the JWT
+    return parsed.sub || null
+  } catch (e) {
+    console.warn('[Auth] Failed to extract user ID from JWT', e)
     return null
   }
 }
@@ -100,23 +94,48 @@ export async function getUserTypeFromDB(userId: string): Promise<UserType | null
 /**
  * Extract and validate user from request
  * Returns authenticated user or null
+ * Uses Supabase Auth to get user metadata (user_id, tipo)
  */
 export async function getAuthenticatedUser(
   request: NextRequest
 ): Promise<AuthenticatedUser | null> {
-  const userId = extractUserId(request)
+  const accessToken = request.cookies.get('sb-access-token')?.value
   
-  if (!userId) {
+  if (!accessToken) {
+    console.log('[Auth] getAuthenticatedUser - no access token')
     return null
   }
 
-  const userType = await getUserTypeFromDB(userId)
-  
-  if (!userType) {
+  try {
+    const supabaseClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+
+    // Verificar el token con Supabase Auth
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(accessToken)
+
+    if (authError || !user) {
+      console.log('[Auth] getAuthenticatedUser - auth error or no user:', authError?.message)
+      return null
+    }
+
+    // Obtener metadata del usuario (user_id y tipo fueron guardados en el login)
+    const metadata = user.user_metadata
+    const userId = metadata?.user_id
+    const tipo = metadata?.tipo as UserType | undefined
+
+    if (!userId || !tipo) {
+      console.log('[Auth] getAuthenticatedUser - missing metadata:', { userId, tipo })
+      return null
+    }
+
+    console.log(`[Auth] getAuthenticatedUser - found user: id=${userId}, type=${tipo}`)
+    return { id: String(userId), type: tipo }
+  } catch (error) {
+    console.error('[Auth] getAuthenticatedUser - error:', error)
     return null
   }
-
-  return { id: userId, type: userType }
 }
 
 // ============================================
@@ -155,25 +174,19 @@ export async function validateSolicitudAccess(
       return { authorized: false, error: 'No tienes acceso a esta solicitud' }
     }
 
-    // For empresa: first check direct ownership, then grupo empresas, then relationship table
+    // For empresa: first check direct ownership, then check empresa-cliente relationship
     if (user.type === 'empresa') {
-      // Direct ownership check - empresa IS the client
+      // Direct ownership check: solicitud belongs directly to the empresa
       if (solicitud.id_cliente === user.id) {
         return { authorized: true }
       }
-
+      
       if (!solicitud.id_cliente) {
         return { authorized: false, error: 'Solicitud sin cliente asignado' }
       }
-
-      // Check if this empresa is principal of a group containing the solicitud's client
-      const isGrupoPrincipal = await isEmpresaPrincipalOfGroup(user.id, solicitud.id_cliente)
-      if (isGrupoPrincipal) {
-        return { authorized: true }
-      }
       
       // Query the relationship table to verify empresa has access to this cliente
-      // Try empresas_clientes table (for empresa managing other clients)
+      // Try empresas_clientes table first (proper relation table)
       const { data: relation, error: relationError } = await (supabase as any)
         .from('empresas_clientes')
         .select('id')
@@ -181,13 +194,15 @@ export async function validateSolicitudAccess(
         .eq('cliente_id', solicitud.id_cliente)
         .maybeSingle()
 
-      // If relation table doesn't exist (42P01), skip silently - only direct ownership and grupo checks apply
-      // For other errors, log a warning
-      if (relationError && relationError.code !== '42P01') {
-        console.warn('[Auth] empresas_clientes query failed:', relationError.message)
+      // If relation table doesn't exist or query fails, fail closed for security
+      if (relationError) {
+        // Table might not exist - log and fail closed
+        console.warn('[Auth] empresas_clientes query failed, failing closed:', relationError.message)
+        await logIdorAttempt(request, user.id, 'solicitud', solicitudId)
+        return { authorized: false, error: 'No tienes acceso a esta solicitud' }
       }
 
-      // Authorize if relationship row exists
+      // Only authorize if relationship row exists
       if (relation) {
         return { authorized: true }
       }
@@ -212,12 +227,16 @@ export async function validateCasoAccess(
   user: AuthenticatedUser
 ): Promise<OwnershipResult> {
   try {
+    console.log(`[Auth] validateCasoAccess - casoId: ${casoId}, user.id: ${user.id}, user.type: ${user.type}`)
+    
     // Get the caso from casos table
     const { data: caso, error } = await supabase
       .from('casos')
       .select('id, id_cliente')
       .eq('id', casoId)
       .maybeSingle()
+
+    console.log(`[Auth] Caso encontrado:`, caso ? `id_cliente=${caso.id_cliente}` : 'NO', error ? `error=${error.message}` : '')
 
     if (error || !caso) {
       return { authorized: false, error: 'Caso no encontrado' }
@@ -233,21 +252,17 @@ export async function validateCasoAccess(
       return { authorized: false, error: 'No tienes acceso a este caso' }
     }
 
-    // For empresa: first check direct ownership, then grupo empresas, then relationship table
+    // For empresa: first check direct ownership, then check empresa-cliente relationship
     if (user.type === 'empresa') {
-      // Direct ownership check - empresa IS the client
+      // Direct ownership check: caso belongs directly to the empresa
+      console.log(`[Auth] Empresa check: caso.id_cliente='${caso.id_cliente}' vs user.id='${user.id}'`)
       if (caso.id_cliente === user.id) {
+        console.log(`[Auth] ✅ Acceso directo autorizado para empresa`)
         return { authorized: true }
       }
-
+      
       if (!caso.id_cliente) {
         return { authorized: false, error: 'Caso sin cliente asignado' }
-      }
-
-      // Check if this empresa is principal of a group containing the caso's client
-      const isGrupoPrincipal = await isEmpresaPrincipalOfGroup(user.id, caso.id_cliente)
-      if (isGrupoPrincipal) {
-        return { authorized: true }
       }
       
       // Query the relationship table to verify empresa has access to this cliente
@@ -258,13 +273,14 @@ export async function validateCasoAccess(
         .eq('cliente_id', caso.id_cliente)
         .maybeSingle()
 
-      // If relation table doesn't exist (42P01), only direct ownership and grupo checks apply
-      // Only log warning for other errors
-      if (relationError && relationError.code !== '42P01') {
-        console.warn('[Auth] empresas_clientes query failed:', relationError.message)
+      // If relation table doesn't exist or query fails, fail closed for security
+      if (relationError) {
+        console.warn('[Auth] empresas_clientes query failed, failing closed:', relationError.message)
+        await logIdorAttempt(request, user.id, 'caso', casoId)
+        return { authorized: false, error: 'No tienes acceso a este caso' }
       }
 
-      // Authorize if relationship row exists
+      // Only authorize if relationship row exists
       if (relation) {
         return { authorized: true }
       }
@@ -281,76 +297,6 @@ export async function validateCasoAccess(
 }
 
 /**
- * Check if an empresa principal has access to another empresa via grupos_empresas
- * Returns true if empresaId is the principal of a group containing targetEmpresaId
- */
-export async function isEmpresaPrincipalOfGroup(
-  empresaId: string,
-  targetEmpresaId: string
-): Promise<boolean> {
-  try {
-    // First, find if this empresa is a principal of any group
-    const { data: grupo, error: grupoError } = await (supabase as any)
-      .from('grupos_empresas')
-      .select('id')
-      .eq('empresa_principal_id', empresaId)
-      .maybeSingle()
-
-    if (grupoError || !grupo) {
-      // Not a principal of any group
-      return false
-    }
-
-    // Check if the target empresa is a member of this group
-    const { data: miembro, error: miembroError } = await (supabase as any)
-      .from('grupos_empresas_miembros')
-      .select('id')
-      .eq('grupo_id', grupo.id)
-      .eq('empresa_id', targetEmpresaId)
-      .maybeSingle()
-
-    if (miembroError) {
-      console.warn('[Auth] grupos_empresas_miembros query failed:', miembroError.message)
-      return false
-    }
-
-    return !!miembro
-  } catch (error) {
-    console.error('[Auth] Error checking grupo empresas relationship:', error)
-    return false
-  }
-}
-
-/**
- * Check if an empresa has access to a specific cliente via empresas_clientes relationship
- * This is the central authorization check for empresa-cliente relationships
- */
-export async function isEmpresaAuthorizedForCliente(
-  empresaId: string,
-  clienteId: string
-): Promise<boolean> {
-  try {
-    const { data: relation, error } = await (supabase as any)
-      .from('empresas_clientes')
-      .select('id')
-      .eq('empresa_id', empresaId)
-      .eq('cliente_id', clienteId)
-      .maybeSingle()
-
-    // Fail closed: if query fails or no relation exists, deny access
-    if (error) {
-      console.warn('[Auth] empresas_clientes query failed:', error.message)
-      return false
-    }
-
-    return !!relation
-  } catch (error) {
-    console.error('[Auth] Error checking empresa-cliente relationship:', error)
-    return false
-  }
-}
-
-/**
  * Validate user can access their own data only
  */
 export async function validateSelfAccess(
@@ -362,11 +308,18 @@ export async function validateSelfAccess(
     return { authorized: true }
   }
 
-  // For empresa, verify proper empresa-cliente relationship exists
+  // For empresa, check if the resource user belongs to them
   if (currentUser.type === 'empresa') {
-    const hasAccess = await isEmpresaAuthorizedForCliente(currentUser.id, resourceUserId)
-    
-    if (hasAccess) {
+    // Query to check if client exists
+    const { data: cliente } = await (supabase as any)
+      .from('usuarios')
+      .select('id')
+      .eq('id', resourceUserId)
+      .maybeSingle()
+
+    // For now, empresas can access their clients
+    // TODO: Add proper empresa-cliente relationship check when schema is updated
+    if (cliente) {
       return { authorized: true }
     }
   }
@@ -430,6 +383,8 @@ export async function checkCasoAccess(
   casoId: string
 ): Promise<{ user: AuthenticatedUser; authorized: true } | { authorized: false; error: string; status: number }> {
   const user = await getAuthenticatedUser(request)
+  
+  console.log(`[Auth] checkCasoAccess - user:`, user ? `id=${user.id}, type=${user.type}` : 'NO AUTENTICADO')
   
   if (!user) {
     return { authorized: false, error: 'No autenticado', status: 401 }

@@ -96,17 +96,22 @@ export default function SolicitudDetalle() {
       const userIdCliente = String(user.id)
 
       // Obtener información de la solicitud
-      const response = await fetch(`/api/solicitudes/${solicitudId}`)
+      const response = await fetch(`/api/solicitudes/${solicitudId}`, {
+        credentials: 'include'
+      })
+      
+      // Si el backend devuelve error (403, 404, etc), no tenemos acceso
+      if (!response.ok) {
+        console.warn('Acceso denegado o solicitud no encontrada:', response.status)
+        router.push('/home')
+        return
+      }
+      
       const data = await response.json()
       
       if (data.solicitud) {
-        // Verificar que el usuario tenga acceso a esta solicitud
-        if (data.solicitud.id_cliente !== userIdCliente) {
-          console.warn('Acceso denegado: Redirigiendo al home')
-          router.push('/home')
-          return
-        }
-
+        // El backend ya validó el acceso (incluyendo empresas via empresas_clientes)
+        // Si llegamos aquí con éxito, el usuario tiene acceso autorizado
         console.log('✅ Acceso permitido')
         setSolicitud(data.solicitud)
         
@@ -129,7 +134,9 @@ export default function SolicitudDetalle() {
   const loadActualizaciones = async () => {
     setLoadingActualizaciones(true)
     try {
-      const response = await fetch(`/api/solicitudes/${solicitudId}/actualizaciones`)
+      const response = await fetch(`/api/solicitudes/${solicitudId}/actualizaciones`, {
+        credentials: 'include'
+      })
       const data = await response.json()
       
       if (data.actualizaciones) {
@@ -146,7 +153,9 @@ export default function SolicitudDetalle() {
     if (!user) return
     setLoadingGastos(true)
     try {
-      const response = await fetch(`/api/solicitudes/${solicitudId}/gastos?clienteId=${user.id}&tipoCliente=${user.tipo}`)
+      const response = await fetch(`/api/solicitudes/${solicitudId}/gastos?clienteId=${user.id}&tipoCliente=${user.tipo}`, {
+        credentials: 'include'
+      })
       const data = await response.json()
       
       if (data.gastos) {

@@ -88,21 +88,28 @@ export default function CasoDetalle() {
       const userIdCliente = String(user.id)
 
       // Obtener información del caso
-      const casoResponse = await fetch(`/api/casos/${casoId}`)
+      const casoResponse = await fetch(`/api/casos/${casoId}`, {
+        credentials: 'include'
+      })
+      
+      // Si el backend devuelve error (403, 404, etc), no tenemos acceso
+      if (!casoResponse.ok) {
+        console.warn('Acceso denegado o caso no encontrado:', casoResponse.status)
+        router.push('/home')
+        return
+      }
+      
       const casoData = await casoResponse.json()
       
       if (casoData.caso) {
-        // Verificar que el usuario tenga acceso a este caso
-        if (casoData.caso.id_cliente !== userIdCliente) {
-          console.warn('Acceso denegado: Redirigiendo al home')
-          router.push('/home')
-          return
-        }
-
+        // El backend ya validó el acceso (incluyendo empresas via empresas_clientes)
+        // Si llegamos aquí con éxito, el usuario tiene acceso autorizado
         setCaso(casoData.caso)
 
         // Obtener trabajos del caso solo si tiene acceso
-        const trabajosResponse = await fetch(`/api/casos/${casoId}/trabajos`)
+        const trabajosResponse = await fetch(`/api/casos/${casoId}/trabajos`, {
+          credentials: 'include'
+        })
         const trabajosData = await trabajosResponse.json()
         
         if (trabajosData.trabajos) {
@@ -110,7 +117,9 @@ export default function CasoDetalle() {
         }
 
         // Obtener gastos del caso con información de pago
-        const gastosResponse = await fetch(`/api/casos/${casoId}/gastos?clienteId=${userIdCliente}&tipoCliente=${user.tipo}`)
+        const gastosResponse = await fetch(`/api/casos/${casoId}/gastos?clienteId=${userIdCliente}&tipoCliente=${user.tipo}`, {
+          credentials: 'include'
+        })
         const gastosData = await gastosResponse.json()
         
         if (gastosData.gastos) {
@@ -118,7 +127,9 @@ export default function CasoDetalle() {
         }
 
         // Obtener servicios profesionales del caso
-        const serviciosResponse = await fetch(`/api/casos/${casoId}/servicios`)
+        const serviciosResponse = await fetch(`/api/casos/${casoId}/servicios`, {
+          credentials: 'include'
+        })
         const serviciosData = await serviciosResponse.json()
         
         if (serviciosData.servicios) {

@@ -3,6 +3,10 @@ import { getCurrentUser } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
+    // Debug: log all cookies
+    const allCookies = request.cookies.getAll()
+    console.log(`🍪 [/api/auth/me] Cookies recibidas:`, allCookies.map(c => c.name).join(', ') || 'NINGUNA')
+    
     // Obtener token de las cookies
     const accessToken = request.cookies.get('sb-access-token')?.value
 

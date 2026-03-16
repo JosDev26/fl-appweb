@@ -245,6 +245,11 @@ export function addRateLimitHeaders(response: NextResponse, result: RateLimitRes
  * Returns null if allowed, or a 429 response if blocked
  */
 export async function checkStandardRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  // Skip rate limiting in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return null
+  }
+  
   if (!isRedisConfigured()) {
     console.warn('[Rate Limit] Redis not configured, skipping rate limit check')
     return null
@@ -278,6 +283,11 @@ export async function checkStandardRateLimit(request: NextRequest): Promise<Next
  * Returns null if allowed, or a 429 response if blocked
  */
 export async function checkAuthRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  // Skip rate limiting in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return null
+  }
+  
   if (!isRedisConfigured()) {
     console.warn('[Rate Limit] Redis not configured, skipping rate limit check')
     return null
@@ -399,6 +409,11 @@ export async function resetAuthFailures(
  * Returns null if allowed, or a 429 response if blocked
  */
 export async function checkUploadRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  // Skip rate limiting in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return null
+  }
+  
   if (!isRedisConfigured()) {
     console.warn('[Rate Limit] Redis not configured, skipping rate limit check')
     return null
@@ -431,6 +446,11 @@ export async function checkUploadRateLimit(request: NextRequest): Promise<NextRe
  * Returns null if allowed, or a 429 response if blocked
  */
 export async function checkEmailRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  // Skip rate limiting in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return null
+  }
+  
   if (!isRedisConfigured()) {
     console.warn('[Rate Limit] Redis not configured, skipping rate limit check')
     return null
@@ -462,6 +482,11 @@ export async function checkEmailRateLimit(request: NextRequest): Promise<NextRes
  * Returns null if allowed, or a 429 response if blocked
  */
 export async function checkSyncRateLimit(request: NextRequest): Promise<NextResponse | null> {
+  // Skip rate limiting in development mode
+  if (process.env.NODE_ENV === 'development') {
+    return null
+  }
+  
   if (!isRedisConfigured()) {
     console.warn('[Rate Limit] Redis not configured, skipping rate limit check')
     return null

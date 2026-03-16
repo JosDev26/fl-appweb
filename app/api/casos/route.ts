@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    console.log(`📂 Buscando casos para cliente: ${id_cliente}`)
+
     // Buscar casos directamente usando el campo id_cliente de la tabla casos
     const { data: casos, error } = await supabase
       .from('casos')
@@ -25,6 +27,8 @@ export async function GET(request: NextRequest) {
       .eq('id_cliente', id_cliente)
     
     if (error) throw error
+
+    console.log(`✅ Encontrados ${casos?.length || 0} casos`)
 
     return NextResponse.json({ casos: casos || [] })
 
