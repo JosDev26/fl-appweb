@@ -252,13 +252,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Crear registro de plazo de pago
-    // Fecha de emisión: la fecha actual (segunda semana del mes siguiente al reportado)
+    // Crear registro de factura
     const fechaEmision = new Date(now)
-    // Fecha de vencimiento: 14 días después de la emisión (configurable)
-    const diasPlazo = 14
-    const fechaVencimiento = new Date(fechaEmision)
-    fechaVencimiento.setDate(fechaVencimiento.getDate() + diasPlazo)
 
     const { error: deadlineError } = await supabase
       .from('invoice_payment_deadlines')
@@ -268,8 +263,6 @@ export async function POST(request: NextRequest) {
         client_type: clientType,
         file_path: data.path,
         fecha_emision: fechaEmision.toISOString().split('T')[0],
-        fecha_vencimiento: fechaVencimiento.toISOString().split('T')[0],
-        dias_plazo: diasPlazo,
         estado_pago: 'pendiente'
       })
 
@@ -283,9 +276,7 @@ export async function POST(request: NextRequest) {
       message: `Factura para ${mesFactura} subida exitosamente`,
       filePath: data.path,
       fileName: sanitizedFileName,
-      mesFactura: mesFactura,
-      fechaVencimiento: fechaVencimiento.toISOString().split('T')[0],
-      diasPlazo: diasPlazo
+      mesFactura: mesFactura
     })
 
   } catch (error) {

@@ -67,19 +67,9 @@ export async function GET(request: Request) {
 
     // Si se solicitan todos los pendientes
     if (getAllPending) {
-      const today = new Date().toISOString().split('T')[0]
+      query = query.eq('estado_pago', 'pendiente')
       
-      // Primero actualizar vencidos
-      await supabase
-        .from('invoice_payment_deadlines')
-        .update({ estado_pago: 'vencido' })
-        .eq('estado_pago', 'pendiente')
-        .lt('fecha_vencimiento', today)
-
-      // Luego obtener todos los pendientes y vencidos
-      query = query.in('estado_pago', ['pendiente', 'vencido'])
-      
-      const { data, error } = await query.order('fecha_vencimiento', { ascending: true })
+      const { data, error } = await query.order('mes_factura', { ascending: false })
 
       if (error) {
         console.error('Error al obtener plazos pendientes:', error)
@@ -110,16 +100,10 @@ export async function GET(request: Request) {
             clientInfo = empresa
           }
 
-          // Calcular días restantes
-          const today = new Date()
-          const vencimiento = new Date(deadline.fecha_vencimiento)
-          const diasRestantes = Math.ceil((vencimiento.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-
           return {
             ...deadline,
             clientName: clientInfo?.nombre || 'Desconocido',
-            clientCedula: clientInfo?.cedula || 'N/A',
-            diasRestantes
+            clientCedula: clientInfo?.cedula || 'N/A'
           }
         })
       )
@@ -143,7 +127,7 @@ export async function GET(request: Request) {
       query = query.eq('estado_pago', estado)
     }
 
-    const { data, error } = await query.order('fecha_vencimiento', { ascending: false })
+    const { data, error } = await query.order('mes_factura', { ascending: false })
 
     if (error) {
       console.error('Error al obtener plazos:', error)
@@ -167,11 +151,11 @@ export async function GET(request: Request) {
   }
 }
 
-// Actualizar configuración de plazo
+// Actualizar nota de factura
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { mesFactura, clientId, clientType, diasPlazo, nota } = body
+    const { mesFactura, clientId, clientType, nota } = body
 
     if (!mesFactura || !clientId || !clientType) {
       return NextResponse.json(
@@ -180,32 +164,7 @@ export async function PUT(request: Request) {
       )
     }
 
-    const updateData: any = {}
-    
-    if (diasPlazo !== undefined) {
-      // Recalcular fecha de vencimiento
-      const { data: deadline } = await supabase
-        .from('invoice_payment_deadlines')
-        .select('fecha_emision')
-        .eq('mes_factura', mesFactura)
-        .eq('client_id', clientId)
-        .eq('client_type', clientType)
-        .single()
-
-      if (deadline) {
-        const nuevaFechaVencimiento = new Date(deadline.fecha_emision)
-        nuevaFechaVencimiento.setDate(nuevaFechaVencimiento.getDate() + parseInt(diasPlazo))
-        
-        updateData.dias_plazo = parseInt(diasPlazo)
-        updateData.fecha_vencimiento = nuevaFechaVencimiento.toISOString().split('T')[0]
-      }
-    }
-
-    if (nota !== undefined) {
-      updateData.nota = nota
-    }
-
-    if (Object.keys(updateData).length === 0) {
+    if (nota === undefined) {
       return NextResponse.json(
         { error: 'No hay datos para actualizar' },
         { status: 400 }
@@ -214,14 +173,14 @@ export async function PUT(request: Request) {
 
     const { data, error } = await supabase
       .from('invoice_payment_deadlines')
-      .update(updateData)
+      .update({ nota })
       .eq('mes_factura', mesFactura)
       .eq('client_id', clientId)
       .eq('client_type', clientType)
       .select()
 
     if (error) {
-      console.error('Error al actualizar plazo:', error)
+      console.error('Error al actualizar nota:', error)
       return NextResponse.json(
         { error: 'Error al actualizar plazo' },
         { status: 500 }
@@ -230,7 +189,7 @@ export async function PUT(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: 'Plazo actualizado exitosamente',
+      message: 'Nota actualizada exitosamente',
       data: data?.[0]
     })
 

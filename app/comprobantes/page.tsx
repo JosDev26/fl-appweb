@@ -17,21 +17,49 @@ interface Comprobante {
   uploaded_at: string
 }
 
+interface Factura {
+  id: string
+  mes_factura: string
+  file_path: string
+  fecha_emision: string
+  estado_pago: 'pendiente' | 'pagado'
+}
+
 export default function ComprobantesPage() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth()
   const [comprobantes, setComprobantes] = useState<Comprobante[]>([])
+  const [facturas, setFacturas] = useState<Factura[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'pendiente' | 'aprobado' | 'rechazado'>('todos')
   const [filtroMes, setFiltroMes] = useState<string>('todos')
   const [mesesDisponibles, setMesesDisponibles] = useState<string[]>([])
+  const [activeTab, setActiveTab] = useState<'comprobantes' | 'facturas'>('comprobantes')
 
   useEffect(() => {
     if (!authLoading && user) {
       loadComprobantes()
+      loadFacturas()
     }
   }, [authLoading, user])
+
+  const loadFacturas = async () => {
+    if (!user) return
+
+    try {
+      const response = await fetch(
+        `/api/invoice-payment-status?clientId=${user.id}&clientType=${user.tipo || 'cliente'}`
+      )
+      const data = await response.json()
+
+      if (response.ok && data.deadlines) {
+        setFacturas(data.deadlines)
+      }
+    } catch (err) {
+      console.error('Error cargando facturas:', err)
+    }
+  }
 
   const loadComprobantes = async () => {
     if (!user) {
@@ -103,6 +131,39 @@ export default function ComprobantesPage() {
     } catch (error) {
       console.error('Error:', error)
       alert('Error al descargar el comprobante')
+    }
+  }
+
+  const downloadFactura = async (filePath: string) => {
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/upload-invoice/download?path=${encodeURIComponent(filePath)}`, {
+        headers: {
+          'x-user-id': String(user.id)
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error('Error al descargar factura')
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const fileName = filePath.split('/').pop() || 'factura.xml'
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error al descargar la factura')
     }
   }
 
@@ -181,14 +242,50 @@ export default function ComprobantesPage() {
           <button onClick={() => router.back()} className={styles.backButton}>
             ← Volver
           </button>
-          <h1 className={styles.title}>Mis Comprobantes de Pago</h1>
-          <p className={styles.subtitle}>Historial y estado de tus comprobantes</p>
+          <h1 className={styles.title}>Mis Documentos</h1>
+          <p className={styles.subtitle}>Comprobantes de pago y facturas recibidas</p>
         </div>
       </div>
 
       <div className={styles.content}>
-        {/* Filtros */}
-        <div className={styles.filters}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '0' }}>
+          <button
+            onClick={() => setActiveTab('comprobantes')}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: activeTab === 'comprobantes' ? '#2563eb' : 'transparent',
+              color: activeTab === 'comprobantes' ? 'white' : '#6b7280',
+              borderRadius: '8px 8px 0 0',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all 0.2s'
+            }}
+          >
+            📄 Comprobantes de Pago
+          </button>
+          <button
+            onClick={() => setActiveTab('facturas')}
+            style={{
+              padding: '12px 24px',
+              border: 'none',
+              background: activeTab === 'facturas' ? '#2563eb' : 'transparent',
+              color: activeTab === 'facturas' ? 'white' : '#6b7280',
+              borderRadius: '8px 8px 0 0',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all 0.2s'
+            }}
+          >
+            🧾 Facturas Electrónicas ({facturas.length})
+          </button>
+        </div>
+
+        {activeTab === 'comprobantes' && (
+          <>
+            {/* Filtros */}
+            <div className={styles.filters}>
           <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Estado:</label>
             <select 
@@ -303,6 +400,63 @@ export default function ComprobantesPage() {
               </div>
             ))}
           </div>
+        )}
+          </>
+        )}
+
+        {activeTab === 'facturas' && (
+          <>
+            <div style={{ marginBottom: '20px' }}>
+              <p style={{ color: '#6b7280', fontSize: '14px' }}>
+                Facturas electrónicas emitidas a tu nombre. Estas son las facturas XML que corresponden a los servicios del bufete.
+              </p>
+            </div>
+
+            {facturas.length === 0 ? (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyIcon}>🧾</div>
+                <h3>No hay facturas</h3>
+                <p>No se han emitido facturas electrónicas a tu nombre todavía</p>
+              </div>
+            ) : (
+              <div className={styles.comprobantesGrid}>
+                {facturas.map((factura) => (
+                  <div key={factura.id} className={styles.comprobanteCard}>
+                    <div className={styles.cardHeader}>
+                      <span className={`${styles.estadoBadge} ${factura.estado_pago === 'pagado' ? styles.estadoAprobado : styles.estadoPendiente}`}>
+                        {factura.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
+                      </span>
+                      <span className={styles.mesBadge}>{formatMesDisplay(factura.mes_factura)}</span>
+                    </div>
+
+                    <div className={styles.cardBody}>
+                      <div className={styles.cardField}>
+                        <span className={styles.fieldLabel}>Mes de servicios:</span>
+                        <span className={styles.fieldValue}>{formatMesDisplay(factura.mes_factura)}</span>
+                      </div>
+                      <div className={styles.cardField}>
+                        <span className={styles.fieldLabel}>Fecha emisión:</span>
+                        <span className={styles.fieldValue}>{formatDate(factura.fecha_emision)}</span>
+                      </div>
+                      <div className={styles.cardField}>
+                        <span className={styles.fieldLabel}>Archivo:</span>
+                        <span className={styles.fieldValue}>{factura.file_path?.split('/').pop() || 'factura.xml'}</span>
+                      </div>
+                    </div>
+
+                    <div className={styles.cardFooter}>
+                      <button
+                        onClick={() => downloadFactura(factura.file_path)}
+                        className={styles.downloadButton}
+                      >
+                        ⬇️ Descargar XML
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

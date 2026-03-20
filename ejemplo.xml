@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FacturaElectronica>
+    <Clave>50619032600310112345600100001010000000001100000001</Clave>
+    <NumeroConsecutivo>00100001010000000001</NumeroConsecutivo>
+    <FechaEmision>2026-03-19T10:30:00-06:00</FechaEmision>
+
+    <Emisor>
+        <Nombre>Empresa Ejemplo S.A.</Nombre>
+        <Identificacion>
+            <Tipo>02</Tipo>
+            <Numero>3101123456</Numero>
+        </Identificacion>
+        <Ubicacion>
+            <Provincia>1</Provincia>
+            <Canton>01</Canton>
+            <Distrito>01</Distrito>
+            <Direccion>San José, Costa Rica</Direccion>
+        </Ubicacion>
+        <CorreoElectronico>empresa@ejemplo.com</CorreoElectronico>
+    </Emisor>
+
+    <Receptor>
+        <Nombre>Cliente Ejemplo</Nombre>
+        <Identificacion>
+            <Tipo>01</Tipo>
+            <Numero>123456789</Numero>
+        </Identificacion>
+        <CorreoElectronico>cliente@correo.com</CorreoElectronico>
+    </Receptor>
+
+    <DetalleServicio>
+        <LineaDetalle>
+            <NumeroLinea>1</NumeroLinea>
+            <Codigo>001</Codigo>
+            <Cantidad>2</Cantidad>
+            <UnidadMedida>Unid</UnidadMedida>
+            <Detalle>Producto de ejemplo</Detalle>
+            <PrecioUnitario>1000.00</PrecioUnitario>
+            <MontoTotal>2000.00</MontoTotal>
+            <SubTotal>2000.00</SubTotal>
+        </LineaDetalle>
+
+        <LineaDetalle>
+            <NumeroLinea>2</NumeroLinea>
+            <Codigo>002</Codigo>
+            <Cantidad>1</Cantidad>
+            <UnidadMedida>Unid</UnidadMedida>
+            <Detalle>Servicio de ejemplo</Detalle>
+            <PrecioUnitario>500.00</PrecioUnitario>
+            <MontoTotal>500.00</MontoTotal>
+            <SubTotal>500.00</SubTotal>
+        </LineaDetalle>
+    </DetalleServicio>
+
+    <ResumenFactura>
+        <TotalGravado>2500.00</TotalGravado>
+        <TotalExento>0.00</TotalExento>
+        <TotalVenta>2500.00</TotalVenta>
+        <TotalDescuentos>0.00</TotalDescuentos>
+        <TotalVentaNeta>2500.00</TotalVentaNeta>
+        <TotalImpuesto>325.00</TotalImpuesto>
+        <TotalComprobante>2825.00</TotalComprobante>
+    </ResumenFactura>
+
+    <Otros>
+        <OtroTexto>Factura de ejemplo para pruebas</OtroTexto>
+    </Otros>
+</FacturaElectronica>

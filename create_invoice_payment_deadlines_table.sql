@@ -1,4 +1,4 @@
--- Crear tabla para gestionar plazos de pago de facturas electrónicas
+-- Crear tabla para gestionar facturas electrónicas
 CREATE TABLE IF NOT EXISTS public.invoice_payment_deadlines (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
@@ -9,21 +9,14 @@ CREATE TABLE IF NOT EXISTS public.invoice_payment_deadlines (
     file_path TEXT NOT NULL, -- Path de la factura en storage
     
     -- Fechas importantes
-    fecha_emision DATE NOT NULL, -- Fecha en que se emitió/subió la factura (segunda semana del mes siguiente)
-    fecha_vencimiento DATE NOT NULL, -- Fecha límite de pago (configurable, default: 2 semanas después de emisión)
+    fecha_emision DATE NOT NULL, -- Fecha en que se subió la factura
     
     -- Estado del pago
-    estado_pago TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado_pago IN ('pendiente', 'pagado', 'vencido')),
+    estado_pago TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado_pago IN ('pendiente', 'pagado')),
     fecha_pago TIMESTAMP WITH TIME ZONE, -- Fecha en que se aprobó el comprobante de pago
     
-    -- Configuración personalizada
-    dias_plazo INTEGER NOT NULL DEFAULT 14, -- Días de plazo para pagar (desde fecha_emision)
-    nota TEXT, -- Notas adicionales sobre este plazo
-    
-    -- Recordatorios
-    recordatorio_enviado_7d BOOLEAN DEFAULT FALSE,
-    recordatorio_enviado_3d BOOLEAN DEFAULT FALSE,
-    recordatorio_enviado_vencimiento BOOLEAN DEFAULT FALSE,
+    -- Notas
+    nota TEXT, -- Notas adicionales
     
     -- Metadata
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -37,7 +30,6 @@ CREATE TABLE IF NOT EXISTS public.invoice_payment_deadlines (
 CREATE INDEX IF NOT EXISTS idx_invoice_deadlines_client ON public.invoice_payment_deadlines(client_id, client_type);
 CREATE INDEX IF NOT EXISTS idx_invoice_deadlines_mes ON public.invoice_payment_deadlines(mes_factura);
 CREATE INDEX IF NOT EXISTS idx_invoice_deadlines_estado ON public.invoice_payment_deadlines(estado_pago);
-CREATE INDEX IF NOT EXISTS idx_invoice_deadlines_vencimiento ON public.invoice_payment_deadlines(fecha_vencimiento);
 
 -- Trigger para actualizar updated_at
 CREATE OR REPLACE FUNCTION update_invoice_deadline_timestamp()
@@ -54,12 +46,10 @@ CREATE TRIGGER update_invoice_deadline_timestamp
     EXECUTE FUNCTION update_invoice_deadline_timestamp();
 
 -- Comentarios para documentación
-COMMENT ON TABLE public.invoice_payment_deadlines IS 'Gestión de plazos de pago para facturas electrónicas mensuales';
+COMMENT ON TABLE public.invoice_payment_deadlines IS 'Gestión de facturas electrónicas mensuales';
 COMMENT ON COLUMN public.invoice_payment_deadlines.mes_factura IS 'Mes al que corresponde la factura (YYYY-MM)';
-COMMENT ON COLUMN public.invoice_payment_deadlines.fecha_emision IS 'Fecha en que se emitió la factura (segunda semana del mes siguiente)';
-COMMENT ON COLUMN public.invoice_payment_deadlines.fecha_vencimiento IS 'Fecha límite de pago';
-COMMENT ON COLUMN public.invoice_payment_deadlines.dias_plazo IS 'Días de plazo para pagar desde la fecha de emisión';
-COMMENT ON COLUMN public.invoice_payment_deadlines.estado_pago IS 'pendiente: esperando pago, pagado: comprobante aprobado, vencido: pasó la fecha límite sin pagar';
+COMMENT ON COLUMN public.invoice_payment_deadlines.fecha_emision IS 'Fecha en que se subió la factura';
+COMMENT ON COLUMN public.invoice_payment_deadlines.estado_pago IS 'pendiente: esperando pago, pagado: comprobante aprobado';
 
 -- Habilitar RLS (Row Level Security)
 ALTER TABLE public.invoice_payment_deadlines ENABLE ROW LEVEL SECURITY;

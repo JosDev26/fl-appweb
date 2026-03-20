@@ -594,7 +594,7 @@ export default function DevPage() {
       formData.append('file', selectedFile)
       formData.append('clientId', selectedClient.id)
       formData.append('clientType', selectedClient.tipo)
-      formData.append('month', selectedInvoiceMonth)
+      formData.append('mesFactura', selectedInvoiceMonth)
       const res = await fetch('/api/upload-invoice', { method: 'POST', body: formData })
       const data = await res.json()
       if (data.success) {
@@ -4469,6 +4469,9 @@ export default function DevPage() {
                   value={selectedInvoiceMonth}
                   onChange={(e) => setSelectedInvoiceMonth(e.target.value)}
                 />
+                <small style={{ color: '#666', fontSize: '12px', marginTop: '4px', display: 'block' }}>
+                  Mes de los servicios facturados. Ej: si en marzo se factura el trabajo de febrero, seleccione febrero.
+                </small>
               </div>
               <div className={styles.formGroup}>
                 <label className={styles.formLabel}>Archivo XML</label>

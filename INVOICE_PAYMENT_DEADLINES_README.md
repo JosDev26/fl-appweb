@@ -1,8 +1,8 @@
-# Sistema de Gestión de Plazos de Facturas Electrónicas
+# Sistema de Gestión de Facturas Electrónicas
 
 ## 📋 Descripción General
 
-Sistema para gestionar y monitorear los plazos de pago de facturas electrónicas enviadas a clientes y empresas. Automatiza el seguimiento de fechas de vencimiento, estados de pago y alertas de facturas vencidas.
+Sistema para gestionar facturas electrónicas enviadas a clientes y empresas. Registra el estado de pago de cada factura mensual.
 
 ## 🔄 Flujo de Facturación
 
@@ -12,14 +12,13 @@ Sistema para gestionar y monitorear los plazos de pago de facturas electrónicas
 3. **Visto Bueno**: El cliente da su aprobación al monto a pagar
 
 ### Semana 2 del Mes Siguiente (Segunda Semana de Noviembre para Octubre)
-4. **Emisión de Factura**: Se envía la factura electrónica
-5. **Creación de Plazo**: Se crea automáticamente un plazo de pago de **14 días** desde la fecha de emisión
-6. **Fecha de Vencimiento**: Se calcula automáticamente (emisión + 14 días)
+4. **Emisión de Factura**: Se sube la factura electrónica (XML/PDF)
+5. **Registro**: Se crea automáticamente un registro en la tabla
 
-### Durante el Plazo
-7. **Subida de Comprobante**: El cliente sube el comprobante de pago en `/pago`
-8. **Aprobación**: El admin aprueba el comprobante
-9. **Actualización Automática**: El estado del plazo se marca como "pagado"
+### Proceso de Pago
+6. **Subida de Comprobante**: El cliente sube el comprobante de pago en `/pago`
+7. **Aprobación**: El admin aprueba el comprobante
+8. **Actualización Automática**: El estado se marca como "pagado"
 
 ## 🗄️ Estructura de la Base de Datos
 
@@ -32,15 +31,10 @@ CREATE TABLE invoice_payment_deadlines (
     client_id TEXT NOT NULL,
     client_type TEXT NOT NULL,           -- 'cliente' | 'empresa'
     file_path TEXT NOT NULL,             -- Ruta de la factura en storage
-    fecha_emision DATE NOT NULL,         -- Fecha de emisión de factura
-    fecha_vencimiento DATE NOT NULL,     -- Fecha límite de pago
-    estado_pago TEXT DEFAULT 'pendiente',-- 'pendiente' | 'pagado' | 'vencido'
+    fecha_emision DATE NOT NULL,         -- Fecha en que se subió la factura
+    estado_pago TEXT DEFAULT 'pendiente',-- 'pendiente' | 'pagado'
     fecha_pago TIMESTAMP,                -- Fecha de aprobación del comprobante
-    dias_plazo INTEGER DEFAULT 14,       -- Días de plazo (configurable)
     nota TEXT,                           -- Notas adicionales
-    recordatorio_enviado_7d BOOLEAN,     -- Recordatorio 7 días antes
-    recordatorio_enviado_3d BOOLEAN,     -- Recordatorio 3 días antes
-    recordatorio_enviado_vencimiento BOOLEAN,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(mes_factura, client_id, client_type)
@@ -57,10 +51,7 @@ create_invoice_payment_deadlines_table.sql
 
 ### 2. Verificar Políticas RLS
 - Admin: acceso completo
-- Clientes: solo pueden ver sus propios plazos
-
-### 3. Configurar Plazo por Defecto
-El plazo por defecto es **14 días**, pero se puede personalizar por factura.
+- Clientes: solo pueden ver sus propios registros
 
 ## 📊 API Endpoints
 
@@ -81,15 +72,13 @@ FormData {
 ```json
 {
   "success": true,
-  "mesFactura": "2024-11",
-  "fechaVencimiento": "2024-11-28",
-  "diasPlazo": 14
+  "mesFactura": "2024-11"
 }
 ```
 
 ### GET `/api/invoice-payment-status`
 
-#### Obtener todos los plazos pendientes:
+#### Obtener todas las facturas pendientes:
 ```
 GET /api/invoice-payment-status?getAllPending=true
 ```
@@ -105,16 +94,13 @@ GET /api/invoice-payment-status?getAllPending=true
       "clientName": "Juan Pérez",
       "clientCedula": "123456789",
       "fecha_emision": "2024-11-08",
-      "fecha_vencimiento": "2024-11-22",
-      "estado_pago": "pendiente",
-      "diasRestantes": 5,
-      "dias_plazo": 14
+      "estado_pago": "pendiente"
     }
   ]
 }
 ```
 
-#### Obtener plazos de un cliente específico:
+#### Obtener facturas de un cliente específico:
 ```
 GET /api/invoice-payment-status?clientId={id}&clientType={tipo}
 ```
@@ -133,7 +119,7 @@ Marca una factura como pagada (se llama automáticamente al aprobar comprobante)
 ```
 
 ### PUT `/api/invoice-payment-status`
-Actualiza la configuración de un plazo.
+Actualiza la nota de una factura.
 
 **Request:**
 ```json
@@ -141,8 +127,7 @@ Actualiza la configuración de un plazo.
   "mesFactura": "2024-10",
   "clientId": "uuid",
   "clientType": "cliente",
-  "diasPlazo": 21,  // Nuevo plazo
-  "nota": "Extensión solicitada por el cliente"
+  "nota": "Pago parcial acordado"
 }
 ```
 
@@ -150,51 +135,30 @@ Actualiza la configuración de un plazo.
 
 | Estado | Descripción | Color |
 |--------|-------------|-------|
-| **pendiente** | Dentro del plazo, esperando pago | 🟡 Amarillo |
+| **pendiente** | Esperando pago | 🟡 Amarillo |
 | **pagado** | Comprobante aprobado | 🟢 Verde |
-| **vencido** | Pasó la fecha límite sin pagar | 🔴 Rojo |
-
-## 🚨 Alertas y Notificaciones
-
-### Alertas Visuales (Panel /dev)
-- **Fila Roja**: Factura vencida
-- **Fila Amarilla**: Factura urgente (3 días o menos)
-- **Contador de Días**: 
-  - Verde: Más de 3 días restantes
-  - Naranja pulsante: 3 días o menos
-  - Rojo: Vencido
-
-### Sistema de Recordatorios (Próximamente)
-- 📧 **7 días antes**: Recordatorio preventivo
-- 📧 **3 días antes**: Recordatorio urgente
-- 📧 **Día del vencimiento**: Alerta crítica
 
 ## 💻 Panel de Administración
 
 ### Ubicación
-`/dev` → Pestaña "📅 Plazos de Facturas"
+`/dev` → Pestaña "📅 Facturas"
 
 ### Funcionalidades
 
 #### 1. Vista de Tabla
-Muestra todas las facturas pendientes y vencidas con:
+Muestra todas las facturas pendientes con:
 - Información del cliente (nombre, cédula)
 - Mes de la factura
-- Fechas de emisión y vencimiento
-- Días restantes (con alertas visuales)
+- Fecha de emisión
 - Estado actual
-- Plazo configurado
 - Notas adicionales
 
-#### 2. Edición de Plazos
-- Clic en el botón ✏️ para editar
-- Modificar días de plazo (recalcula fecha de vencimiento automáticamente)
+#### 2. Edición de Notas
 - Agregar/editar notas
 - Guardar o cancelar cambios
 
-#### 3. Filtros y Actualización
+#### 3. Actualización
 - Botón "Actualizar" para refrescar datos
-- Automáticamente marca facturas vencidas
 
 ## 🔄 Integración Automática
 
@@ -203,8 +167,7 @@ Muestra todas las facturas pendientes y vencidas con:
 // Automático al subir
 1. Validar mes (solo una factura por mes)
 2. Crear registro en invoice_payment_deadlines
-3. Calcular fecha_vencimiento = fecha_emision + dias_plazo
-4. Estado inicial: 'pendiente'
+3. Estado inicial: 'pendiente'
 ```
 
 ### Al Aprobar Comprobante (`/dev` → Vista Principal → Aprobar)
@@ -217,14 +180,6 @@ Muestra todas las facturas pendientes y vencidas con:
 5. Guardar fecha_pago
 ```
 
-### Actualización Diaria de Vencidos
-```typescript
-// En cada GET getAllPending
-1. Obtener fecha actual
-2. Buscar deadlines con estado='pendiente' y fecha_vencimiento < hoy
-3. Actualizar automáticamente a estado='vencido'
-```
-
 ## 📱 Flujo de Usuario (Cliente)
 
 ### Pantalla `/pago`
@@ -235,52 +190,35 @@ Muestra todas las facturas pendientes y vencidas con:
 5. Subir comprobante de pago
 6. Esperar aprobación
 
-### Próximamente: Vista de Plazos para Clientes
-- Ver sus facturas pendientes
-- Fechas de vencimiento
-- Estado de comprobantes
-
 ## 🧪 Testing con Simulador de Fecha
 
 ### En Panel `/dev` → Simulador de Fecha
 1. Activar simulador de fecha
 2. Cambiar a mes deseado (ej: octubre 2024)
 3. Subir factura → se asignará al mes simulado
-4. Cambiar a noviembre 2024
-5. Subir otra factura → se asignará a noviembre
-6. Ver plazos → cada factura tiene su mes correcto
 
 ### Ejemplo de Prueba
 ```typescript
 // Octubre 2024 (fecha simulada)
 Subir factura → mes_factura = "2024-10"
                 fecha_emision = "2024-10-15"
-                fecha_vencimiento = "2024-10-29"
-
-// Noviembre 2024 (fecha simulada)
-Subir factura → mes_factura = "2024-11"
-                fecha_emision = "2024-11-15"
-                fecha_vencimiento = "2024-11-29"
 ```
 
 ## 🔐 Seguridad
 
 ### Políticas RLS
-- Solo administradores pueden crear/modificar plazos
-- Clientes solo pueden ver sus propios plazos
+- Solo administradores pueden crear/modificar registros
+- Clientes solo pueden ver sus propias facturas
 - Uso de `current_setting('request.jwt.claims')`
 
 ### Validaciones
-- Un solo plazo por mes por cliente
-- Estados válidos: pendiente | pagado | vencido
-- Días de plazo mínimo: 1 día
+- Un solo registro por mes por cliente
+- Estados válidos: pendiente | pagado
 - Fechas inmutables una vez pagado
 
 ## 📈 Reportes y Métricas (Futuro)
 
 - Tiempo promedio de pago
-- Tasa de pagos a tiempo vs vencidos
-- Clientes con historial de retrasos
 - Análisis de flujo de caja
 
 ## 🔧 Mantenimiento
