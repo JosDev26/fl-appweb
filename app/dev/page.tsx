@@ -284,7 +284,7 @@ interface TotalesPorGrupo {
   ivaServiciosProfesionales: number
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'servicios-estado' | 'vista-pago'
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'servicios-estado' | 'vista-pago' | 'pagar-cliente'
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -401,6 +401,21 @@ export default function DevPage() {
   const [clienteExpandido, setClienteExpandido] = useState<string | null>(null)
   const [editandoNota, setEditandoNota] = useState<string | null>(null)
   const [notaTemp, setNotaTemp] = useState<string>('')
+
+  // Estados para Pagar por Cliente
+  const [clientesParaPago, setClientesParaPago] = useState<{id: string, nombre: string, tipo: 'empresa' | 'cliente', cedula?: string}[]>([])
+  const [loadingClientesPago, setLoadingClientesPago] = useState(false)
+  const [pagoClienteSeleccionado, setPagoClienteSeleccionado] = useState<string>('')
+  const [pagoTipoSeleccionado, setPagoTipoSeleccionado] = useState<'empresa' | 'cliente'>('empresa')
+  const [pagoMes, setPagoMes] = useState<string>('')
+  const [pagoMontoCalculado, setPagoMontoCalculado] = useState<number>(0)
+  const [pagoMonto, setPagoMonto] = useState<string>('')
+  const [pagoArchivo, setPagoArchivo] = useState<File | null>(null)
+  const [loadingPagoMonto, setLoadingPagoMonto] = useState(false)
+  const [loadingPago, setLoadingPago] = useState(false)
+  const [pagoResultado, setPagoResultado] = useState<{success: boolean, message: string} | null>(null)
+  const [pagoDetalles, setPagoDetalles] = useState<any>(null)
+  const [pagoConfirmando, setPagoConfirmando] = useState(false)
 
   // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
@@ -1567,6 +1582,178 @@ export default function DevPage() {
     }
   }
 
+  // PAGAR POR CLIENTE - Cargar lista de clientes y empresas
+  const loadClientesParaPago = async () => {
+    setLoadingClientesPago(true)
+    setPagoResultado(null)
+    setPagoConfirmando(false)
+    try {
+      const [empRes, cliRes] = await Promise.all([
+        fetch('/api/client?tipo=empresa&all=true', { credentials: 'include' }),
+        fetch('/api/client?tipo=cliente', { credentials: 'include' })
+      ])
+      const empData = await empRes.json()
+      const cliData = await cliRes.json()
+
+      const empresas = (empData.empresas || []).map((e: any) => ({
+        id: e.id, nombre: e.nombre, tipo: 'empresa' as const, cedula: e.cedula
+      }))
+      const clientes = (cliData.clients || []).map((c: any) => ({
+        id: c.id, nombre: c.nombre, tipo: 'cliente' as const, cedula: c.cedula
+      }))
+      
+      const combined = [...empresas, ...clientes].sort((a: any, b: any) => 
+        a.nombre.localeCompare(b.nombre)
+      )
+      setClientesParaPago(combined)
+    } catch (error) {
+      console.error('Error cargando clientes para pago:', error)
+      alert('Error cargando la lista de clientes')
+    } finally {
+      setLoadingClientesPago(false)
+    }
+  }
+
+  // PAGAR POR CLIENTE - Calcular monto adeudado
+  const loadMontoPago = async (clientId: string, tipoCliente: string) => {
+    setLoadingPagoMonto(true)
+    setPagoDetalles(null)
+    try {
+      const url = isDateSimulated && simulatedDate
+        ? `/api/datos-pago?simulatedDate=${simulatedDate}`
+        : '/api/datos-pago'
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: {
+          'x-user-id': clientId,
+          'x-tipo-cliente': tipoCliente
+        }
+      })
+      const data = await res.json()
+      if (data.success || data.totalAPagar !== undefined) {
+        const total = data.granTotalAPagar || data.totalAPagar || 0
+        setPagoMontoCalculado(total)
+        setPagoMonto(total.toString())
+        setPagoDetalles(data)
+      } else {
+        setPagoMontoCalculado(0)
+        setPagoMonto('0')
+      }
+    } catch (error) {
+      console.error('Error calculando monto:', error)
+      setPagoMontoCalculado(0)
+      setPagoMonto('0')
+    } finally {
+      setLoadingPagoMonto(false)
+    }
+  }
+
+  // PAGAR POR CLIENTE - Ejecutar pago (upload + aprobación automática)
+  const handlePagarPorCliente = async () => {
+    if (!pagoClienteSeleccionado || !pagoMes || !pagoArchivo || !pagoMonto) {
+      alert('Completa todos los campos antes de registrar el pago')
+      return
+    }
+
+    const cliente = clientesParaPago.find(c => c.id === pagoClienteSeleccionado)
+    if (!cliente) return
+
+    setLoadingPago(true)
+    setPagoResultado(null)
+
+    try {
+      // Paso 1: Subir comprobante
+      const formData = new FormData()
+      formData.append('file', pagoArchivo)
+      formData.append('monto', pagoMonto)
+      formData.append('mes_pago', pagoMes)
+      if (isDateSimulated && simulatedDate) {
+        formData.append('simulatedDate', simulatedDate)
+      }
+
+      const uploadRes = await fetch('/api/upload-comprobante', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'x-user-id': cliente.id,
+          'x-tipo-cliente': cliente.tipo === 'empresa' ? 'empresa' : 'cliente'
+        },
+        body: formData
+      })
+      const uploadData = await uploadRes.json()
+
+      if (!uploadRes.ok || !uploadData.success) {
+        setPagoResultado({
+          success: false,
+          message: `Error subiendo comprobante: ${uploadData.error || 'Error desconocido'}`
+        })
+        return
+      }
+
+      const receiptId = uploadData.receipt?.id
+      if (!receiptId) {
+        setPagoResultado({
+          success: false,
+          message: 'Comprobante subido pero no se obtuvo ID. Apruebemanualmente desde Comprobantes.'
+        })
+        return
+      }
+
+      // Paso 2: Aprobar comprobante inmediatamente
+      const approveRes = await fetch('/api/payment-receipts', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receiptId,
+          action: 'aprobar',
+          nota: `Pago registrado desde panel admin para ${getNombreMes(pagoMes)}`
+        })
+      })
+      const approveData = await approveRes.json()
+
+      if (!approveRes.ok || approveData.error) {
+        setPagoResultado({
+          success: false,
+          message: `Comprobante subido (pendiente). Error al aprobar: ${approveData.error || 'Error desconocido'}. Apruebe manualmente desde Comprobantes.`
+        })
+        return
+      }
+
+      setPagoResultado({
+        success: true,
+        message: `Pago registrado exitosamente para ${cliente.nombre} - ${getNombreMes(pagoMes)} - ${pagoDetalles?.moneda === 'dolares' || pagoDetalles?.moneda === 'Dólares' ? '$' : '\u20A1'}${Number(pagoMonto).toLocaleString()}`
+      })
+
+      // Limpiar formulario
+      setPagoArchivo(null)
+      setPagoConfirmando(false)
+      // Reset file input
+      const fileInput = document.getElementById('pago-file-input') as HTMLInputElement
+      if (fileInput) fileInput.value = ''
+    } catch (error) {
+      console.error('Error registrando pago:', error)
+      setPagoResultado({
+        success: false,
+        message: 'Error de conexión al registrar el pago'
+      })
+    } finally {
+      setLoadingPago(false)
+    }
+  }
+
+  // PAGAR POR CLIENTE - Generar opciones de meses (últimos 12)
+  const getMesesPago = () => {
+    const meses: {value: string, label: string}[] = []
+    const now = new Date()
+    for (let i = 1; i <= 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      meses.push({ value: val, label: getNombreMes(val) })
+    }
+    return meses
+  }
+
   // Formatear horas
   const formatHoras = (horas: number) => {
     const h = Math.floor(horas)
@@ -1680,6 +1867,13 @@ export default function DevPage() {
           >
             <span className={styles.navIcon}>📊</span>
             <span className={styles.navLabel}>Vista Pago</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'pagar-cliente' ? styles.active : ''}`}
+            onClick={() => { setActiveSection('pagar-cliente'); loadClientesParaPago() }}
+          >
+            <span className={styles.navIcon}>💸</span>
+            <span className={styles.navLabel}>Pagar por Cliente</span>
           </button>
           <button 
             className={`${styles.navItem} ${activeSection === 'gastos-estado' ? styles.active : ''}`}
@@ -4434,9 +4628,227 @@ export default function DevPage() {
             )}
           </div>
         )}
-      </main>
 
-      {/* MODAL PARA SUBIR FACTURA */}
+        {/* PAGAR POR CLIENTE */}
+        {activeSection === 'pagar-cliente' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Registrar Pago por Cliente</h2>
+                <p className={styles.sectionDescription}>
+                  Sube un comprobante en nombre de una empresa o cliente. Se registra el ingreso y se aprueba automaticamente.
+                </p>
+              </div>
+              <button className={styles.button} onClick={loadClientesParaPago} disabled={loadingClientesPago}>
+                {loadingClientesPago ? 'Cargando...' : 'Refrescar Clientes'}
+              </button>
+            </div>
+
+            {/* Resultado */}
+            {pagoResultado && (
+              <div className={styles.infoBox} style={{ 
+                borderLeft: `4px solid ${pagoResultado.success ? '#388e3c' : '#d32f2f'}`,
+                background: pagoResultado.success ? '#e8f5e9' : '#ffebee',
+                marginBottom: '1.5rem'
+              }}>
+                <p style={{ fontWeight: 600, color: pagoResultado.success ? '#2e7d32' : '#c62828' }}>
+                  {pagoResultado.success ? 'Pago registrado' : 'Error'}
+                </p>
+                <p style={{ marginTop: '0.25rem' }}>{pagoResultado.message}</p>
+              </div>
+            )}
+
+            {loadingClientesPago ? (
+              <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando clientes...</p></div>
+            ) : (
+              <div style={{ display: 'grid', gap: '1.25rem' }}>
+                {/* Selección de cliente */}
+                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                  <label className={styles.formLabel}>Cliente / Empresa</label>
+                  <select
+                    className={styles.input}
+                    value={pagoClienteSeleccionado}
+                    onChange={(e) => {
+                      const clienteId = e.target.value
+                      setPagoClienteSeleccionado(clienteId)
+                      setPagoResultado(null)
+                      setPagoConfirmando(false)
+                      const found = clientesParaPago.find(c => c.id === clienteId)
+                      if (found) {
+                        setPagoTipoSeleccionado(found.tipo)
+                        if (pagoMes) loadMontoPago(clienteId, found.tipo)
+                      } else {
+                        setPagoMontoCalculado(0)
+                        setPagoMonto('')
+                        setPagoDetalles(null)
+                      }
+                    }}
+                  >
+                    <option value="">Seleccionar...</option>
+                    <optgroup label="Empresas">
+                      {clientesParaPago.filter(c => c.tipo === 'empresa').map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}{c.cedula ? ` (${c.cedula})` : ''}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Clientes">
+                      {clientesParaPago.filter(c => c.tipo === 'cliente').map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}{c.cedula ? ` (${c.cedula})` : ''}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+
+                {/* Mes de pago */}
+                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                  <label className={styles.formLabel}>Mes de Pago</label>
+                  <select
+                    className={styles.input}
+                    value={pagoMes}
+                    onChange={(e) => {
+                      const mes = e.target.value
+                      setPagoMes(mes)
+                      setPagoConfirmando(false)
+                      if (pagoClienteSeleccionado && mes) {
+                        loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado)
+                      }
+                    }}
+                  >
+                    <option value="">Seleccionar mes...</option>
+                    {getMesesPago().map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Monto */}
+                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                  <label className={styles.formLabel}>
+                    Monto a Pagar
+                    {loadingPagoMonto && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>(calculando...)</span>}
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      className={styles.input}
+                      value={pagoMonto}
+                      onChange={(e) => { setPagoMonto(e.target.value); setPagoConfirmando(false) }}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      disabled={loadingPagoMonto}
+                      style={{ flex: 1 }}
+                    />
+                    {pagoClienteSeleccionado && pagoMes && (
+                      <button
+                        className={styles.buttonSecondary}
+                        onClick={() => loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado)}
+                        disabled={loadingPagoMonto}
+                        style={{ whiteSpace: 'nowrap' }}
+                      >
+                        Recalcular
+                      </button>
+                    )}
+                  </div>
+                  {pagoMontoCalculado > 0 && pagoMonto !== pagoMontoCalculado.toString() && (
+                    <small style={{ color: '#f57c00', display: 'block', marginTop: '0.25rem' }}>
+                      Monto editado manualmente. Calculado original: {pagoMontoCalculado.toLocaleString()}
+                    </small>
+                  )}
+                  {pagoDetalles && (
+                    <small style={{ color: '#666', display: 'block', marginTop: '0.25rem' }}>
+                      Moneda: {pagoDetalles.moneda || '—'}
+                      {pagoDetalles.desglose && ` | Honorarios: ${(pagoDetalles.desglose?.honorarios || 0).toLocaleString()} | Gastos: ${(pagoDetalles.desglose?.gastos || 0).toLocaleString()}`}
+                    </small>
+                  )}
+                </div>
+
+                {/* Upload de archivo */}
+                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                  <label className={styles.formLabel}>Comprobante de Pago (PDF, JPG, PNG — max 5MB)</label>
+                  <input
+                    id="pago-file-input"
+                    type="file"
+                    className={styles.input}
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null
+                      if (file && file.size > 5 * 1024 * 1024) {
+                        alert('El archivo no puede superar 5MB')
+                        e.target.value = ''
+                        return
+                      }
+                      setPagoArchivo(file)
+                      setPagoConfirmando(false)
+                    }}
+                  />
+                  {pagoArchivo && (
+                    <small style={{ color: '#388e3c', display: 'block', marginTop: '0.25rem' }}>
+                      {pagoArchivo.name} ({(pagoArchivo.size / 1024).toFixed(0)} KB)
+                    </small>
+                  )}
+                </div>
+
+                {/* Info box para meses atrasados */}
+                {pagoMes && (() => {
+                  const now = new Date()
+                  const mesAnterior = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`
+                  const mesAct = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+                  return pagoMes !== mesAnterior && pagoMes !== mesAct
+                })() && (
+                  <div className={styles.infoBox} style={{ borderLeft: '4px solid #f57c00', background: '#fff8e1' }}>
+                    <p style={{ fontSize: '0.85rem', color: '#856404' }}>
+                      <strong>Mes atrasado:</strong> El monto auto-calculado refleja la deuda actual, no la de ese mes especifico. Ajuste el monto manualmente si es necesario.
+                    </p>
+                  </div>
+                )}
+
+                {/* Resumen y confirmación */}
+                {pagoClienteSeleccionado && pagoMes && pagoMonto && pagoArchivo && !pagoConfirmando && (
+                  <button
+                    className={styles.button}
+                    onClick={() => setPagoConfirmando(true)}
+                    disabled={loadingPago || Number(pagoMonto) <= 0}
+                    style={{ width: 'fit-content' }}
+                  >
+                    Revisar y Registrar Pago
+                  </button>
+                )}
+
+                {pagoConfirmando && (
+                  <div className={styles.infoBox} style={{ borderLeft: '4px solid #1565c0', background: '#e3f2fd' }}>
+                    <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}>Confirmar Registro de Pago</h3>
+                    <div style={{ display: 'grid', gap: '0.35rem', fontSize: '0.9rem' }}>
+                      <p><strong>Cliente:</strong> {clientesParaPago.find(c => c.id === pagoClienteSeleccionado)?.nombre} ({pagoTipoSeleccionado})</p>
+                      <p><strong>Mes:</strong> {getNombreMes(pagoMes)}</p>
+                      <p><strong>Monto:</strong> {Number(pagoMonto).toLocaleString()}</p>
+                      <p><strong>Archivo:</strong> {pagoArchivo?.name}</p>
+                    </div>
+                    <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#0d47a1' }}>
+                      Esta accion registrara el ingreso, actualizara el estado de solicitudes/gastos/servicios, y el comprobante sera visible para el cliente.
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                      <button
+                        className={`${styles.button} ${styles.buttonSuccess}`}
+                        onClick={handlePagarPorCliente}
+                        disabled={loadingPago}
+                      >
+                        {loadingPago ? 'Procesando...' : 'Confirmar Pago'}
+                      </button>
+                      <button
+                        className={styles.buttonSecondary}
+                        onClick={() => setPagoConfirmando(false)}
+                        disabled={loadingPago}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
       {showInvoiceModal && (
         <div className={styles.modalOverlay} onClick={() => setShowInvoiceModal(false)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
