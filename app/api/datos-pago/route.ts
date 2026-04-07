@@ -289,10 +289,33 @@ export async function GET(request: NextRequest) {
     // Si hoy es diciembre, se muestran datos de NOVIEMBRE
     // Usa zona horaria de Costa Rica (UTC-6)
     
-    const { year, month, mesPago } = getMesAnterior(now)
+    // Soporte para ?mes=YYYY-MM — permite consultar un mes específico
+    const mesParam = searchParams.get('mes')?.trim() || null
+    let year: number, month: number, mesPago: string
+    
+    if (mesParam && /^\d{4}-\d{2}$/.test(mesParam)) {
+      const [y, m] = mesParam.split('-').map(Number)
+      if (m >= 1 && m <= 12 && y >= 2020 && y <= 2100) {
+        year = y
+        month = m
+        mesPago = mesParam
+        if (isDev) console.log('📅 [datos-pago] Usando mes específico:', mesParam)
+      } else {
+        return NextResponse.json({ error: 'Formato de mes inválido. Use YYYY-MM (ej: 2026-02)' }, { status: 400 })
+      }
+    } else {
+      const mesAnterior = getMesAnterior(now)
+      year = mesAnterior.year
+      month = mesAnterior.month
+      mesPago = mesAnterior.mesPago
+    }
+    
     const { inicioMes: inicioMesStr, finMes: finMesStr } = getRangoMes(year, month)
     
-    if (isDev) console.log('📅 [datos-pago] Mes anterior:', mesPago, '| Rango:', inicioMesStr, 'a', finMesStr)
+    if (isDev) console.log('📅 [datos-pago] Mes:', mesPago, '| Rango:', inicioMesStr, 'a', finMesStr)
+
+    // Cuando se pide un mes específico, no incluir carry-forward de otros meses
+    const incluirCarryForward = !mesParam;
 
     // Verificar si es empresa principal de un grupo
     let esGrupoPrincipal = false;
@@ -345,16 +368,18 @@ export async function GET(request: NextRequest) {
       trabajosPorHora = data || [];
       
       // Trabajos por hora pendientes de meses anteriores
-      const fechaLimTPH = new Date(year, month - 12, 1).toISOString().split('T')[0];
-      const { data: tphAnt } = await supabase
-        .from('trabajos_por_hora')
-        .select('*, casos!fk_caso(nombre, expediente)')
-        .eq('id_cliente', userId)
-        .eq('estado_pago', 'pendiente')
-        .lt('fecha', inicioMesStr)
-        .gte('fecha', fechaLimTPH)
-        .order('fecha', { ascending: false });
-      trabajosPendientesAnteriores = tphAnt || [];
+      if (incluirCarryForward) {
+        const fechaLimTPH = new Date(year, month - 12, 1).toISOString().split('T')[0];
+        const { data: tphAnt } = await supabase
+          .from('trabajos_por_hora')
+          .select('*, casos!fk_caso(nombre, expediente)')
+          .eq('id_cliente', userId)
+          .eq('estado_pago', 'pendiente')
+          .lt('fecha', inicioMesStr)
+          .gte('fecha', fechaLimTPH)
+          .order('fecha', { ascending: false });
+        trabajosPendientesAnteriores = tphAnt || [];
+      }
     } else {
       // Para empresas, buscar casos de la empresa y luego sus trabajos
       const { data: casos, error: casosError } = await supabase
@@ -378,16 +403,18 @@ export async function GET(request: NextRequest) {
         trabajosPorHora = data || [];
         
         // Trabajos por hora pendientes de meses anteriores (empresa)
-        const fechaLimTPH = new Date(year, month - 12, 1).toISOString().split('T')[0];
-        const { data: tphAnt } = await supabase
-          .from('trabajos_por_hora')
-          .select('*, casos!fk_caso(nombre, expediente)')
-          .in('caso_asignado', casoIds)
-          .eq('estado_pago', 'pendiente')
-          .lt('fecha', inicioMesStr)
-          .gte('fecha', fechaLimTPH)
-          .order('fecha', { ascending: false });
-        trabajosPendientesAnteriores = tphAnt || [];
+        if (incluirCarryForward) {
+          const fechaLimTPH = new Date(year, month - 12, 1).toISOString().split('T')[0];
+          const { data: tphAnt } = await supabase
+            .from('trabajos_por_hora')
+            .select('*, casos!fk_caso(nombre, expediente)')
+            .in('caso_asignado', casoIds)
+            .eq('estado_pago', 'pendiente')
+            .lt('fecha', inicioMesStr)
+            .gte('fecha', fechaLimTPH)
+            .order('fecha', { ascending: false });
+          trabajosPendientesAnteriores = tphAnt || [];
+        }
       }
     }
 
@@ -455,45 +482,49 @@ export async function GET(request: NextRequest) {
     const totalGastos = gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
     // ========== GASTOS PENDIENTES DE MESES ANTERIORES ==========
-    // Buscar gastos con estado_pago = 'pendiente' de hasta 12 meses atrás
     const fechaLimite12Meses = new Date(year, month - 12, 1); // 12 meses antes del mes de reporte
     const fechaLimite12MesesStr = fechaLimite12Meses.toISOString().split('T')[0];
     
-    const { data: gastosPendientesAnterioresRaw, error: gastosPendientesError } = await supabase
-      .from('gastos' as any)
-      .select('id, producto, fecha, total_cobro, estado_pago, id_responsable')
-      .eq('id_cliente', userId)
-      .eq('estado_pago', 'pendiente')
-      .lt('fecha', inicioMesStr) // Antes del mes de reporte actual
-      .gte('fecha', fechaLimite12MesesStr) // Máximo 12 meses atrás
-      .order('fecha', { ascending: false });
-    
-    if (gastosPendientesError && isDev) {
-      console.error('Error al obtener gastos pendientes anteriores:', gastosPendientesError);
-    }
-    
-    // Enriquecer gastos pendientes anteriores con nombres de funcionarios
     let gastosPendientesAnteriores: any[] = [];
-    if (gastosPendientesAnterioresRaw && gastosPendientesAnterioresRaw.length > 0) {
-      const responsableIdsPendientes = [...new Set((gastosPendientesAnterioresRaw as any[]).map(g => g.id_responsable).filter(Boolean))];
-      let funcionariosPendientesMap = new Map<string, string>();
-      if (responsableIdsPendientes.length > 0) {
-        const { data: funcionariosPendientes } = await supabase
-          .from('funcionarios')
-          .select('id, nombre')
-          .in('id', responsableIdsPendientes);
-        (funcionariosPendientes || []).forEach((f: any) => funcionariosPendientesMap.set(f.id, f.nombre));
+    let totalGastosPendientesAnteriores = 0;
+    
+    if (incluirCarryForward) {
+      // Buscar gastos con estado_pago = 'pendiente' de hasta 12 meses atrás
+      const { data: gastosPendientesAnterioresRaw, error: gastosPendientesError } = await supabase
+        .from('gastos' as any)
+        .select('id, producto, fecha, total_cobro, estado_pago, id_responsable')
+        .eq('id_cliente', userId)
+        .eq('estado_pago', 'pendiente')
+        .lt('fecha', inicioMesStr) // Antes del mes de reporte actual
+        .gte('fecha', fechaLimite12MesesStr) // Máximo 12 meses atrás
+        .order('fecha', { ascending: false });
+      
+      if (gastosPendientesError && isDev) {
+        console.error('Error al obtener gastos pendientes anteriores:', gastosPendientesError);
       }
-      gastosPendientesAnteriores = (gastosPendientesAnterioresRaw as any[]).map(g => ({
-        ...g,
-        funcionarios: g.id_responsable ? { nombre: funcionariosPendientesMap.get(g.id_responsable) || 'Sin asignar' } : null
-      }));
-    }
-    
-    const totalGastosPendientesAnteriores = gastosPendientesAnteriores.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
-    
-    if (isDev && gastosPendientesAnteriores.length > 0) {
-      console.log('📋 Gastos pendientes de meses anteriores:', gastosPendientesAnteriores.length, '| Total:', totalGastosPendientesAnteriores);
+      
+      // Enriquecer gastos pendientes anteriores con nombres de funcionarios
+      if (gastosPendientesAnterioresRaw && gastosPendientesAnterioresRaw.length > 0) {
+        const responsableIdsPendientes = [...new Set((gastosPendientesAnterioresRaw as any[]).map(g => g.id_responsable).filter(Boolean))];
+        let funcionariosPendientesMap = new Map<string, string>();
+        if (responsableIdsPendientes.length > 0) {
+          const { data: funcionariosPendientes } = await supabase
+            .from('funcionarios')
+            .select('id, nombre')
+            .in('id', responsableIdsPendientes);
+          (funcionariosPendientes || []).forEach((f: any) => funcionariosPendientesMap.set(f.id, f.nombre));
+        }
+        gastosPendientesAnteriores = (gastosPendientesAnterioresRaw as any[]).map(g => ({
+          ...g,
+          funcionarios: g.id_responsable ? { nombre: funcionariosPendientesMap.get(g.id_responsable) || 'Sin asignar' } : null
+        }));
+      }
+      
+      totalGastosPendientesAnteriores = gastosPendientesAnteriores.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+      
+      if (isDev && gastosPendientesAnteriores.length > 0) {
+        console.log('📋 Gastos pendientes de meses anteriores:', gastosPendientesAnteriores.length, '| Total:', totalGastosPendientesAnteriores);
+      }
     }
 
     // Obtener servicios profesionales del mes anterior (NO cancelados) - SIN FK joins
@@ -548,56 +579,60 @@ export async function GET(request: NextRequest) {
     );
 
     // ========== SERVICIOS PROFESIONALES PENDIENTES DE MESES ANTERIORES ==========
-    const { data: serviciosPendientesAnterioresRawMain, error: spPendientesError } = await supabase
-      .from('servicios_profesionales' as any)
-      .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
-      .eq('id_cliente', userId)
-      .eq('estado_pago', 'pendiente')
-      .lt('fecha', inicioMesStr)
-      .gte('fecha', fechaLimite12MesesStr)
-      .order('fecha', { ascending: false });
-
-    if (spPendientesError && isDev) {
-      console.error('Error al obtener servicios profesionales pendientes anteriores:', spPendientesError);
-    }
-
-    // Enriquecer servicios profesionales pendientes con datos de funcionarios y servicios
     let serviciosPendientesAnteriores: any[] = [];
-    if (serviciosPendientesAnterioresRawMain && serviciosPendientesAnterioresRawMain.length > 0) {
-      const spPendResponsableIds = [...new Set((serviciosPendientesAnterioresRawMain as any[]).map(s => s.id_responsable).filter(Boolean))];
-      const spPendServicioIds = [...new Set((serviciosPendientesAnterioresRawMain as any[]).map(s => s.id_servicio).filter(Boolean))];
+    let totalServiciosPendientesAnteriores = 0;
+    
+    if (incluirCarryForward) {
+      const { data: serviciosPendientesAnterioresRawMain, error: spPendientesError } = await supabase
+        .from('servicios_profesionales' as any)
+        .select('id, id_caso, id_servicio, id_responsable, fecha, costo, gastos, iva, total, estado_pago')
+        .eq('id_cliente', userId)
+        .eq('estado_pago', 'pendiente')
+        .lt('fecha', inicioMesStr)
+        .gte('fecha', fechaLimite12MesesStr)
+        .order('fecha', { ascending: false });
 
-      let spPendFuncionariosMap = new Map<string, string>();
-      if (spPendResponsableIds.length > 0) {
-        const { data: spPendFuncionarios } = await supabase
-          .from('funcionarios')
-          .select('id, nombre')
-          .in('id', spPendResponsableIds);
-        (spPendFuncionarios || []).forEach((f: any) => spPendFuncionariosMap.set(f.id, f.nombre));
+      if (spPendientesError && isDev) {
+        console.error('Error al obtener servicios profesionales pendientes anteriores:', spPendientesError);
       }
 
-      let spPendServiciosMap = new Map<string, string>();
-      if (spPendServicioIds.length > 0) {
-        const { data: spPendServicios } = await supabase
-          .from('lista_servicios' as any)
-          .select('id, titulo')
-          .in('id', spPendServicioIds);
-        (spPendServicios || []).forEach((s: any) => spPendServiciosMap.set(s.id, s.titulo));
+      // Enriquecer servicios profesionales pendientes con datos de funcionarios y servicios
+      if (serviciosPendientesAnterioresRawMain && serviciosPendientesAnterioresRawMain.length > 0) {
+        const spPendResponsableIds = [...new Set((serviciosPendientesAnterioresRawMain as any[]).map(s => s.id_responsable).filter(Boolean))];
+        const spPendServicioIds = [...new Set((serviciosPendientesAnterioresRawMain as any[]).map(s => s.id_servicio).filter(Boolean))];
+
+        let spPendFuncionariosMap = new Map<string, string>();
+        if (spPendResponsableIds.length > 0) {
+          const { data: spPendFuncionarios } = await supabase
+            .from('funcionarios')
+            .select('id, nombre')
+            .in('id', spPendResponsableIds);
+          (spPendFuncionarios || []).forEach((f: any) => spPendFuncionariosMap.set(f.id, f.nombre));
+        }
+
+        let spPendServiciosMap = new Map<string, string>();
+        if (spPendServicioIds.length > 0) {
+          const { data: spPendServicios } = await supabase
+            .from('lista_servicios' as any)
+            .select('id, titulo')
+            .in('id', spPendServicioIds);
+          (spPendServicios || []).forEach((s: any) => spPendServiciosMap.set(s.id, s.titulo));
+        }
+
+        serviciosPendientesAnteriores = (serviciosPendientesAnterioresRawMain as any[]).map(sp => ({
+          ...sp,
+          funcionarios: sp.id_responsable ? { nombre: spPendFuncionariosMap.get(sp.id_responsable) || 'Sin asignar' } : null,
+          lista_servicios: sp.id_servicio ? { titulo: spPendServiciosMap.get(sp.id_servicio) || 'Sin título' } : null
+        }));
       }
 
-      serviciosPendientesAnteriores = (serviciosPendientesAnterioresRawMain as any[]).map(sp => ({
-        ...sp,
-        funcionarios: sp.id_responsable ? { nombre: spPendFuncionariosMap.get(sp.id_responsable) || 'Sin asignar' } : null,
-        lista_servicios: sp.id_servicio ? { titulo: spPendServiciosMap.get(sp.id_servicio) || 'Sin título' } : null
-      }));
-    }
+      totalServiciosPendientesAnteriores = serviciosPendientesAnteriores.reduce(
+        (sum: number, s: any) => sum + (s.total || 0), 0
+      );
 
-    const totalServiciosPendientesAnteriores = serviciosPendientesAnteriores.reduce(
-      (sum: number, s: any) => sum + (s.total || 0), 0
-    );
-
-    if (isDev && serviciosPendientesAnteriores.length > 0) {
-      console.log('📋 Servicios profesionales pendientes de meses anteriores:', serviciosPendientesAnteriores.length, '| Total:', totalServiciosPendientesAnteriores);
+      if (isDev && serviciosPendientesAnteriores.length > 0) {
+        console.log('📋 Servicios profesionales pendientes de meses anteriores:', serviciosPendientesAnteriores.length, '| Total:', totalServiciosPendientesAnteriores);
+      }
     }
 
     // Obtener solicitudes con modalidad mensual
@@ -906,6 +941,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      mesEspecifico: mesParam || null,
       tipoCliente,
       nombreCliente,
       darVistoBueno,

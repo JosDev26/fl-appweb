@@ -149,6 +149,33 @@ interface DatosEmpresaGrupo {
 // Estado del visto bueno
 type EstadoVistoBueno = 'pendiente' | 'aprobado' | 'rechazado'
 
+interface MesPendiente {
+  mes: string
+  mesTexto: string
+  montoHoras: number
+  horasDecimal: number
+  cantidadTrabajos: number
+  montoGastos: number
+  cantidadGastos: number
+  montoServicios: number
+  cantidadServicios: number
+  montoMensualidades: number
+  subtotal: number
+  montoIVA: number
+  totalAPagar: number
+  tieneFactura: boolean
+  tieneComprobante: boolean
+  comprobanteEstado: string | null
+  puedeSubirComprobante: boolean
+}
+
+interface MesesPendientesResponse {
+  success: boolean
+  meses: MesPendiente[]
+  cantidadMeses: number
+  granTotal: number
+}
+
 export default function PagoPage() {
   const { user, loading: authLoading } = useAuth()
   const [datosPago, setDatosPago] = useState<DatosPago | null>(null)
@@ -159,6 +186,8 @@ export default function PagoPage() {
   const [simulatedDate, setSimulatedDate] = useState<string | null>(null)
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
+  const [mesesPendientes, setMesesPendientes] = useState<MesPendiente[]>([])
+  const [loadingMeses, setLoadingMeses] = useState(false)
   const router = useRouter()
 
   // Estados para modal de rechazo
@@ -205,12 +234,20 @@ export default function PagoPage() {
       // Enviar fecha simulada global si existe
       const simulatedDateParam = simulatedDate ? `?simulatedDate=${simulatedDate}` : ''
       
-      const response = await fetch(`/api/datos-pago${simulatedDateParam}`, {
-        headers: {
-          'x-user-id': String(userData.id),
-          'x-tipo-cliente': userData.tipo || 'cliente'
-        }
-      })
+      const [response, mesesResponse] = await Promise.all([
+        fetch(`/api/datos-pago${simulatedDateParam}`, {
+          headers: {
+            'x-user-id': String(userData.id),
+            'x-tipo-cliente': userData.tipo || 'cliente'
+          }
+        }),
+        fetch(`/api/meses-pendientes${simulatedDateParam}`, {
+          headers: {
+            'x-user-id': String(userData.id),
+            'x-tipo-cliente': userData.tipo || 'cliente'
+          }
+        })
+      ])
 
       if (!response.ok) {
         throw new Error('Error al cargar datos de pago')
@@ -218,6 +255,14 @@ export default function PagoPage() {
 
       const data = await response.json()
       setDatosPago(data)
+
+      // Parse meses pendientes
+      if (mesesResponse.ok) {
+        const mesesData: MesesPendientesResponse = await mesesResponse.json()
+        if (mesesData.success && mesesData.meses) {
+          setMesesPendientes(mesesData.meses)
+        }
+      }
 
       // Si requiere dar visto bueno, verificar el estado actual
       if (data.darVistoBueno) {
@@ -989,12 +1034,87 @@ export default function PagoPage() {
 
             {/* Estado: Aprobado o no requiere visto bueno - mostrar botón de pago */}
             {(!datosPago?.darVistoBueno || estadoVistoBueno === 'aprobado') && (
-              <button 
-                className={styles.pagarButton}
-                onClick={() => router.push('/pago/comprobante')}
-              >
-                Proceder al Pago
-              </button>
+              <>
+                {/* Si hay múltiples meses pendientes, mostrar desglose por mes */}
+                {mesesPendientes.length > 1 ? (
+                  <div className={styles.mesesPendientesSection}>
+                    <h3 className={styles.mesesPendientesTitle}>Meses pendientes de pago</h3>
+                    <p className={styles.mesesPendientesDesc}>
+                      Tienes cobros pendientes de {mesesPendientes.length} meses. Puedes subir un comprobante por cada mes.
+                    </p>
+                    <div className={styles.mesesGrid}>
+                      {mesesPendientes.map((m) => (
+                        <div key={m.mes} className={styles.mesCard}>
+                          <div className={styles.mesCardHeader}>
+                            <span className={styles.mesCardTitle}>{m.mesTexto}</span>
+                            <span className={styles.mesCardTotal}>
+                              {new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC', minimumFractionDigits: 0 }).format(m.totalAPagar)}
+                            </span>
+                          </div>
+                          <div className={styles.mesCardDesglose}>
+                            {m.montoHoras > 0 && (
+                              <div className={styles.mesCardItem}>
+                                <span>Horas ({m.horasDecimal.toFixed(1)}h)</span>
+                                <span>{new Intl.NumberFormat('es-CR').format(Math.round(m.montoHoras))}</span>
+                              </div>
+                            )}
+                            {m.montoGastos > 0 && (
+                              <div className={styles.mesCardItem}>
+                                <span>Gastos ({m.cantidadGastos})</span>
+                                <span>{new Intl.NumberFormat('es-CR').format(Math.round(m.montoGastos))}</span>
+                              </div>
+                            )}
+                            {m.montoServicios > 0 && (
+                              <div className={styles.mesCardItem}>
+                                <span>Servicios ({m.cantidadServicios})</span>
+                                <span>{new Intl.NumberFormat('es-CR').format(Math.round(m.montoServicios))}</span>
+                              </div>
+                            )}
+                            {m.montoMensualidades > 0 && (
+                              <div className={styles.mesCardItem}>
+                                <span>Mensualidades</span>
+                                <span>{new Intl.NumberFormat('es-CR').format(Math.round(m.montoMensualidades))}</span>
+                              </div>
+                            )}
+                            {m.montoIVA > 0 && (
+                              <div className={styles.mesCardItem}>
+                                <span>IVA</span>
+                                <span>{new Intl.NumberFormat('es-CR').format(Math.round(m.montoIVA))}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className={styles.mesCardFooter}>
+                            {m.tieneComprobante ? (
+                              <span className={styles.mesCardComprobanteStatus}>
+                                {m.comprobanteEstado === 'aprobado' ? 'Pagado' : 'Comprobante enviado'}
+                              </span>
+                            ) : !m.tieneFactura ? (
+                              <span className={styles.mesCardSinFactura}>Factura pendiente</span>
+                            ) : (
+                              <button
+                                className={styles.mesCardButton}
+                                onClick={() => router.push(`/pago/comprobante?mes=${m.mes}`)}
+                              >
+                                Subir Comprobante
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <button 
+                    className={styles.pagarButton}
+                    onClick={() => {
+                      const mesPago = mesesPendientes.length === 1 ? mesesPendientes[0].mes : datosPago?.mesActualISO
+                      router.push(mesPago ? `/pago/comprobante?mes=${mesPago}` : '/pago/comprobante')
+                    }}
+                  >
+                    Proceder al Pago
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

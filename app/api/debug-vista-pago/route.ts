@@ -668,7 +668,95 @@ export async function GET(request: NextRequest) {
     const granTotalSubtotal = subtotalPrincipal + totalGrupoSubtotal;
     const granTotalIVA = ivaTotalPrincipal + totalGrupoIVA;
     const granTotalAPagar = totalPrincipal + totalGrupoAPagar;
+
+    // ========== DESGLOSE POR MES (para verificar feature de comprobantes por mes) ==========
+    const mesYYYYMM = `${year}-${String(month).padStart(2, '0')}`
+    const allItems: { tipo: string; fecha: string; monto: number }[] = []
     
+    // Principal items
+    for (const t of trabajosPorHora) {
+      if (t.fecha) {
+        const dur = t.duracion || '0'
+        let mins = 0
+        if (dur.includes(':')) { const [h, m] = dur.split(':').map(Number); mins = h * 60 + m; } 
+        else { mins = Math.round(parseFloat(dur) * 60); }
+        allItems.push({ tipo: 'TPH', fecha: t.fecha, monto: (mins / 60) * tarifaHora })
+      }
+    }
+    for (const t of trabajosPendientesAnteriores) {
+      if (t.fecha) {
+        const dur = t.duracion || '0'
+        let mins = 0
+        if (dur.includes(':')) { const [h, m] = dur.split(':').map(Number); mins = h * 60 + m; } 
+        else { mins = Math.round(parseFloat(dur) * 60); }
+        allItems.push({ tipo: 'TPH-carryforward', fecha: t.fecha, monto: (mins / 60) * tarifaHora })
+      }
+    }
+    for (const g of (gastosMesActual || []) as any[]) {
+      if (g.fecha && g.estado_pago !== 'cancelado') allItems.push({ tipo: 'Gasto', fecha: g.fecha, monto: g.total_cobro || 0 })
+    }
+    for (const g of (gastosPendientesAnteriores || []) as any[]) {
+      if (g.fecha) allItems.push({ tipo: 'Gasto-carryforward', fecha: g.fecha, monto: g.total_cobro || 0 })
+    }
+    for (const s of (serviciosProfesionales || []) as any[]) {
+      if (s.fecha) allItems.push({ tipo: 'SP', fecha: s.fecha, monto: s.total || 0 })
+    }
+    for (const s of (serviciosPendientesAnteriores || []) as any[]) {
+      if (s.fecha) allItems.push({ tipo: 'SP-carryforward', fecha: s.fecha, monto: s.total || 0 })
+    }
+    
+    // Group by month
+    const mesesMap = new Map<string, { items: typeof allItems; subtotal: number }>()
+    for (const item of allItems) {
+      const mes = item.fecha.substring(0, 7)
+      if (!mesesMap.has(mes)) mesesMap.set(mes, { items: [], subtotal: 0 })
+      const entry = mesesMap.get(mes)!
+      entry.items.push(item)
+      entry.subtotal += item.monto
+    }
+    
+    // Query factura and comprobante status for all months
+    const mesesKeys = Array.from(mesesMap.keys()).sort()
+    const tipoCliente = cliente.tipo === 'usuario' ? 'usuario' : 'empresa'
+    
+    const { data: facturasMeses } = await supabase
+      .from('invoice_payment_deadlines' as any)
+      .select('mes_factura, estado_pago, fecha_vencimiento, archivo_url')
+      .eq('client_id', cliente.id)
+      .eq('client_type', tipoCliente)
+      .in('mes_factura', mesesKeys)
+    
+    const { data: comprobantesMeses } = await supabase
+      .from('payment_receipts' as any)
+      .select('mes_pago, estado, monto_declarado, archivo_url, created_at')
+      .eq('user_id', cliente.id)
+      .eq('tipo_cliente', tipoCliente)
+      .in('mes_pago', mesesKeys)
+    
+    const facturasMap = new Map((facturasMeses || []).map((f: any) => [f.mes_factura, f]))
+    const comprobantesMap = new Map((comprobantesMeses || []).map((c: any) => [c.mes_pago, c]))
+    
+    const desglosePorMes = mesesKeys.map(mes => {
+      const entry = mesesMap.get(mes)!
+      const factura = facturasMap.get(mes)
+      const comprobante = comprobantesMap.get(mes)
+      const esMesActual = mes === mesYYYYMM
+      return {
+        mes,
+        esMesActual,
+        cantidadItems: entry.items.length,
+        subtotal: Math.round(entry.subtotal),
+        ivaEstimado: Math.round(entry.subtotal * ivaPerc),
+        totalEstimado: Math.round(entry.subtotal * (1 + ivaPerc)),
+        tiposItems: entry.items.reduce((acc: Record<string, number>, i) => {
+          acc[i.tipo] = (acc[i.tipo] || 0) + 1; return acc
+        }, {}),
+        factura: factura ? { estado: factura.estado_pago, url: factura.archivo_url } : null,
+        comprobante: comprobante ? { estado: comprobante.estado, monto: comprobante.monto_declarado, url: comprobante.archivo_url } : null,
+        puedeSubirComprobante: !!factura && !comprobante
+      }
+    })
+
     return NextResponse.json({
       _auth: {
         accessedBy: authResult.admin?.email,
@@ -773,6 +861,8 @@ export async function GET(request: NextRequest) {
           ? `Incluye ${empresasDelGrupo.length} empresa(s) asociada(s) al grupo "${grupoInfo?.nombre}"`
           : "Solo incluye datos de este cliente (no es líder de grupo)"
       },
+      // ========== DESGLOSE POR MES (verificar feature comprobantes por mes) ==========
+      desglosePorMes,
       debug: {
         queryGastosMes: `id_cliente='${cliente.id}' AND fecha >= '${inicioMes}' AND fecha <= '${finMes}'`,
         queryGastosAnteriores: `id_cliente='${cliente.id}' AND estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}'`,

@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File
     const montoPago = formData.get('monto') as string
     const simulatedDate = formData.get('simulatedDate') as string | null // Fecha simulada desde el cliente
+    const mesEspecifico = formData.get('mes_pago') as string | null // Mes específico (pagos parciales por mes)
     
     if (!file) {
       return NextResponse.json(
@@ -104,14 +105,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. DETERMINAR MES DE PAGO: SIEMPRE ES EL MES ANTERIOR
-    // Si hoy es diciembre, se cobra noviembre
-    // Si hoy es noviembre, se cobra octubre
-    // Esto aplica tanto para mensualidades como para cobro por hora
-    // Usa zona horaria de Costa Rica (UTC-6) y fecha simulada global si existe
-    const now = await getCurrentDateCR(simulatedDate)
-    const { mesPago } = getMesAnterior(now)
-    console.log('📅 Mes de pago (mes anterior):', mesPago, '| Fecha actual CR:', toDateString(now))
+    // 4. DETERMINAR MES DE PAGO
+    // Si se proporciona mes_pago (formato YYYY-MM), usar ese mes específico
+    // Si no, usar el mes anterior como siempre (backward compatible)
+    let mesPago: string
+    if (mesEspecifico && /^\d{4}-\d{2}$/.test(mesEspecifico)) {
+      const [y, m] = mesEspecifico.split('-').map(Number)
+      if (m >= 1 && m <= 12 && y >= 2020 && y <= 2100) {
+        mesPago = mesEspecifico
+        console.log('📅 Mes de pago específico:', mesPago)
+      } else {
+        return NextResponse.json(
+          { error: 'Formato de mes inválido. Use YYYY-MM (ej: 2026-02)' },
+          { status: 400 }
+        )
+      }
+    } else {
+      const now = await getCurrentDateCR(simulatedDate)
+      const mesAnterior = getMesAnterior(now)
+      mesPago = mesAnterior.mesPago
+      console.log('📅 Mes de pago (mes anterior):', mesPago, '| Fecha actual CR:', toDateString(now))
+    }
 
     // Verificar si ya existe un comprobante pendiente o aprobado para este mes
     const { data: existingReceipts, error: existingError } = await supabase

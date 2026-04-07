@@ -222,7 +222,9 @@ function HomeContent() {
             </div>
             {lastPaymentReceipt.estado === 'rechazado' && (
               <button 
-                onClick={() => router.push('/pago/comprobante')}
+                onClick={() => router.push(lastPaymentReceipt.mes_pago 
+                  ? `/pago/comprobante?mes=${lastPaymentReceipt.mes_pago}` 
+                  : '/pago/comprobante')}
                 className={styles.paymentBannerRetry}
               >
                 Subir Nuevo Comprobante

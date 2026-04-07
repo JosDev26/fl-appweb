@@ -1,13 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/lib/useAuth'
 import styles from './comprobante.module.css'
 
 export default function ComprobantePage() {
+  return (
+    <Suspense fallback={
+      <div className={styles.container}>
+        <div className={styles.loadingState}>
+          <div className={styles.spinner}></div>
+          <p>Cargando...</p>
+        </div>
+      </div>
+    }>
+      <ComprobanteContent />
+    </Suspense>
+  )
+}
+
+function ComprobanteContent() {
   const { user } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const mesParamRaw = searchParams.get('mes') // e.g. "2025-02"
+  const [mesParam, setMesParam] = useState<string | null>(mesParamRaw)
   
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -49,10 +67,12 @@ export default function ComprobantePage() {
     setLoadingMonto(true)
 
     try {
-      // Cargar el monto del pago (siempre, ya no depende de factura)
-      await fetchMontoPago()
+      // Cargar el monto del pago y obtener el mes de facturación
+      const resolvedMes = await fetchMontoPago()
 
       // Intentar cargar facturas electrónicas (opcional, no bloquea)
+      // Usar el mes resuelto (de URL o de datos-pago) para filtrar correctamente
+      const mesParaFacturas = mesParam || resolvedMes
       try {
         const invoiceResponse = await fetch('/api/upload-invoice', {
           method: 'PUT',
@@ -61,7 +81,8 @@ export default function ComprobantePage() {
           },
           body: JSON.stringify({
             clientId: user.id,
-            clientType: user.tipo || 'cliente'
+            clientType: user.tipo || 'cliente',
+            ...(mesParaFacturas ? { mes: mesParaFacturas } : {})
           })
         })
 
@@ -82,12 +103,15 @@ export default function ComprobantePage() {
     }
   }
 
-  const fetchMontoPago = async () => {
-    if (!user) return
+  const fetchMontoPago = async (): Promise<string | null> => {
+    if (!user) return null
     
     setLoadingMonto(true)
     try {
-      const response = await fetch('/api/datos-pago', {
+      const params = new URLSearchParams()
+      if (mesParam) params.set('mes', mesParam)
+      const qs = params.toString() ? `?${params.toString()}` : ''
+      const response = await fetch(`/api/datos-pago${qs}`, {
         headers: {
           'x-user-id': String(user.id),
           'x-tipo-cliente': user.tipo || 'cliente'
@@ -99,13 +123,21 @@ export default function ComprobantePage() {
       }
 
       const data = await response.json()
+      // Si no se pasó mes por URL, usar el mes que devuelve datos-pago
+      let resolvedMes: string | null = null
+      if (!mesParam && data.mesActualISO) {
+        setMesParam(data.mesActualISO)
+        resolvedMes = data.mesActualISO
+      }
       // Si es empresa principal de grupo, usar el total que incluye todas las empresas
       const totalFinal = data.esGrupoPrincipal && data.granTotalAPagar 
         ? data.granTotalAPagar 
         : data.totalAPagar
       setMontoPago(totalFinal)
+      return resolvedMes
     } catch (err) {
       setError('No se pudo cargar el monto a pagar')
+      return null
     } finally {
       setLoadingMonto(false)
     }
@@ -198,6 +230,9 @@ export default function ComprobantePage() {
       formData.append('file', file)
       if (montoPago) {
         formData.append('monto', String(montoPago))
+      }
+      if (mesParam) {
+        formData.append('mes_pago', mesParam)
       }
       
       // Enviar fecha simulada global si está activa
@@ -307,7 +342,14 @@ export default function ComprobantePage() {
         >
           ← Volver
         </button>
-        <h1 className={styles.title}>Subir Comprobante de Pago</h1>
+        <h1 className={styles.title}>
+          Subir Comprobante de Pago
+          {mesParam && (() => {
+            const [y, m] = mesParam.split('-').map(Number)
+            const mesTexto = new Date(y, m - 1, 1).toLocaleString('es-CR', { month: 'long', year: 'numeric' })
+            return <span style={{ display: 'block', fontSize: '0.65em', opacity: 0.7, textTransform: 'capitalize', marginTop: '0.25rem' }}>{mesTexto}</span>
+          })()}
+        </h1>
       </header>
 
       {/* Main Content */}

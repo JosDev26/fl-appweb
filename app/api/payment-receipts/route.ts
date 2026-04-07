@@ -221,7 +221,7 @@ export async function PATCH(request: NextRequest) {
             .maybeSingle()
 
           if (!grupoError && grupo) {
-            if (isDev) console.log('ðŸ¢ Empresa es principal del grupo:', (grupo as any).nombre)
+            if (isDev) console.log(' Empresa es principal del grupo:', (grupo as any).nombre)
             
             // Obtener las empresas miembros del grupo
             const { data: miembros, error: miembrosError } = await supabase
@@ -231,7 +231,7 @@ export async function PATCH(request: NextRequest) {
 
             if (!miembrosError && miembros && miembros.length > 0) {
               const empresaIds = (miembros as any[]).map((m: any) => m.empresa_id)
-              if (isDev) console.log('ðŸ¢ Verificando modoPago de empresas asociadas:', empresaIds.length)
+              if (isDev) console.log(' Verificando modoPago de empresas asociadas:', empresaIds.length)
 
               // FIX: Verificar datos pendientes por cada empresa del grupo antes de desactivar
               // Usar la misma lÃ³gica que el RPC: solo desactivar si no tiene datos pendientes
@@ -246,7 +246,7 @@ export async function PATCH(request: NextRequest) {
                     })
                   
                   if (pendientesError) {
-                    console.error(`âŒ Error verificando datos pendientes para empresa ${empresaId}:`, pendientesError)
+                    console.error(` Error verificando datos pendientes para empresa ${empresaId}:`, pendientesError)
                     // En caso de error, NO desactivar (conservador)
                     continue
                   }
@@ -255,10 +255,10 @@ export async function PATCH(request: NextRequest) {
                   if (!tieneDatos) {
                     empresasADesactivar.push(empresaId)
                   } else {
-                    if (isDev) console.log(`âš ï¸ Empresa ${empresaId} tiene datos pendientes, modoPago permanece activo`)
+                    if (isDev) console.log(` Empresa ${empresaId} tiene datos pendientes, modoPago permanece activo`)
                   }
                 } catch (err) {
-                  console.error(`âŒ Error inesperado verificando empresa ${empresaId}:`, err)
+                  console.error(` Error inesperado verificando empresa ${empresaId}:`, err)
                 }
               }
 
@@ -270,12 +270,12 @@ export async function PATCH(request: NextRequest) {
                   .in('id', empresasADesactivar)
 
                 if (updateGrupoError) {
-                  console.error('âŒ Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
+                  console.error(' Error al desactivar modoPago de empresas del grupo:', updateGrupoError)
                 } else {
-                  if (isDev) console.log('âœ… modoPago desactivado para', empresasADesactivar.length, 'de', empresaIds.length, 'empresas del grupo')
+                  if (isDev) console.log(' modoPago desactivado para', empresasADesactivar.length, 'de', empresaIds.length, 'empresas del grupo')
                 }
               } else {
-                if (isDev) console.log('â„¹ï¸ Ninguna empresa del grupo fue desactivada (todas tienen datos pendientes)')
+                if (isDev) console.log(' Ninguna empresa del grupo fue desactivada (todas tienen datos pendientes)')
               }
 
               // BATCH: Get ALL solicitudes for all empresas in one query
@@ -286,7 +286,7 @@ export async function PATCH(request: NextRequest) {
                 .ilike('modalidad_pago', 'mensualidad')
 
               if (!solError && todasSolicitudes && todasSolicitudes.length > 0) {
-                if (isDev) console.log(`ðŸ“‹ Actualizando ${todasSolicitudes.length} solicitudes de empresas del grupo`)
+                if (isDev) console.log(` Actualizando ${todasSolicitudes.length} solicitudes de empresas del grupo`)
                 
                 // Process each solicitud and batch updates
                 const updates = todasSolicitudes.map(solicitud => {
@@ -334,9 +334,9 @@ export async function PATCH(request: NextRequest) {
                   .map(({ updateId }) => updateId)
                 
                 if (failedGrupoUpdates.length > 0) {
-                  console.error(`âŒ ${failedGrupoUpdates.length} solicitudes de grupo fallaron:`, failedGrupoUpdates)
+                  console.error(` ${failedGrupoUpdates.length} solicitudes de grupo fallaron:`, failedGrupoUpdates)
                 } else if (isDev) {
-                  console.log(`âœ… ${updates.length} solicitudes de grupo actualizadas`)
+                  console.log(` ${updates.length} solicitudes de grupo actualizadas`)
                 }
               }
 
@@ -361,9 +361,9 @@ export async function PATCH(request: NextRequest) {
                   .eq('client_type', 'empresa')
 
                 if (facturasError) {
-                  console.error(`âŒ Error actualizando facturas para empresas [${empresaIds.join(', ')}]:`, facturasError)
+                  console.error(` Error actualizando facturas para empresas [${empresaIds.join(', ')}]:`, facturasError)
                 } else if (isDev) {
-                  console.log(`âœ… Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
+                  console.log(` Facturas de ${empresaIds.length} empresas marcadas como pagadas`)
                 }
 
                 // BATCH: Update all gastos in one query using IN clause
@@ -378,9 +378,9 @@ export async function PATCH(request: NextRequest) {
                   .lte('fecha', endDate)
 
                 if (gastosError) {
-                  console.error(`âŒ Error actualizando gastos para empresas [${empresaIds.join(', ')}]:`, gastosError)
+                  console.error(` Error actualizando gastos para empresas [${empresaIds.join(', ')}]:`, gastosError)
                 } else if (isDev) {
-                  console.log(`âœ… Gastos de ${empresaIds.length} empresas marcados como pagados`)
+                  console.log(` Gastos de ${empresaIds.length} empresas marcados como pagados`)
                 }
 
                 // BATCH: Update all servicios in one query using IN clause
@@ -396,51 +396,121 @@ export async function PATCH(request: NextRequest) {
                   .lte('fecha', endDate)
 
                 if (serviciosError) {
-                  console.error(`âŒ Error actualizando servicios para empresas [${empresaIds.join(', ')}]:`, serviciosError)
+                  console.error(` Error actualizando servicios para empresas [${empresaIds.join(', ')}]:`, serviciosError)
                 } else if (isDev) {
-                  console.log(`âœ… Servicios de ${empresaIds.length} empresas marcados como pagados`)
+                  console.log(` Servicios de ${empresaIds.length} empresas marcados como pagados`)
                 }
 
                 // BATCH: Mark carry-forward gastos (from previous months, still pending) as paid
                 const fechaLimite12Meses = new Date(yearNum, monthNum - 12, 1).toISOString().split('T')[0]
-                
-                const { error: gastosCarryError } = await supabase
-                  .from('gastos' as any)
-                  .update({ 
-                    estado_pago: 'pagado',
-                    updated_at: fechaAprobacion
-                  })
-                  .in('id_cliente', empresaIds)
-                  .eq('estado_pago', 'pendiente')
-                  .lt('fecha', startDate)
-                  .gte('fecha', fechaLimite12Meses)
 
-                if (gastosCarryError) {
-                  console.error(`âŒ Error actualizando gastos carry-forward para empresas:`, gastosCarryError)
-                } else if (isDev) {
-                  console.log(`âœ… Gastos carry-forward de empresas del grupo marcados como pagados`)
+                // SMART CARRY-FORWARD: Buscar meses con comprobante propio del grupo
+                const { data: otrosComprobantesGrupo } = await supabase
+                  .from('payment_receipts' as any)
+                  .select('mes_pago')
+                  .eq('user_id', userId)
+                  .eq('tipo_cliente', tipoCliente)
+                  .in('estado', ['pendiente', 'aprobado'])
+                  .neq('mes_pago', mesPago)
+                  .lt('mes_pago', mesPago)
+                
+                const mesesConComprobanteGrupo = (otrosComprobantesGrupo || []).map((c: any) => c.mes_pago)
+                if (isDev && mesesConComprobanteGrupo.length > 0) {
+                  console.log('Meses con comprobante propio (grupo, excluidos):', mesesConComprobanteGrupo)
                 }
 
-                // BATCH: Mark carry-forward servicios profesionales (from previous months, still pending) as paid
-                const { error: serviciosCarryError } = await supabase
-                  .from('servicios_profesionales' as any)
-                  .update({ 
-                    estado_pago: 'pagado',
-                    updated_at: fechaAprobacion
-                  })
-                  .in('id_cliente', empresaIds)
-                  .eq('estado_pago', 'pendiente')
-                  .lt('fecha', startDate)
-                  .gte('fecha', fechaLimite12Meses)
+                // BATCH: Mark carry-forward gastos (SMART)
+                if (mesesConComprobanteGrupo.length === 0) {
+                  const { error: gastosCarryError } = await supabase
+                    .from('gastos' as any)
+                    .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                    .in('id_cliente', empresaIds)
+                    .eq('estado_pago', 'pendiente')
+                    .lt('fecha', startDate)
+                    .gte('fecha', fechaLimite12Meses)
+                  
+                  if (gastosCarryError) {
+                    console.error('Error actualizando gastos carry-forward grupo:', gastosCarryError)
+                  } else if (isDev) {
+                    console.log('Gastos carry-forward de empresas del grupo marcados como pagados')
+                  }
+                } else {
+                  const { data: gastosItems } = await supabase
+                    .from('gastos' as any)
+                    .select('id, fecha')
+                    .in('id_cliente', empresaIds)
+                    .eq('estado_pago', 'pendiente')
+                    .lt('fecha', startDate)
+                    .gte('fecha', fechaLimite12Meses)
+                  
+                  if (gastosItems && gastosItems.length > 0) {
+                    const idsToUpdate = gastosItems.filter((g: any) => {
+                      const mesFecha = g.fecha.substring(0, 7)
+                      return !mesesConComprobanteGrupo.includes(mesFecha)
+                    }).map((g: any) => g.id)
+                    
+                    if (idsToUpdate.length > 0) {
+                      const { error: gastosCarryError } = await supabase
+                        .from('gastos' as any)
+                        .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                        .in('id', idsToUpdate)
+                      
+                      if (gastosCarryError) {
+                        console.error('Error actualizando gastos carry-forward grupo:', gastosCarryError)
+                      } else if (isDev) {
+                        console.log(`Gastos carry-forward grupo: ${idsToUpdate.length} marcados, ${gastosItems.length - idsToUpdate.length} excluidos`)
+                      }
+                    }
+                  }
+                }
 
-                if (serviciosCarryError) {
-                  console.error(`âŒ Error actualizando servicios carry-forward para empresas:`, serviciosCarryError)
-                } else if (isDev) {
-                  console.log(`âœ… Servicios carry-forward de empresas del grupo marcados como pagados`)
+                // BATCH: Mark carry-forward servicios profesionales (SMART)
+                if (mesesConComprobanteGrupo.length === 0) {
+                  const { error: serviciosCarryError } = await supabase
+                    .from('servicios_profesionales' as any)
+                    .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                    .in('id_cliente', empresaIds)
+                    .eq('estado_pago', 'pendiente')
+                    .lt('fecha', startDate)
+                    .gte('fecha', fechaLimite12Meses)
+                  
+                  if (serviciosCarryError) {
+                    console.error('Error actualizando servicios carry-forward grupo:', serviciosCarryError)
+                  } else if (isDev) {
+                    console.log('Servicios carry-forward de empresas del grupo marcados como pagados')
+                  }
+                } else {
+                  const { data: spItems } = await supabase
+                    .from('servicios_profesionales' as any)
+                    .select('id, fecha')
+                    .in('id_cliente', empresaIds)
+                    .eq('estado_pago', 'pendiente')
+                    .lt('fecha', startDate)
+                    .gte('fecha', fechaLimite12Meses)
+                  
+                  if (spItems && spItems.length > 0) {
+                    const idsToUpdate = spItems.filter((s: any) => {
+                      const mesFecha = s.fecha.substring(0, 7)
+                      return !mesesConComprobanteGrupo.includes(mesFecha)
+                    }).map((s: any) => s.id)
+                    
+                    if (idsToUpdate.length > 0) {
+                      const { error: serviciosCarryError } = await supabase
+                        .from('servicios_profesionales' as any)
+                        .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                        .in('id', idsToUpdate)
+                      
+                      if (serviciosCarryError) {
+                        console.error('Error actualizando servicios carry-forward grupo:', serviciosCarryError)
+                      } else if (isDev) {
+                        console.log(`Servicios carry-forward grupo: ${idsToUpdate.length} marcados, ${spItems.length - idsToUpdate.length} excluidos`)
+                      }
+                    }
+                  }
                 }
 
                 // BATCH: Mark trabajos_por_hora (current month + carry-forward) as paid
-                // For empresas, TPH are linked via caso_asignado, so we need to get all caso IDs first
+                // For empresas, TPH are linked via caso_asignado
                 const { data: casosBatch } = await supabase
                   .from('casos')
                   .select('id')
@@ -452,49 +522,73 @@ export async function PATCH(request: NextRequest) {
                   // Current month TPH
                   const { error: tphError } = await supabase
                     .from('trabajos_por_hora')
-                    .update({ 
-                      estado_pago: 'pagado',
-                      updated_at: fechaAprobacion
-                    })
+                    .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
                     .in('caso_asignado', allCasoIds)
                     .gte('fecha', startDate)
                     .lte('fecha', endDate)
                   
                   if (tphError) {
-                    console.error(`âŒ Error actualizando TPH para empresas:`, tphError)
+                    console.error('Error actualizando TPH grupo:', tphError)
                   } else if (isDev) {
-                    console.log(`âœ… TPH de empresas del grupo marcados como pagados`)
+                    console.log('TPH de empresas del grupo marcados como pagados')
                   }
                   
-                  // Carry-forward TPH
-                  const { error: tphCarryError } = await supabase
-                    .from('trabajos_por_hora')
-                    .update({ 
-                      estado_pago: 'pagado',
-                      updated_at: fechaAprobacion
-                    })
-                    .in('caso_asignado', allCasoIds)
-                    .eq('estado_pago', 'pendiente')
-                    .lt('fecha', startDate)
-                    .gte('fecha', fechaLimite12Meses)
-                  
-                  if (tphCarryError) {
-                    console.error(`âŒ Error actualizando TPH carry-forward para empresas:`, tphCarryError)
-                  } else if (isDev) {
-                    console.log(`âœ… TPH carry-forward de empresas del grupo marcados como pagados`)
+                  // Carry-forward TPH (SMART: exclude months with own comprobante)
+                  if (mesesConComprobanteGrupo.length === 0) {
+                    const { error: tphCarryError } = await supabase
+                      .from('trabajos_por_hora')
+                      .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                      .in('caso_asignado', allCasoIds)
+                      .eq('estado_pago', 'pendiente')
+                      .lt('fecha', startDate)
+                      .gte('fecha', fechaLimite12Meses)
+                    
+                    if (tphCarryError) {
+                      console.error('Error actualizando TPH carry-forward grupo:', tphCarryError)
+                    } else if (isDev) {
+                      console.log('TPH carry-forward de empresas del grupo marcados como pagados')
+                    }
+                  } else {
+                    const { data: tphCarryItems } = await supabase
+                      .from('trabajos_por_hora')
+                      .select('id, fecha')
+                      .in('caso_asignado', allCasoIds)
+                      .eq('estado_pago', 'pendiente')
+                      .lt('fecha', startDate)
+                      .gte('fecha', fechaLimite12Meses)
+                    
+                    if (tphCarryItems && tphCarryItems.length > 0) {
+                      const idsToUpdate = tphCarryItems.filter((t: any) => {
+                        const mesFecha = t.fecha.substring(0, 7)
+                        return !mesesConComprobanteGrupo.includes(mesFecha)
+                      }).map((t: any) => t.id)
+                      
+                      if (idsToUpdate.length > 0) {
+                        const { error: tphCarryError } = await supabase
+                          .from('trabajos_por_hora')
+                          .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                          .in('id', idsToUpdate)
+                        
+                        if (tphCarryError) {
+                          console.error('Error actualizando TPH carry-forward grupo:', tphCarryError)
+                        } else if (isDev) {
+                          console.log(`TPH carry-forward grupo: ${idsToUpdate.length} marcados, ${tphCarryItems.length - idsToUpdate.length} excluidos`)
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
           }
         } catch (grupoErr) {
-          console.error('âŒ Error al procesar grupo de empresas:', grupoErr)
+          console.error(' Error al procesar grupo de empresas:', grupoErr)
         }
       }
 
       // Actualizar solicitudes con modalidad mensual
       // IMPORTANTE: Los gastos NO se incluyen en monto_pagado
-      if (isDev) console.log('ðŸ’° Actualizando solicitudes mensualidades del cliente:', userId)
+      if (isDev) console.log(' Actualizando solicitudes mensualidades del cliente:', userId)
       try {
         const { data: solicitudesMensuales, error: solicitudesError } = await supabase
           .from('solicitudes')
@@ -503,9 +597,9 @@ export async function PATCH(request: NextRequest) {
           .ilike('modalidad_pago', 'mensualidad')
 
         if (solicitudesError) {
-          console.error('âŒ Error al obtener solicitudes:', solicitudesError)
+          console.error(' Error al obtener solicitudes:', solicitudesError)
         } else if (solicitudesMensuales && solicitudesMensuales.length > 0) {
-          if (isDev) console.log(`ðŸ“‹ Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
+          if (isDev) console.log(` Encontradas ${solicitudesMensuales.length} solicitudes mensualidades`)
           
           // Calculate all updates first
           const solicitudUpdates = solicitudesMensuales.map(solicitud => {
@@ -544,15 +638,15 @@ export async function PATCH(request: NextRequest) {
           
           const failures = results.filter(r => r.status === 'rejected').length
           if (failures > 0 && isDev) {
-            console.error(`âŒ ${failures} solicitudes fallaron al actualizar`)
+            console.error(` ${failures} solicitudes fallaron al actualizar`)
           } else if (isDev) {
-            console.log(`âœ… ${solicitudUpdates.length} solicitudes actualizadas`)
+            console.log(` ${solicitudUpdates.length} solicitudes actualizadas`)
           }
         } else {
-          if (isDev) console.log('â„¹ï¸ No se encontraron solicitudes mensualidades para actualizar')
+          if (isDev) console.log(' No se encontraron solicitudes mensualidades para actualizar')
         }
       } catch (err) {
-        console.error('âŒ Error al actualizar solicitudes:', err)
+        console.error(' Error al actualizar solicitudes:', err)
       }
 
       // Marcar gastos del mes como pagados
@@ -563,7 +657,7 @@ export async function PATCH(request: NextRequest) {
           const startDate = `${year}-${month}-01`
           const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0] // Ãšltimo dÃ­a del mes
           
-          if (isDev) console.log(`ðŸ’° Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
+          if (isDev) console.log(` Marcando gastos del mes ${mesPago} como pagados para cliente ${userId}...`)
           
           // Marcar gastos del mes como pagados
           const { error: gastosError } = await supabase
@@ -577,13 +671,13 @@ export async function PATCH(request: NextRequest) {
             .lte('fecha', endDate)
           
           if (gastosError) {
-            console.error('âŒ Error al marcar gastos como pagados:', gastosError)
+            console.error(' Error al marcar gastos como pagados:', gastosError)
           } else {
-            if (isDev) console.log(`âœ… Gastos del mes ${mesPago} marcados como pagados`)
+            if (isDev) console.log(` Gastos del mes ${mesPago} marcados como pagados`)
           }
           
           // Marcar servicios profesionales del mes como pagados
-          if (isDev) console.log(`ðŸ’° Marcando servicios profesionales del mes ${mesPago} como pagados para cliente ${userId}...`)
+          if (isDev) console.log(` Marcando servicios profesionales del mes ${mesPago} como pagados para cliente ${userId}...`)
           
           const { error: serviciosError } = await supabase
             .from('servicios_profesionales' as any)
@@ -597,57 +691,135 @@ export async function PATCH(request: NextRequest) {
             .lte('fecha', endDate)
           
           if (serviciosError) {
-            console.error('âŒ Error al marcar servicios como pagados:', serviciosError)
+            console.error(' Error al marcar servicios como pagados:', serviciosError)
           } else {
-            if (isDev) console.log(`âœ… Servicios profesionales del mes ${mesPago} marcados como pagados`)
+            if (isDev) console.log(` Servicios profesionales del mes ${mesPago} marcados como pagados`)
           }
 
-          // ===== FIX: Marcar gastos carry-forward (meses anteriores, aÃºn pendientes) como pagados =====
+          // ===== FIX: Marcar gastos carry-forward (meses anteriores, pendientes) como pagados =====
+          // SMART CARRY-FORWARD: Excluir meses que tienen su propio comprobante pendiente/aprobado
           const fechaLimite12Meses = new Date(parseInt(year), parseInt(month) - 12, 1).toISOString().split('T')[0]
           
-          if (isDev) console.log(`ðŸ’° Marcando gastos carry-forward como pagados para cliente ${userId}...`)
+          // Buscar meses que ya tienen su propio comprobante (no tocar esos items)
+          const { data: otrosComprobantes } = await supabase
+            .from('payment_receipts' as any)
+            .select('mes_pago')
+            .eq('user_id', userId)
+            .eq('tipo_cliente', tipoCliente)
+            .in('estado', ['pendiente', 'aprobado'])
+            .neq('mes_pago', mesPago)
+            .lt('mes_pago', mesPago)
           
-          const { error: gastosCarryError } = await supabase
-            .from('gastos' as any)
-            .update({ 
-              estado_pago: 'pagado',
-              updated_at: fechaAprobacion
-            })
-            .eq('id_cliente', userId)
-            .eq('estado_pago', 'pendiente')
-            .lt('fecha', startDate)
-            .gte('fecha', fechaLimite12Meses)
+          const mesesConComprobante = (otrosComprobantes || []).map((c: any) => c.mes_pago)
+          if (isDev && mesesConComprobante.length > 0) {
+            console.log('Meses con comprobante propio (excluidos de carry-forward):', mesesConComprobante)
+          }
           
-          if (gastosCarryError) {
-            console.error('âŒ Error al marcar gastos carry-forward como pagados:', gastosCarryError)
+          if (isDev) console.log(`Marcando gastos carry-forward como pagados para cliente ${userId}...`)
+          
+          // Si no hay meses a excluir, marcar todo carry-forward como antes
+          if (mesesConComprobante.length === 0) {
+            const { error: gastosCarryError } = await supabase
+              .from('gastos' as any)
+              .update({ 
+                estado_pago: 'pagado',
+                updated_at: fechaAprobacion
+              })
+              .eq('id_cliente', userId)
+              .eq('estado_pago', 'pendiente')
+              .lt('fecha', startDate)
+              .gte('fecha', fechaLimite12Meses)
+            
+            if (gastosCarryError) {
+              console.error('Error al marcar gastos carry-forward como pagados:', gastosCarryError)
+            } else {
+              if (isDev) console.log('Gastos carry-forward marcados como pagados')
+            }
           } else {
-            if (isDev) console.log(`âœ… Gastos carry-forward marcados como pagados`)
+            // Marcar carry-forward excluyendo meses con comprobante propio
+            const { data: gastosCarryForward } = await supabase
+              .from('gastos' as any)
+              .select('id, fecha')
+              .eq('id_cliente', userId)
+              .eq('estado_pago', 'pendiente')
+              .lt('fecha', startDate)
+              .gte('fecha', fechaLimite12Meses)
+            
+            if (gastosCarryForward && gastosCarryForward.length > 0) {
+              const idsToUpdate = (gastosCarryForward as any[]).filter((g: any) => {
+                const mesFecha = g.fecha.substring(0, 7)
+                return !mesesConComprobante.includes(mesFecha)
+              }).map((g: any) => g.id)
+              
+              if (idsToUpdate.length > 0) {
+                const { error: gastosCarryError } = await supabase
+                  .from('gastos' as any)
+                  .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                  .in('id', idsToUpdate)
+                
+                if (gastosCarryError) {
+                  console.error('Error al marcar gastos carry-forward como pagados:', gastosCarryError)
+                } else {
+                  if (isDev) console.log(`Gastos carry-forward: ${idsToUpdate.length} marcados, ${gastosCarryForward.length - idsToUpdate.length} excluidos`)
+                }
+              }
+            }
           }
 
           // ===== FIX: Marcar servicios profesionales carry-forward como pagados =====
-          if (isDev) console.log(`ðŸ’° Marcando servicios profesionales carry-forward como pagados para cliente ${userId}...`)
+          if (isDev) console.log(`Marcando servicios profesionales carry-forward como pagados para cliente ${userId}...`)
           
-          const { error: serviciosCarryError } = await supabase
-            .from('servicios_profesionales' as any)
-            .update({ 
-              estado_pago: 'pagado',
-              updated_at: fechaAprobacion
-            })
-            .eq('id_cliente', userId)
-            .eq('estado_pago', 'pendiente')
-            .lt('fecha', startDate)
-            .gte('fecha', fechaLimite12Meses)
-          
-          if (serviciosCarryError) {
-            console.error('âŒ Error al marcar servicios carry-forward como pagados:', serviciosCarryError)
+          if (mesesConComprobante.length === 0) {
+            const { error: serviciosCarryError } = await supabase
+              .from('servicios_profesionales' as any)
+              .update({ 
+                estado_pago: 'pagado',
+                updated_at: fechaAprobacion
+              })
+              .eq('id_cliente', userId)
+              .eq('estado_pago', 'pendiente')
+              .lt('fecha', startDate)
+              .gte('fecha', fechaLimite12Meses)
+            
+            if (serviciosCarryError) {
+              console.error('Error al marcar servicios carry-forward como pagados:', serviciosCarryError)
+            } else {
+              if (isDev) console.log('Servicios profesionales carry-forward marcados como pagados')
+            }
           } else {
-            if (isDev) console.log(`âœ… Servicios profesionales carry-forward marcados como pagados`)
+            const { data: spCarryForward } = await supabase
+              .from('servicios_profesionales' as any)
+              .select('id, fecha')
+              .eq('id_cliente', userId)
+              .eq('estado_pago', 'pendiente')
+              .lt('fecha', startDate)
+              .gte('fecha', fechaLimite12Meses)
+            
+            if (spCarryForward && spCarryForward.length > 0) {
+              const idsToUpdate = (spCarryForward as any[]).filter((s: any) => {
+                const mesFecha = s.fecha.substring(0, 7)
+                return !mesesConComprobante.includes(mesFecha)
+              }).map((s: any) => s.id)
+              
+              if (idsToUpdate.length > 0) {
+                const { error: serviciosCarryError } = await supabase
+                  .from('servicios_profesionales' as any)
+                  .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                  .in('id', idsToUpdate)
+                
+                if (serviciosCarryError) {
+                  console.error('Error al marcar servicios carry-forward como pagados:', serviciosCarryError)
+                } else {
+                  if (isDev) console.log(`Servicios carry-forward: ${idsToUpdate.length} marcados, ${spCarryForward.length - idsToUpdate.length} excluidos`)
+                }
+              }
+            }
           }
 
           // ===== Marcar trabajos_por_hora del mes + carry-forward como pagados =====
           if (tipoCliente === 'usuario') {
             // For usuarios, TPH has id_cliente directly
-            if (isDev) console.log(`ðŸ’° Marcando trabajos por hora como pagados para usuario ${userId}...`)
+            if (isDev) console.log(` Marcando trabajos por hora como pagados para usuario ${userId}...`)
             
             // Current month TPH
             const { error: tphError } = await supabase
@@ -658,28 +830,58 @@ export async function PATCH(request: NextRequest) {
               .lte('fecha', endDate)
             
             if (tphError) {
-              console.error('âŒ Error al marcar TPH del mes como pagados:', tphError)
+              console.error(' Error al marcar TPH del mes como pagados:', tphError)
             } else {
-              if (isDev) console.log(`âœ… TPH del mes marcados como pagados (usuario)`)
+              if (isDev) console.log(` TPH del mes marcados como pagados (usuario)`)
             }
             
-            // Carry-forward TPH
-            const { error: tphCarryError } = await supabase
-              .from('trabajos_por_hora')
-              .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
-              .eq('id_cliente', userId)
-              .eq('estado_pago', 'pendiente')
-              .lt('fecha', startDate)
-              .gte('fecha', fechaLimite12Meses)
-            
-            if (tphCarryError) {
-              console.error('âŒ Error al marcar TPH carry-forward como pagados:', tphCarryError)
+            // Carry-forward TPH (SMART: exclude months with own comprobante)
+            if (mesesConComprobante.length === 0) {
+              const { error: tphCarryError } = await supabase
+                .from('trabajos_por_hora')
+                .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                .eq('id_cliente', userId)
+                .eq('estado_pago', 'pendiente')
+                .lt('fecha', startDate)
+                .gte('fecha', fechaLimite12Meses)
+              
+              if (tphCarryError) {
+                console.error('Error al marcar TPH carry-forward como pagados:', tphCarryError)
+              } else {
+                if (isDev) console.log('TPH carry-forward marcados como pagados (usuario)')
+              }
             } else {
-              if (isDev) console.log(`âœ… TPH carry-forward marcados como pagados (usuario)`)
+              const { data: tphCarryItems } = await supabase
+                .from('trabajos_por_hora')
+                .select('id, fecha')
+                .eq('id_cliente', userId)
+                .eq('estado_pago', 'pendiente')
+                .lt('fecha', startDate)
+                .gte('fecha', fechaLimite12Meses)
+              
+              if (tphCarryItems && tphCarryItems.length > 0) {
+                const idsToUpdate = tphCarryItems.filter((t: any) => {
+                  const mesFecha = t.fecha.substring(0, 7)
+                  return !mesesConComprobante.includes(mesFecha)
+                }).map((t: any) => t.id)
+                
+                if (idsToUpdate.length > 0) {
+                  const { error: tphCarryError } = await supabase
+                    .from('trabajos_por_hora')
+                    .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                    .in('id', idsToUpdate)
+                  
+                  if (tphCarryError) {
+                    console.error('Error al marcar TPH carry-forward como pagados:', tphCarryError)
+                  } else {
+                    if (isDev) console.log(`TPH carry-forward (usuario): ${idsToUpdate.length} marcados, ${tphCarryItems.length - idsToUpdate.length} excluidos`)
+                  }
+                }
+              }
             }
           } else {
             // For empresas, TPH are linked via caso_asignado
-            if (isDev) console.log(`ðŸ’° Marcando trabajos por hora como pagados para empresa ${userId}...`)
+            if (isDev) console.log(` Marcando trabajos por hora como pagados para empresa ${userId}...`)
             
             const { data: casosCliente } = await supabase
               .from('casos')
@@ -698,34 +900,64 @@ export async function PATCH(request: NextRequest) {
                 .lte('fecha', endDate)
               
               if (tphError) {
-                console.error('âŒ Error al marcar TPH del mes como pagados:', tphError)
+                console.error(' Error al marcar TPH del mes como pagados:', tphError)
               } else {
-                if (isDev) console.log(`âœ… TPH del mes marcados como pagados (empresa)`)
+                if (isDev) console.log(` TPH del mes marcados como pagados (empresa)`)
               }
               
-              // Carry-forward TPH
-              const { error: tphCarryError } = await supabase
-                .from('trabajos_por_hora')
-                .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
-                .in('caso_asignado', casoIds)
-                .eq('estado_pago', 'pendiente')
-                .lt('fecha', startDate)
-                .gte('fecha', fechaLimite12Meses)
-              
-              if (tphCarryError) {
-                console.error('âŒ Error al marcar TPH carry-forward como pagados:', tphCarryError)
+              // Carry-forward TPH (SMART: exclude months with own comprobante)
+              if (mesesConComprobante.length === 0) {
+                const { error: tphCarryError } = await supabase
+                  .from('trabajos_por_hora')
+                  .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                  .in('caso_asignado', casoIds)
+                  .eq('estado_pago', 'pendiente')
+                  .lt('fecha', startDate)
+                  .gte('fecha', fechaLimite12Meses)
+                
+                if (tphCarryError) {
+                  console.error('Error al marcar TPH carry-forward como pagados:', tphCarryError)
+                } else {
+                  if (isDev) console.log('TPH carry-forward marcados como pagados (empresa)')
+                }
               } else {
-                if (isDev) console.log(`âœ… TPH carry-forward marcados como pagados (empresa)`)
+                const { data: tphCarryItems } = await supabase
+                  .from('trabajos_por_hora')
+                  .select('id, fecha')
+                  .in('caso_asignado', casoIds)
+                  .eq('estado_pago', 'pendiente')
+                  .lt('fecha', startDate)
+                  .gte('fecha', fechaLimite12Meses)
+                
+                if (tphCarryItems && tphCarryItems.length > 0) {
+                  const idsToUpdate = tphCarryItems.filter((t: any) => {
+                    const mesFecha = t.fecha.substring(0, 7)
+                    return !mesesConComprobante.includes(mesFecha)
+                  }).map((t: any) => t.id)
+                  
+                  if (idsToUpdate.length > 0) {
+                    const { error: tphCarryError } = await supabase
+                      .from('trabajos_por_hora')
+                      .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                      .in('id', idsToUpdate)
+                    
+                    if (tphCarryError) {
+                      console.error('Error al marcar TPH carry-forward como pagados:', tphCarryError)
+                    } else {
+                      if (isDev) console.log(`TPH carry-forward (empresa): ${idsToUpdate.length} marcados, ${tphCarryItems.length - idsToUpdate.length} excluidos`)
+                    }
+                  }
+                }
               }
             }
           }
         } catch (err) {
-          console.error('âŒ Error al procesar gastos:', err)
+          console.error(' Error al procesar gastos:', err)
         }
       }
 
       // Marcar factura como pagada directamente en la base de datos
-      if (isDev) console.log('ðŸ” Intentando actualizar factura con mes_pago:', mesPago)
+      if (isDev) console.log(' Intentando actualizar factura con mes_pago:', mesPago)
       
       if (mesPago) {
         try {
@@ -738,7 +970,7 @@ export async function PATCH(request: NextRequest) {
             .eq('client_type', tipoCliente)
             .single()
 
-          if (isDev) console.log('ðŸ” BÃºsqueda de factura existente:', { 
+          if (isDev) console.log(' Bsqueda de factura existente:', { 
             encontrada: !!existingDeadline, 
             error: checkError?.message
           })
@@ -755,15 +987,15 @@ export async function PATCH(request: NextRequest) {
               .eq('client_type', tipoCliente)
 
             if (invoiceError) {
-              console.error('âŒ Error al actualizar estado de factura:', invoiceError)
+              console.error(' Error al actualizar estado de factura:', invoiceError)
             } else {
-              if (isDev) console.log('âœ… Estado de factura actualizado a pagado')
+              if (isDev) console.log(' Estado de factura actualizado a pagado')
             }
           } else {
             if (isDev) console.warn('âš ï¸ No se encontrÃ³ factura para actualizar')
           }
         } catch (err) {
-          console.error('âŒ Error al actualizar estado de factura:', err)
+          console.error(' Error al actualizar estado de factura:', err)
         }
       } else {
         if (isDev) console.warn('âš ï¸ El comprobante no tiene mes_pago asociado')
@@ -771,7 +1003,7 @@ export async function PATCH(request: NextRequest) {
 
       // ===== ESCRIBIR EN HOJA "Ingresos" DE GOOGLE SHEETS =====
       try {
-        if (isDev) console.log('ðŸ“ Preparando registro de ingreso para Google Sheets...')
+        if (isDev) console.log(' Preparando registro de ingreso para Google Sheets...')
         
         // Obtener datos del cliente
         const tablaCliente = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
@@ -852,11 +1084,11 @@ export async function PATCH(request: NextRequest) {
           totalIngreso                  // J: Total_Ingreso
         ]
         
-        if (isDev) console.log('ðŸ“Š Datos del ingreso:', { id: ingresoId, total: totalIngreso })
+        if (isDev) console.log(' Datos del ingreso:', { id: ingresoId, total: totalIngreso })
         
         // Escribir en Google Sheets
         await GoogleSheetsService.appendRow('Ingresos', rowData)
-        if (isDev) console.log('âœ… Ingreso registrado en Google Sheets')
+        if (isDev) console.log(' Ingreso registrado en Google Sheets')
         
         // TambiÃ©n guardar en Supabase para consultas rÃ¡pidas
         await (supabase as any)
@@ -875,11 +1107,46 @@ export async function PATCH(request: NextRequest) {
             total_ingreso: totalIngreso
           }, { onConflict: 'id' })
         
-        if (isDev) console.log('âœ… Ingreso guardado en Supabase')
+        if (isDev) console.log(' Ingreso guardado en Supabase')
         
       } catch (ingresosError) {
         // No fallar la aprobación si falla el registro de ingresos
-        console.error('❌ Error registrando ingreso (no crítico):', ingresosError instanceof Error ? ingresosError.message : String(ingresosError))
+        console.error(' Error registrando ingreso (no crtico):', ingresosError instanceof Error ? ingresosError.message : String(ingresosError))
+      }
+
+      // ===== POST-MARKING: Re-check modoPago after all items are marked as paid =====
+      // The RPC runs before items are marked, so it can't accurately determine pending data.
+      // Re-check now that everything is updated.
+      try {
+        const { data: postCheckResult, error: postCheckError } = await (supabase as any)
+          .rpc('cliente_tiene_datos_pendientes', {
+            p_client_id: userId,
+            p_tipo_cliente: tipoCliente
+          })
+
+        if (!postCheckError && postCheckResult) {
+          const tieneDatosPost = postCheckResult.tieneDatos || false
+          if (isDev) console.log('Post-marking check datos pendientes:', postCheckResult)
+
+          if (!tieneDatosPost) {
+            // No pending data — deactivate modoPago
+            const tablaCliente = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
+            const { error: deactivateError } = await supabase
+              .from(tablaCliente as any)
+              .update({ modoPago: false } as any)
+              .eq('id', userId)
+
+            if (deactivateError) {
+              console.error('Error deactivating modoPago post-marking:', deactivateError)
+            } else {
+              if (isDev) console.log('modoPago deactivated post-marking for', userId)
+            }
+          } else {
+            if (isDev) console.log('Client still has pending data after marking, modoPago stays active')
+          }
+        }
+      } catch (postCheckErr) {
+        console.error('Error in post-marking modoPago check:', postCheckErr)
       }
 
       return NextResponse.json({

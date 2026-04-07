@@ -64,7 +64,7 @@ BEGIN
     v_mes_inicio := (date_trunc('month', v_ultima_fecha_reporte) - interval '1 month')::date;
     v_mes_fin := (date_trunc('month', v_mes_inicio) + interval '1 month - 1 day')::date;
   END IF;
-  -- 1. Trabajos por hora en el rango
+  -- 1. Trabajos por hora en el rango (solo pendientes, no pagados)
   IF p_tipo_cliente = 'empresa' THEN
     -- Para empresas: buscar via casos.id_cliente
     SELECT COUNT(*) INTO v_trabajos_count
@@ -76,6 +76,7 @@ BEGIN
           AND tph.fecha >= v_mes_inicio
           AND tph.fecha <= v_mes_fin
           AND tph.fecha IS NOT NULL
+          AND (tph.estado_pago IS NULL OR LOWER(TRIM(tph.estado_pago)) != 'pagado')
       );
   ELSE
     -- Para usuarios: buscar via casos.id_cliente Y tph.id_cliente directo
@@ -88,6 +89,7 @@ BEGIN
         AND tph.fecha >= v_mes_inicio
         AND tph.fecha <= v_mes_fin
         AND tph.fecha IS NOT NULL
+        AND (tph.estado_pago IS NULL OR LOWER(TRIM(tph.estado_pago)) != 'pagado')
       UNION
       SELECT DISTINCT tph.id_cliente
       FROM trabajos_por_hora tph
@@ -95,6 +97,7 @@ BEGIN
         AND tph.fecha >= v_mes_inicio
         AND tph.fecha <= v_mes_fin
         AND tph.fecha IS NOT NULL
+        AND (tph.estado_pago IS NULL OR LOWER(TRIM(tph.estado_pago)) != 'pagado')
     ) sub;
   END IF;
 

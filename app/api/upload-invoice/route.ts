@@ -503,7 +503,7 @@ export async function DELETE(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { clientId, clientType } = body
+    const { clientId, clientType, mes } = body
 
     if (!clientId || !clientType) {
       return NextResponse.json(
@@ -537,20 +537,26 @@ export async function PUT(request: Request) {
       )
     }
 
-    // Filtrar facturas del mes actual
-    const currentMonth = new Date().getMonth()
-    const currentYear = new Date().getFullYear()
-    const currentMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
+    // Filtrar facturas del mes solicitado (o mes actual por defecto)
+    let targetMonthStr: string
+    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+      targetMonthStr = mes
+    } else {
+      const currentMonth = new Date().getMonth()
+      const currentYear = new Date().getFullYear()
+      targetMonthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
+    }
+    const [targetYear, targetMonthNum] = targetMonthStr.split('-').map(Number)
 
     const monthInvoices = files?.filter(file => {
       // Primero buscar por mes en el nombre del archivo
-      if (file.name && file.name.includes(`_${currentMonthStr}_`)) {
+      if (file.name && file.name.includes(`_${targetMonthStr}_`)) {
         return true
       }
       // Fallback: buscar por fecha de creación
       if (!file.created_at) return false
       const fileDate = new Date(file.created_at)
-      return fileDate.getMonth() === currentMonth && fileDate.getFullYear() === currentYear
+      return fileDate.getMonth() === (targetMonthNum - 1) && fileDate.getFullYear() === targetYear
     }) || []
 
     const hasInvoice = monthInvoices.length > 0
