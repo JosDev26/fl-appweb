@@ -719,16 +719,22 @@ export async function GET(request: NextRequest) {
     const mesesKeys = Array.from(mesesMap.keys()).sort()
     const tipoCliente = cliente.tipo === 'usuario' ? 'usuario' : 'empresa'
     
-    const { data: facturasMeses } = await supabase
+    const { data: facturasMeses, error: factErr } = await supabase
       .from('invoice_payment_deadlines' as any)
-      .select('mes_factura, estado_pago, fecha_vencimiento, archivo_url')
+      .select('mes_factura, estado_pago, file_path')
       .eq('client_id', cliente.id)
       .eq('client_type', tipoCliente)
       .in('mes_factura', mesesKeys)
     
+    // Debug: also fetch ALL facturas for this client to diagnose mismatches
+    const { data: todasFacturas } = await supabase
+      .from('invoice_payment_deadlines' as any)
+      .select('mes_factura, estado_pago, client_id, client_type')
+      .eq('client_id', cliente.id)
+    
     const { data: comprobantesMeses } = await supabase
       .from('payment_receipts' as any)
-      .select('mes_pago, estado, monto_declarado, archivo_url, created_at')
+      .select('mes_pago, estado, monto_declarado, file_path, created_at')
       .eq('user_id', cliente.id)
       .eq('tipo_cliente', tipoCliente)
       .in('mes_pago', mesesKeys)
@@ -751,8 +757,8 @@ export async function GET(request: NextRequest) {
         tiposItems: entry.items.reduce((acc: Record<string, number>, i) => {
           acc[i.tipo] = (acc[i.tipo] || 0) + 1; return acc
         }, {}),
-        factura: factura ? { estado: factura.estado_pago, url: factura.archivo_url } : null,
-        comprobante: comprobante ? { estado: comprobante.estado, monto: comprobante.monto_declarado, url: comprobante.archivo_url } : null,
+        factura: factura ? { estado: factura.estado_pago, url: factura.file_path } : null,
+        comprobante: comprobante ? { estado: comprobante.estado, monto: comprobante.monto_declarado, url: comprobante.file_path } : null,
         puedeSubirComprobante: !!factura && !comprobante
       }
     })
@@ -869,7 +875,16 @@ export async function GET(request: NextRequest) {
         queryServiciosAnteriores: `id_cliente='${cliente.id}' AND estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}' (servicios_profesionales)`,
         queryTPHAnteriores: `estado_pago='pendiente' AND fecha < '${inicioMes}' AND fecha >= '${fechaLimite12MesesStr}' (trabajos_por_hora)`,
         esGrupoPrincipal,
-        empresasEnGrupo: esGrupoPrincipal ? empresasDelGrupo.map(e => e.nombre) : []
+        empresasEnGrupo: esGrupoPrincipal ? empresasDelGrupo.map(e => e.nombre) : [],
+        facturasDebug: {
+          clientId: cliente.id,
+          tipoClienteQuery: tipoCliente,
+          mesesBuscados: mesesKeys,
+          facturasEncontradas: facturasMeses?.length || 0,
+          facturasMeses: facturasMeses || [],
+          todasFacturasCliente: todasFacturas || [],
+          facturaError: factErr?.message || null
+        }
       }
     });
     

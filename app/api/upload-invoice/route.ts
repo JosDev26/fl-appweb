@@ -300,17 +300,27 @@ export async function GET(request: Request) {
     if (getAllMonth) {
       const invoices: any[] = []
       
-      // Usar fecha simulada si se proporciona, o fecha global, o fecha real Costa Rica
-      const simulatedDate = searchParams.get('simulatedDate')
-      const now = await getCurrentDateCR(simulatedDate)
+      // Usar mes explícito si se proporciona, o calcular desde fecha simulada/actual
+      const mesParam = searchParams.get('mes') // formato YYYY-MM
+      let currentMonth: number
+      let currentYear: number
       
-      // Calcular mes anterior (mes de las horas trabajadas / mes de facturación)
-      const mesAnterior = new Date(now)
-      mesAnterior.setMonth(mesAnterior.getMonth() - 1)
-      const currentMonth = mesAnterior.getMonth()
-      const currentYear = mesAnterior.getFullYear()
+      if (mesParam && /^\d{4}-\d{2}$/.test(mesParam)) {
+        const [y, m] = mesParam.split('-').map(Number)
+        currentYear = y
+        currentMonth = m - 1 // 0-indexed
+      } else {
+        const simulatedDate = searchParams.get('simulatedDate')
+        const now = await getCurrentDateCR(simulatedDate)
+        // Calcular mes anterior (mes de las horas trabajadas / mes de facturación)
+        const mesAnterior = new Date(now)
+        mesAnterior.setMonth(mesAnterior.getMonth() - 1)
+        currentMonth = mesAnterior.getMonth()
+        currentYear = mesAnterior.getFullYear()
+      }
       
-      console.log('📅 [GET invoices] Fecha CR:', toDateString(now), '| Buscando facturas de:', `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`)
+      const currentMonthLabel = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`
+      console.log('[GET invoices] Buscando facturas de:', currentMonthLabel)
       
       // Función auxiliar para procesar archivos de una carpeta
       const processFolder = async (type: 'cliente' | 'empresa', folderId: string) => {

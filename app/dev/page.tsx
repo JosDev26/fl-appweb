@@ -557,8 +557,10 @@ export default function DevPage() {
   const loadMonthInvoices = async () => {
     setLoadingInvoices(true)
     try {
-      // El servidor usa la fecha simulada global automáticamente
-      const response = await fetch('/api/upload-invoice?getAllMonth=true')
+      // Pasar el mes seleccionado al servidor para filtrar correctamente
+      const params = new URLSearchParams({ getAllMonth: 'true' })
+      if (selectedInvoiceMonth) params.set('mes', selectedInvoiceMonth)
+      const response = await fetch(`/api/upload-invoice?${params.toString()}`)
       const data = await response.json()
       
       console.log('Respuesta facturas:', data)
