@@ -29,9 +29,26 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Enriquecer con motivo_cambio para comprobantes editados
+    const enriched = await Promise.all(
+      (comprobantes || []).map(async (c: any) => {
+        if (c.editada) {
+          const { data: version } = await supabase
+            .from('comprobante_versions' as any)
+            .select('reason')
+            .eq('receipt_id', c.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+          return { ...c, motivo_cambio: (version as any)?.reason || null }
+        }
+        return { ...c, motivo_cambio: null }
+      })
+    )
+
     return NextResponse.json({
       success: true,
-      comprobantes: comprobantes || []
+      comprobantes: enriched
     })
 
   } catch (error) {

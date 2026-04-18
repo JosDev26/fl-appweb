@@ -137,9 +137,29 @@ export async function GET(request: Request) {
       )
     }
 
+    // Enriquecer deadlines editados con el motivo del último cambio
+    const enrichedDeadlines = await Promise.all(
+      (data || []).map(async (deadline) => {
+        if (deadline.editada) {
+          const { data: lastVersion } = await supabase
+            .from('invoice_versions')
+            .select('reason, created_at')
+            .eq('invoice_deadline_id', deadline.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+          return {
+            ...deadline,
+            motivo_cambio: lastVersion?.reason || null
+          }
+        }
+        return { ...deadline, motivo_cambio: null }
+      })
+    )
+
     return NextResponse.json({
       success: true,
-      deadlines: data || []
+      deadlines: enrichedDeadlines
     })
 
   } catch (error) {

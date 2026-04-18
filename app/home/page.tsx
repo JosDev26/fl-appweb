@@ -55,6 +55,7 @@ interface PaymentReceipt {
   mes_pago: string | null
   uploaded_at: string
   reviewed_at: string | null
+  editada?: boolean
 }
 
 function HomeContent() {
@@ -238,6 +239,43 @@ function HomeContent() {
               ✕
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Banner de comprobante editado */}
+      {lastPaymentReceipt && lastPaymentReceipt.editada && showPaymentBanner && (
+        <div style={{
+          background: 'linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%)',
+          border: '1px solid #93c5fd',
+          borderRadius: '8px',
+          padding: '1rem 1.25rem',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.75rem'
+        }}>
+          <span style={{ fontSize: '1.25rem' }}>i</span>
+          <div style={{ flex: 1 }}>
+            <strong style={{ color: '#1e40af' }}>Su comprobante fue actualizado</strong>
+            <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#1e40af' }}>
+              Un administrador ha realizado cambios en su comprobante de pago{lastPaymentReceipt.mes_pago ? ` de ${formatMesPago(lastPaymentReceipt.mes_pago)}` : ''}. Revise los detalles en su historial de comprobantes.
+            </p>
+          </div>
+          <button
+            onClick={() => router.push('/comprobantes')}
+            style={{
+              background: '#1e40af',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '0.5rem 1rem',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Ver comprobantes
+          </button>
         </div>
       )}
 

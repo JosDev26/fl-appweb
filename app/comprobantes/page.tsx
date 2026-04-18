@@ -15,6 +15,8 @@ interface Comprobante {
   estado: 'pendiente' | 'aprobado' | 'rechazado'
   nota_revision: string | null
   uploaded_at: string
+  editada?: boolean
+  motivo_cambio?: string | null
 }
 
 interface Factura {
@@ -23,6 +25,9 @@ interface Factura {
   file_path: string
   fecha_emision: string
   estado_pago: 'pendiente' | 'pagado'
+  editada?: boolean
+  nota?: string | null
+  motivo_cambio?: string | null
 }
 
 export default function ComprobantesPage() {
@@ -360,6 +365,9 @@ export default function ComprobantesPage() {
                      comprobante.estado === 'aprobado' ? '✓ Aprobado' :
                      '✗ Rechazado'}
                   </span>
+                  {comprobante.editada && (
+                    <span className={styles.estadoEditada}>Actualizado</span>
+                  )}
                   <span className={styles.mesBadge}>{formatMesDisplay(comprobante.mes_pago)}</span>
                 </div>
 
@@ -383,8 +391,14 @@ export default function ComprobantesPage() {
 
                   {comprobante.nota_revision && (
                     <div className={styles.nota}>
-                      <strong>Nota de revisión:</strong>
+                      <strong>Nota de revision:</strong>
                       <p>{comprobante.nota_revision}</p>
+                    </div>
+                  )}
+                  {comprobante.editada && comprobante.motivo_cambio && (
+                    <div className={styles.cardField}>
+                      <span className={styles.fieldLabel}>Motivo de cambio:</span>
+                      <span className={styles.fieldValue}>{comprobante.motivo_cambio}</span>
                     </div>
                   )}
                 </div>
@@ -426,6 +440,11 @@ export default function ComprobantesPage() {
                       <span className={`${styles.estadoBadge} ${factura.estado_pago === 'pagado' ? styles.estadoAprobado : styles.estadoPendiente}`}>
                         {factura.estado_pago === 'pagado' ? '✓ Pagado' : '⏳ Pendiente'}
                       </span>
+                      {factura.editada && (
+                        <span className={`${styles.estadoBadge} ${styles.estadoEditada}`}>
+                          Actualizada
+                        </span>
+                      )}
                       <span className={styles.mesBadge}>{formatMesDisplay(factura.mes_factura)}</span>
                     </div>
 
@@ -442,6 +461,18 @@ export default function ComprobantesPage() {
                         <span className={styles.fieldLabel}>Archivo:</span>
                         <span className={styles.fieldValue}>{factura.file_path?.split('/').pop() || 'factura.xml'}</span>
                       </div>
+                      {factura.nota && (
+                        <div className={styles.cardField}>
+                          <span className={styles.fieldLabel}>Nota:</span>
+                          <span className={styles.fieldValue}>{factura.nota}</span>
+                        </div>
+                      )}
+                      {factura.editada && factura.motivo_cambio && (
+                        <div className={styles.cardField}>
+                          <span className={styles.fieldLabel}>Motivo de cambio:</span>
+                          <span className={styles.fieldValue}>{factura.motivo_cambio}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className={styles.cardFooter}>

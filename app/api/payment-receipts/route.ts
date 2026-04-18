@@ -386,10 +386,7 @@ export async function PATCH(request: NextRequest) {
                 // BATCH: Update all servicios in one query using IN clause
                 const { error: serviciosError } = await supabase
                   .from('servicios_profesionales' as any)
-                  .update({ 
-                    estado_pago: 'pagado',
-                    updated_at: fechaAprobacion
-                  })
+                  .update({ estado_pago: 'pagado' })
                   .in('id_cliente', empresaIds)
                   .neq('estado_pago', 'cancelado')
                   .gte('fecha', startDate)
@@ -468,7 +465,7 @@ export async function PATCH(request: NextRequest) {
                 if (mesesConComprobanteGrupo.length === 0) {
                   const { error: serviciosCarryError } = await supabase
                     .from('servicios_profesionales' as any)
-                    .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                    .update({ estado_pago: 'pagado' })
                     .in('id_cliente', empresaIds)
                     .eq('estado_pago', 'pendiente')
                     .lt('fecha', startDate)
@@ -497,7 +494,7 @@ export async function PATCH(request: NextRequest) {
                     if (idsToUpdate.length > 0) {
                       const { error: serviciosCarryError } = await supabase
                         .from('servicios_profesionales' as any)
-                        .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                        .update({ estado_pago: 'pagado' })
                         .in('id', idsToUpdate)
                       
                       if (serviciosCarryError) {
@@ -681,10 +678,7 @@ export async function PATCH(request: NextRequest) {
           
           const { error: serviciosError } = await supabase
             .from('servicios_profesionales' as any)
-            .update({ 
-              estado_pago: 'pagado',
-              updated_at: fechaAprobacion
-            })
+            .update({ estado_pago: 'pagado' })
             .eq('id_cliente', userId)
             .neq('estado_pago', 'cancelado') // No cambiar los cancelados
             .gte('fecha', startDate)
@@ -772,10 +766,7 @@ export async function PATCH(request: NextRequest) {
           if (mesesConComprobante.length === 0) {
             const { error: serviciosCarryError } = await supabase
               .from('servicios_profesionales' as any)
-              .update({ 
-                estado_pago: 'pagado',
-                updated_at: fechaAprobacion
-              })
+              .update({ estado_pago: 'pagado' })
               .eq('id_cliente', userId)
               .eq('estado_pago', 'pendiente')
               .lt('fecha', startDate)
@@ -804,7 +795,7 @@ export async function PATCH(request: NextRequest) {
               if (idsToUpdate.length > 0) {
                 const { error: serviciosCarryError } = await supabase
                   .from('servicios_profesionales' as any)
-                  .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+                  .update({ estado_pago: 'pagado' })
                   .in('id', idsToUpdate)
                 
                 if (serviciosCarryError) {
@@ -1192,6 +1183,298 @@ export async function PATCH(request: NextRequest) {
 
   } catch (error) {
     console.error('Unexpected error:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * PUT - Editar un comprobante (reemplazar archivo, cambiar monto/mes/nota/estado)
+ * Protected: Requires dev admin authentication via cookies
+ */
+export async function PUT(request: NextRequest) {
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
+  try {
+    // Verificar sesión de admin via cookies
+    const cookieHeader = request.headers.get('cookie')
+    if (!cookieHeader) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+    const cookies = parseCookies(cookieHeader)
+    const devAuth = cookies['dev-auth']
+    const adminId = cookies['dev-admin-id']
+    if (!devAuth || !adminId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const formData = await request.formData()
+    const receiptId = formData.get('receiptId') as string
+    const file = formData.get('file') as File | null
+    const newMonto = formData.get('monto') as string | null
+    const newMesPago = formData.get('mesPago') as string | null
+    const newNotaRevision = formData.get('notaRevision') as string | null
+    const newEstado = formData.get('estado') as string | null
+    const reason = formData.get('reason') as string
+    const resetEditada = formData.get('resetEditada') === 'true'
+    const reemplazarDuplicado = formData.get('reemplazarDuplicado') === 'true'
+
+    // Validaciones básicas
+    if (!receiptId || !isValidUUID(receiptId)) {
+      return NextResponse.json({ error: 'receiptId inválido' }, { status: 400 })
+    }
+
+    if (!reason || !reason.trim()) {
+      return NextResponse.json(
+        { error: 'El motivo del cambio es obligatorio' },
+        { status: 400 }
+      )
+    }
+
+    // Validar estado si se proporciona
+    if (newEstado && !['pendiente', 'aprobado', 'rechazado'].includes(newEstado)) {
+      return NextResponse.json(
+        { error: 'Estado debe ser pendiente, aprobado o rechazado' },
+        { status: 400 }
+      )
+    }
+
+    // Obtener record actual
+    const { data: currentReceipt, error: fetchError } = await supabase
+      .from('payment_receipts' as any)
+      .select('*')
+      .eq('id', receiptId)
+      .single()
+
+    if (fetchError || !currentReceipt) {
+      return NextResponse.json({ error: 'Comprobante no encontrado' }, { status: 404 })
+    }
+
+    const receipt = currentReceipt as any
+
+    // Bloquear cambio aprobado → pendiente
+    if (receipt.estado === 'aprobado' && newEstado === 'pendiente') {
+      return NextResponse.json(
+        { error: 'No se puede cambiar un comprobante aprobado a pendiente. Los ingresos y pagos ya fueron procesados.' },
+        { status: 400 }
+      )
+    }
+
+    // Warning si es aprobado (no bloquear, pero informar)
+    const wasApproved = receipt.estado === 'aprobado'
+
+    // Si cambia mes_pago, verificar duplicado
+    if (newMesPago && newMesPago !== receipt.mes_pago) {
+      if (!isValidMesPago(newMesPago)) {
+        return NextResponse.json({ error: 'Formato de mes inválido (YYYY-MM)' }, { status: 400 })
+      }
+
+      const { data: existing } = await supabase
+        .from('payment_receipts' as any)
+        .select('id, estado, mes_pago')
+        .eq('mes_pago', newMesPago)
+        .eq('user_id', receipt.user_id)
+        .eq('tipo_cliente', receipt.tipo_cliente)
+        .neq('id', receiptId)
+        .single()
+
+      if (existing) {
+        if (!reemplazarDuplicado) {
+          return NextResponse.json({
+            success: false,
+            duplicado: true,
+            duplicadoInfo: {
+              id: (existing as any).id,
+              estado: (existing as any).estado,
+              mes_pago: (existing as any).mes_pago
+            },
+            error: `Ya existe un comprobante para ${newMesPago} (estado: ${(existing as any).estado}). Desea rechazarlo y continuar?`
+          }, { status: 409 })
+        }
+
+        // Rechazar el duplicado
+        await supabase
+          .from('payment_receipts' as any)
+          .update({
+            estado: 'rechazado',
+            nota_revision: 'Reemplazado por edicion de otro comprobante',
+            reviewed_at: new Date().toISOString()
+          })
+          .eq('id', (existing as any).id)
+      }
+    }
+
+    // Validar y subir archivo si se proporciona
+    let newFilePath: string | null = null
+    let newFileName: string | null = null
+    let newFileSize: number | null = null
+    let newFileType: string | null = null
+
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase()
+      if (!ext || !['pdf', 'jpg', 'jpeg', 'png'].includes(ext)) {
+        return NextResponse.json(
+          { error: 'Solo se permiten archivos PDF, JPG o PNG' },
+          { status: 400 }
+        )
+      }
+
+      const allowedMimes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png']
+      if (!allowedMimes.includes(file.type)) {
+        return NextResponse.json(
+          { error: 'Tipo de archivo no permitido' },
+          { status: 400 }
+        )
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        return NextResponse.json(
+          { error: 'El archivo excede el tamano maximo de 5MB' },
+          { status: 400 }
+        )
+      }
+
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+
+      const timestamp = Date.now()
+      newFilePath = `${receipt.user_id}/${timestamp}.${ext}`
+      newFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').substring(0, 100)
+      newFileSize = file.size
+      newFileType = file.type
+
+      const { error: uploadError } = await supabase.storage
+        .from('payment-receipts')
+        .upload(newFilePath, buffer, {
+          contentType: file.type,
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('Error al subir archivo de reemplazo:', uploadError)
+        return NextResponse.json(
+          { error: 'Error al subir el archivo de reemplazo' },
+          { status: 500 }
+        )
+      }
+    }
+
+    // Guardar versión anterior en comprobante_versions
+    const { error: versionError } = await supabase
+      .from('comprobante_versions' as any)
+      .insert({
+        receipt_id: receiptId,
+        file_path: receipt.file_path,
+        file_name: receipt.file_name,
+        monto_declarado: receipt.monto_declarado,
+        mes_pago: receipt.mes_pago,
+        estado: receipt.estado,
+        nota_revision: receipt.nota_revision,
+        reason: reason.trim(),
+        replaced_by: adminId
+      })
+
+    if (versionError) {
+      console.error('Error al guardar version anterior:', versionError)
+    }
+
+    // Preparar actualización
+    const updateData: Record<string, unknown> = {
+      editada: resetEditada ? false : true,
+      updated_at: new Date().toISOString()
+    }
+
+    if (newFilePath) {
+      updateData.file_path = newFilePath
+      updateData.file_name = newFileName
+      updateData.file_size = newFileSize
+      updateData.file_type = newFileType
+    }
+
+    if (newMesPago && newMesPago !== receipt.mes_pago) {
+      updateData.mes_pago = newMesPago
+    }
+
+    if (newNotaRevision !== null && newNotaRevision !== undefined) {
+      updateData.nota_revision = sanitizeNota(newNotaRevision)
+    }
+
+    if (newMonto !== null && newMonto !== undefined && newMonto.trim() !== '') {
+      const montoNum = parseFloat(newMonto)
+      if (!isNaN(montoNum) && montoNum >= 0) {
+        updateData.monto_declarado = montoNum
+      }
+    }
+
+    if (newEstado && newEstado !== receipt.estado) {
+      updateData.estado = newEstado
+      if (newEstado === 'rechazado' || newEstado === 'aprobado') {
+        updateData.reviewed_at = new Date().toISOString()
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from('payment_receipts' as any)
+      .update(updateData)
+      .eq('id', receiptId)
+
+    if (updateError) {
+      console.error('Error al actualizar comprobante:', updateError)
+      return NextResponse.json(
+        { error: 'Error al actualizar el comprobante' },
+        { status: 500 }
+      )
+    }
+
+    // Registrar en audit_log
+    const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+                     request.headers.get('x-real-ip') || '127.0.0.1'
+    const userAgent = request.headers.get('user-agent') || ''
+
+    await (supabase as any).from('audit_log').insert({
+      action: 'comprobante_edited',
+      actor_id: adminId,
+      actor_type: 'admin',
+      resource_type: 'payment_receipt',
+      resource_id: receiptId,
+      changes: {
+        before: {
+          file_path: receipt.file_path,
+          file_name: receipt.file_name,
+          monto_declarado: receipt.monto_declarado,
+          mes_pago: receipt.mes_pago,
+          estado: receipt.estado,
+          nota_revision: receipt.nota_revision,
+          editada: receipt.editada
+        },
+        after: {
+          file_path: newFilePath || receipt.file_path,
+          file_name: newFileName || receipt.file_name,
+          monto_declarado: updateData.monto_declarado ?? receipt.monto_declarado,
+          mes_pago: newMesPago || receipt.mes_pago,
+          estado: newEstado || receipt.estado,
+          nota_revision: updateData.nota_revision ?? receipt.nota_revision,
+          editada: !resetEditada
+        },
+        fileReplaced: !!file,
+        reason: reason.trim()
+      },
+      ip_address: clientIP,
+      user_agent: userAgent
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Comprobante editado exitosamente',
+      warning: wasApproved ? 'Este comprobante ya estaba aprobado. Los ingresos y pagos procesados NO fueron revertidos.' : undefined
+    })
+
+  } catch (error) {
+    console.error('Error en PUT /api/payment-receipts:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }

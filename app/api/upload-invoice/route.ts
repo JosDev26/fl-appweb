@@ -399,7 +399,61 @@ export async function GET(request: Request) {
       const clientesMap = new Map(clientes?.map(c => [c.id, c]) || [])
       const empresasMap = new Map(empresas?.map(e => [e.id, e]) || [])
 
-      // Enriquecer datos de facturas con información del cliente
+      // Obtener todos los deadlines para enriquecer con datos de DB
+      const { data: allDeadlines, error: deadlinesError } = await supabase
+        .from('invoice_payment_deadlines')
+        .select('*')
+        .eq('mes_factura', currentMonthLabel)
+
+      if (deadlinesError) {
+        console.error('Error al obtener deadlines para enriquecer:', deadlinesError)
+      }
+
+      // Crear mapas de deadlines para lookup: por file_path Y por (client_id, client_type)
+      const deadlinesByPath = new Map(
+        (allDeadlines || []).map(d => [d.file_path, d])
+      )
+      const deadlinesByClient = new Map(
+        (allDeadlines || []).map(d => [`${d.client_id}_${d.client_type}`, d])
+      )
+
+      // Auto-crear deadline records faltantes (pueden faltar si el insert original falló)
+      const missingDeadlineInvoices = invoices.filter(inv => {
+        return !deadlinesByPath.has(inv.path) && !deadlinesByClient.has(`${inv.clientId}_${inv.clientType}`)
+      })
+
+      if (missingDeadlineInvoices.length > 0) {
+        console.log(`[GET invoices] Auto-creando ${missingDeadlineInvoices.length} deadline records faltantes`)
+        for (const inv of missingDeadlineInvoices) {
+          // Extraer mes del nombre del archivo (formato: timestamp_YYYY-MM_nombre.ext)
+          const mesMatch = inv.name?.match(/_(\d{4}-\d{2})_/)
+          const mesFactura = mesMatch ? mesMatch[1] : currentMonthLabel
+
+          const { data: created, error: createErr } = await supabase
+            .from('invoice_payment_deadlines')
+            .upsert({
+              mes_factura: mesFactura,
+              client_id: inv.clientId,
+              client_type: inv.clientType,
+              file_path: inv.path || `${inv.clientType}/${inv.clientId}/${inv.name}`,
+              fecha_emision: inv.created_at ? new Date(inv.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+              estado_pago: 'pendiente'
+            }, {
+              onConflict: 'mes_factura,client_id,client_type'
+            })
+            .select()
+
+          if (createErr) {
+            console.error(`Error auto-creando deadline para ${inv.clientId}:`, createErr)
+          } else if (created?.[0]) {
+            // Agregar al mapa para el enriquecimiento
+            deadlinesByPath.set(inv.path, created[0])
+            deadlinesByClient.set(`${inv.clientId}_${inv.clientType}`, created[0])
+          }
+        }
+      }
+
+      // Enriquecer datos de facturas con información del cliente y deadline
       const enrichedInvoices = invoices.map(invoice => {
         let clientInfo = null
         if (invoice.clientType === 'cliente') {
@@ -408,25 +462,46 @@ export async function GET(request: Request) {
           clientInfo = empresasMap.get(invoice.clientId)
         }
 
+        // Intentar match por file_path primero, luego por client_id+client_type
+        const deadline = deadlinesByPath.get(invoice.path) 
+          || deadlinesByClient.get(`${invoice.clientId}_${invoice.clientType}`)
+
         return {
           ...invoice,
           clientName: clientInfo?.nombre || 'Desconocido',
-          clientCedula: clientInfo?.cedula || 'N/A'
+          clientCedula: clientInfo?.cedula || 'N/A',
+          deadlineId: deadline?.id || null,
+          estadoPago: deadline?.estado_pago || null,
+          nota: deadline?.nota || null,
+          editada: deadline?.editada ?? false,
+          mesFactura: deadline?.mes_factura || null,
+          fechaEmision: deadline?.fecha_emision || null
         }
       })
 
+      // Filtrar archivos viejos: si un deadline tiene file_path apuntando a otro archivo,
+      // este archivo es una versión antigua y no debe mostrarse
+      const filteredInvoices = enrichedInvoices.filter(inv => {
+        const deadline = deadlinesByClient.get(`${inv.clientId}_${inv.clientType}`)
+        // Si hay deadline y su file_path no coincide con este archivo, es versión vieja
+        if (deadline && deadline.file_path && deadline.file_path !== inv.path) {
+          return false
+        }
+        return true
+      })
+
       // Ordenar por fecha de creación descendente
-      enrichedInvoices.sort((a, b) => {
+      filteredInvoices.sort((a, b) => {
         if (!a.created_at || !b.created_at) return 0
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
 
-      console.log(`Found ${enrichedInvoices.length} invoices for current month`)
+      console.log(`Found ${filteredInvoices.length} invoices for current month (filtered from ${enrichedInvoices.length})`)
 
       return NextResponse.json({
         success: true,
-        invoices: enrichedInvoices,
-        count: enrichedInvoices.length
+        invoices: filteredInvoices,
+        count: filteredInvoices.length
       })
     }
 
@@ -571,11 +646,38 @@ export async function PUT(request: Request) {
 
     const hasInvoice = monthInvoices.length > 0
 
+    // Check editada status and current file_path from DB
+    let editada = false
+    let currentFilePath: string | null = null
+    if (hasInvoice) {
+      const { data: deadline } = await supabase
+        .from('invoice_payment_deadlines')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('client_type', clientType)
+        .eq('mes_factura', targetMonthStr)
+        .single()
+      editada = deadline?.editada ?? false
+      currentFilePath = deadline?.file_path ?? null
+    }
+
+    // Filter out old versions: only show the file that matches the deadline's file_path
+    let filteredInvoices = monthInvoices
+    if (currentFilePath && monthInvoices.length > 1) {
+      // currentFilePath is like "cliente/123/filename.xml", extract just the filename
+      const currentFileName = currentFilePath.split('/').pop()
+      const matched = monthInvoices.filter(inv => inv.name === currentFileName)
+      if (matched.length > 0) {
+        filteredInvoices = matched
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      hasInvoice,
-      invoiceCount: monthInvoices.length,
-      invoices: monthInvoices.map(inv => ({
+      hasInvoice: filteredInvoices.length > 0,
+      editada,
+      invoiceCount: filteredInvoices.length,
+      invoices: filteredInvoices.map(inv => ({
         name: inv.name,
         created_at: inv.created_at
       }))
@@ -583,6 +685,287 @@ export async function PUT(request: Request) {
 
   } catch (error) {
     console.error('Error en PUT /api/upload-invoice:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor' },
+      { status: 500 }
+    )
+  }
+}
+
+// Helper para parsear cookies
+function parseCookies(cookieHeader: string): Record<string, string> {
+  const cookies: Record<string, string> = {}
+  cookieHeader.split(';').forEach(cookie => {
+    const [name, ...rest] = cookie.trim().split('=')
+    if (name) cookies[name] = rest.join('=')
+  })
+  return cookies
+}
+
+// Editar/reemplazar factura existente
+export async function PATCH(request: NextRequest) {
+  // Rate limiting
+  const rateLimitResponse = await checkUploadRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
+  try {
+    // Verificar sesión de admin
+    const cookieHeader = request.headers.get('cookie')
+    if (!cookieHeader) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+    const cookies = parseCookies(cookieHeader)
+    const devAuth = cookies['dev-auth']
+    const adminId = cookies['dev-admin-id']
+    if (!devAuth || !adminId) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
+    const formData = await request.formData()
+    const invoiceId = formData.get('invoiceId') as string
+    const file = formData.get('file') as File | null
+    const newMesFactura = formData.get('mesFactura') as string | null
+    const newNota = formData.get('nota') as string | null
+    const estadoPago = formData.get('estadoPago') as string || 'mantener'
+    const accionComprobante = formData.get('accionComprobante') as string || 'mantener'
+    const reason = formData.get('reason') as string | null
+    const resetEditada = formData.get('resetEditada') === 'true'
+
+    // Validaciones básicas
+    if (!invoiceId) {
+      return NextResponse.json({ error: 'ID de factura requerido' }, { status: 400 })
+    }
+
+    // Si hay archivo nuevo, el motivo es obligatorio
+    if (file && (!reason || !reason.trim())) {
+      return NextResponse.json(
+        { error: 'El motivo es obligatorio al reemplazar el archivo' },
+        { status: 400 }
+      )
+    }
+
+    // Obtener record actual
+    const { data: currentDeadline, error: fetchError } = await supabase
+      .from('invoice_payment_deadlines')
+      .select('*')
+      .eq('id', invoiceId)
+      .single()
+
+    if (fetchError || !currentDeadline) {
+      return NextResponse.json({ error: 'Factura no encontrada' }, { status: 404 })
+    }
+
+    // Si cambia mes_factura, verificar que no colisione con otra factura
+    if (newMesFactura && newMesFactura !== currentDeadline.mes_factura) {
+      if (!/^\d{4}-\d{2}$/.test(newMesFactura)) {
+        return NextResponse.json({ error: 'Formato de mes inválido (YYYY-MM)' }, { status: 400 })
+      }
+      const { data: existing } = await supabase
+        .from('invoice_payment_deadlines')
+        .select('id')
+        .eq('mes_factura', newMesFactura)
+        .eq('client_id', currentDeadline.client_id)
+        .eq('client_type', currentDeadline.client_type)
+        .neq('id', invoiceId)
+        .single()
+
+      if (existing) {
+        return NextResponse.json(
+          { error: `Ya existe una factura para ${newMesFactura} de este cliente` },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Validar archivo si se proporciona
+    let newFilePath: string | null = null
+    if (file) {
+      // Validar extensión XML
+      const fileExtension = file.name.split('.').pop()?.toLowerCase()
+      if (fileExtension !== 'xml') {
+        return NextResponse.json(
+          { error: 'Solo se permiten archivos XML' },
+          { status: 400 }
+        )
+      }
+
+      // Validar tipo MIME
+      if (!['application/xml', 'text/xml'].includes(file.type)) {
+        return NextResponse.json(
+          { error: 'Tipo de archivo no permitido. Solo XML' },
+          { status: 400 }
+        )
+      }
+
+      // Validar tamaño
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { error: 'El archivo excede el tamaño máximo de 10MB' },
+          { status: 400 }
+        )
+      }
+
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+
+      // Validar firma (magic bytes)
+      if (!validateFileSignature(buffer, 'xml')) {
+        return NextResponse.json(
+          { error: 'El archivo no es un XML válido' },
+          { status: 400 }
+        )
+      }
+
+      // Validar contenido XML
+      const content = buffer.toString('utf-8')
+      if (!validateXmlContent(content)) {
+        return NextResponse.json(
+          { error: 'El archivo XML contiene contenido no permitido' },
+          { status: 400 }
+        )
+      }
+
+      // Upload nuevo archivo
+      const sanitizedName = sanitizeFileName(file.name)
+      const mesForPath = newMesFactura || currentDeadline.mes_factura
+      const timestamp = Date.now()
+      const fileName = `${timestamp}_${mesForPath}_${sanitizedName}`
+      newFilePath = `${currentDeadline.client_type}/${currentDeadline.client_id}/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('electronic-invoices')
+        .upload(newFilePath, buffer, {
+          contentType: file.type,
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        console.error('Error al subir archivo de reemplazo:', uploadError)
+        return NextResponse.json(
+          { error: 'Error al subir el archivo de reemplazo' },
+          { status: 500 }
+        )
+      }
+    }
+
+    // Guardar versión anterior en invoice_versions
+    const { error: versionError } = await supabase
+      .from('invoice_versions')
+      .insert({
+        invoice_deadline_id: invoiceId,
+        file_path: file ? currentDeadline.file_path : null,
+        mes_factura: currentDeadline.mes_factura,
+        estado_pago: currentDeadline.estado_pago,
+        nota: currentDeadline.nota,
+        fecha_emision: currentDeadline.fecha_emision,
+        reason: reason?.trim() || null,
+        replaced_by: adminId
+      })
+
+    if (versionError) {
+      console.error('Error al guardar versión anterior:', versionError)
+      // No bloquear la edición si falla el historial
+    }
+
+    // Preparar actualización del deadline
+    const updateData: Record<string, unknown> = {
+      editada: resetEditada ? false : true
+    }
+
+    if (newFilePath) {
+      updateData.file_path = newFilePath
+      updateData.fecha_emision = new Date().toISOString().split('T')[0]
+    }
+
+    if (newMesFactura && newMesFactura !== currentDeadline.mes_factura) {
+      updateData.mes_factura = newMesFactura
+    }
+
+    if (newNota !== null && newNota !== undefined) {
+      updateData.nota = newNota
+    }
+
+    if (estadoPago === 'pendiente') {
+      updateData.estado_pago = 'pendiente'
+      updateData.fecha_pago = null
+    }
+    // Si es 'mantener', no tocamos estado_pago
+
+    // Actualizar deadline
+    const { error: updateError } = await supabase
+      .from('invoice_payment_deadlines')
+      .update(updateData)
+      .eq('id', invoiceId)
+
+    if (updateError) {
+      console.error('Error al actualizar factura:', updateError)
+      return NextResponse.json(
+        { error: 'Error al actualizar la factura' },
+        { status: 500 }
+      )
+    }
+
+    // Si se debe invalidar comprobante vinculado
+    if (accionComprobante === 'invalidar') {
+      const targetMes = newMesFactura || currentDeadline.mes_factura
+      const { error: receiptError } = await supabase
+        .from('payment_receipts')
+        .update({
+          estado: 'rechazado',
+          nota_revision: 'Factura reemplazada por admin'
+        })
+        .eq('mes_pago', targetMes)
+        .eq('user_id', currentDeadline.client_id)
+        .eq('tipo_cliente', currentDeadline.client_type)
+        .eq('estado', 'pendiente')
+
+      if (receiptError) {
+        console.error('Error al invalidar comprobante:', receiptError)
+        // No bloquear la edición
+      }
+    }
+
+    // Registrar en audit_log
+    const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+                     request.headers.get('x-real-ip') || '127.0.0.1'
+    const userAgent = request.headers.get('user-agent') || ''
+
+    await supabase.from('audit_log').insert({
+      action: 'invoice_edited',
+      actor_id: adminId,
+      actor_type: 'admin',
+      resource_type: 'invoice',
+      resource_id: invoiceId,
+      changes: {
+        before: {
+          file_path: currentDeadline.file_path,
+          mes_factura: currentDeadline.mes_factura,
+          estado_pago: currentDeadline.estado_pago,
+          nota: currentDeadline.nota,
+          editada: currentDeadline.editada
+        },
+        after: {
+          file_path: newFilePath || currentDeadline.file_path,
+          mes_factura: newMesFactura || currentDeadline.mes_factura,
+          estado_pago: estadoPago === 'pendiente' ? 'pendiente' : currentDeadline.estado_pago,
+          nota: newNota !== null ? newNota : currentDeadline.nota,
+          editada: !resetEditada
+        },
+        fileReplaced: !!file,
+        comprobanteInvalidated: accionComprobante === 'invalidar'
+      },
+      ip_address: clientIP,
+      user_agent: userAgent
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Factura editada exitosamente'
+    })
+
+  } catch (error) {
+    console.error('Error en PATCH /api/upload-invoice:', error)
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }

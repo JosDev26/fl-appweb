@@ -177,7 +177,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       dado: data?.dado || false,
-      fecha_visto_bueno: data?.fecha_visto_bueno || null
+      fecha_visto_bueno: data?.fecha_visto_bueno || null,
+      estado: data?.estado || 'pendiente'
     })
 
   } catch (error) {

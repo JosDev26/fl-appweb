@@ -49,7 +49,8 @@ export async function GET(request: NextRequest) {
         monto_declarado: (lastReceipt as any).monto_declarado,
         mes_pago: (lastReceipt as any).mes_pago,
         uploaded_at: (lastReceipt as any).uploaded_at,
-        reviewed_at: (lastReceipt as any).reviewed_at
+        reviewed_at: (lastReceipt as any).reviewed_at,
+        editada: (lastReceipt as any).editada || false
       }
     })
 

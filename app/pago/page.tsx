@@ -200,6 +200,9 @@ export default function PagoPage() {
   // Estados para modal de confirmación de re-aprobación
   const [showReaprobarModal, setShowReaprobarModal] = useState(false)
 
+  // Estado para modal de confirmación de aprobación
+  const [showConfirmarModal, setShowConfirmarModal] = useState(false)
+
   // Cargar fecha simulada global desde API al montar
   useEffect(() => {
     const loadSimulatedDate = async () => {
@@ -294,13 +297,14 @@ export default function PagoPage() {
   const handleDarVistoBueno = async () => {
     if (!user || !datosPago) return
 
-    // Si el estado era rechazado, mostrar modal de confirmación
+    // Si el estado era rechazado, mostrar modal de confirmación de re-aprobación
     if (estadoVistoBueno === 'rechazado') {
       setShowReaprobarModal(true)
       return
     }
 
-    await ejecutarAprobacion()
+    // Mostrar modal de confirmación antes de aprobar
+    setShowConfirmarModal(true)
   }
 
   const ejecutarAprobacion = async () => {
@@ -308,6 +312,7 @@ export default function PagoPage() {
 
     setLoadingVistoBueno(true)
     setShowReaprobarModal(false)
+    setShowConfirmarModal(false)
     
     try {
       // Usar el mes de las horas trabajadas
@@ -1020,7 +1025,7 @@ export default function PagoPage() {
                   onClick={handleDarVistoBueno}
                   disabled={loadingVistoBueno}
                 >
-                  {loadingVistoBueno ? 'Procesando...' : 'Confirmar Horas'}
+                  {loadingVistoBueno ? 'Procesando...' : 'Aprobar Horas del Mes'}
                 </button>
                 <button 
                   className={styles.vistoBuenoButtonCancel}
@@ -1208,6 +1213,76 @@ export default function PagoPage() {
                   disabled={loadingRechazo || motivoRechazo.trim().length < 20}
                 >
                   {loadingRechazo ? 'Enviando...' : 'Enviar Rechazo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de Confirmación para Aprobar Horas */}
+        {showConfirmarModal && datosPago && (
+          <div className={styles.modalOverlay} onClick={() => setShowConfirmarModal(false)}>
+            <div className={styles.modal} onClick={e => e.stopPropagation()}>
+              <div className={styles.modalHeader}>
+                <h2>Aprobar Horas del Mes</h2>
+                <button 
+                  className={styles.modalClose} 
+                  onClick={() => setShowConfirmarModal(false)}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div className={styles.modalBody}>
+                <p className={styles.modalDescription}>
+                  Estás a punto de aprobar las horas del mes <strong>{datosPago.mesActual}</strong>. 
+                  Revisa el resumen antes de continuar:
+                </p>
+
+                <div className={styles.warningBox}>
+                  {datosPago.trabajosPorHora && datosPago.trabajosPorHora.length > 0 && (
+                    <p>
+                      <strong>Horas trabajadas:</strong> {datosPago.totalHorasDecimal.toFixed(2)}h 
+                      en {datosPago.trabajosPorHora.length} {datosPago.trabajosPorHora.length === 1 ? 'caso' : 'casos'}
+                    </p>
+                  )}
+                  <p>
+                    <strong>Total del mes actual:</strong>{' '}
+                    {formatMonto(datosPago.esGrupoPrincipal ? (datosPago.granTotalAPagar ?? null) : datosPago.totalAPagar)}
+                  </p>
+
+                  {mesesPendientes.length > 1 && (
+                    <p>
+                      <strong>Tienes {mesesPendientes.length - 1} {mesesPendientes.length - 1 === 1 ? 'mes atrasado' : 'meses atrasados'}.</strong>{' '}
+                      Al aprobar, se mostrarán las opciones para pagar cada mes individualmente con un comprobante separado.
+                    </p>
+                  )}
+
+                  {datosPago.esGrupoPrincipal && datosPago.empresasDelGrupo && (
+                    <p>
+                      <strong>Grupo de empresas:</strong> Esta aprobación aplica a las {datosPago.empresasDelGrupo.length} empresas de tu grupo.
+                    </p>
+                  )}
+                </div>
+
+                <div className={styles.warningBox} style={{ borderLeftColor: '#e74c3c' }}>
+                  <p><strong>Esta acción no se puede deshacer.</strong></p>
+                </div>
+              </div>
+
+              <div className={styles.modalFooter}>
+                <button 
+                  className={styles.modalButtonCancel}
+                  onClick={() => setShowConfirmarModal(false)}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  className={styles.modalButtonConfirm}
+                  onClick={ejecutarAprobacion}
+                  disabled={loadingVistoBueno}
+                >
+                  {loadingVistoBueno ? 'Procesando...' : 'Aprobar Horas'}
                 </button>
               </div>
             </div>

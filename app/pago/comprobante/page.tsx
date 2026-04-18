@@ -35,6 +35,7 @@ function ComprobanteContent() {
   const [montoPago, setMontoPago] = useState<number | null>(null)
   const [loadingMonto, setLoadingMonto] = useState(true)
   const [invoiceFiles, setInvoiceFiles] = useState<Array<{name: string, created_at: string}>>([])
+  const [invoiceEditada, setInvoiceEditada] = useState(false)
   const [downloadingInvoice, setDownloadingInvoice] = useState<string | null>(null)
   const [simulatedDate, setSimulatedDate] = useState<string | null>(null)
 
@@ -90,6 +91,7 @@ function ComprobanteContent() {
           const invoiceData = await invoiceResponse.json()
           if (invoiceData.hasInvoice && invoiceData.invoices) {
             setInvoiceFiles(invoiceData.invoices)
+            setInvoiceEditada(invoiceData.editada || false)
           }
         }
       } catch (err) {
@@ -373,6 +375,11 @@ function ComprobanteContent() {
             <p className={styles.invoiceSubtitle}>
               Descargue su factura electrónica (si está disponible)
             </p>
+            {invoiceEditada && (
+              <div style={{ background: '#dbeafe', border: '1px solid #93c5fd', padding: '0.5rem 0.75rem', borderRadius: '6px', marginBottom: '0.75rem', fontSize: '0.85rem', color: '#1e40af' }}>
+                Esta factura fue actualizada. Por favor descargue la versión más reciente.
+              </div>
+            )}
             
             <div className={styles.invoicesList}>
               {invoiceFiles.map((invoice, index) => (

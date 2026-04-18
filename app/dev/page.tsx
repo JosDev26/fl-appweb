@@ -40,6 +40,7 @@ interface PaymentReceipt {
   estado: string
   nota_revision: string | null
   uploaded_at: string
+  editada?: boolean
 }
 
 interface ClienteModoPago {
@@ -76,6 +77,12 @@ interface InvoiceFile {
   clientName: string
   clientCedula: string
   path: string
+  deadlineId: string | null
+  estadoPago: 'pendiente' | 'pagado' | null
+  nota: string | null
+  editada: boolean
+  mesFactura: string | null
+  fechaEmision: string | null
 }
 
 interface ClientVistoBueno {
@@ -329,6 +336,35 @@ export default function DevPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<string>('')
   
+  // Estados para edición de facturas
+  const [editingInvoice, setEditingInvoice] = useState<InvoiceFile | null>(null)
+  const [showEditInvoiceModal, setShowEditInvoiceModal] = useState(false)
+  const [showEditConfirmModal, setShowEditConfirmModal] = useState(false)
+  const [editInvoiceFile, setEditInvoiceFile] = useState<File | null>(null)
+  const [editInvoiceMes, setEditInvoiceMes] = useState<string>('')
+  const [editInvoiceNota, setEditInvoiceNota] = useState<string>('')
+  const [editEstadoPago, setEditEstadoPago] = useState<'mantener' | 'pendiente'>('mantener')
+  const [editAccionComprobante, setEditAccionComprobante] = useState<'mantener' | 'invalidar'>('mantener')
+  const [editReason, setEditReason] = useState<string>('')
+  const [editResetEditada, setEditResetEditada] = useState(false)
+  const [editingInvoiceLoading, setEditingInvoiceLoading] = useState(false)
+  const [hasLinkedComprobante, setHasLinkedComprobante] = useState(false)
+  
+  // Estados para edición de comprobantes
+  const [editingComprobante, setEditingComprobante] = useState<PaymentReceipt | null>(null)
+  const [showEditComprobanteModal, setShowEditComprobanteModal] = useState(false)
+  const [showEditComprobanteConfirmModal, setShowEditComprobanteConfirmModal] = useState(false)
+  const [editComprobanteFile, setEditComprobanteFile] = useState<File | null>(null)
+  const [editComprobanteMonto, setEditComprobanteMonto] = useState<string>('')
+  const [editComprobanteMes, setEditComprobanteMes] = useState<string>('')
+  const [editComprobanteNota, setEditComprobanteNota] = useState<string>('')
+  const [editComprobanteEstado, setEditComprobanteEstado] = useState<string>('')
+  const [editComprobanteReason, setEditComprobanteReason] = useState<string>('')
+  const [editComprobanteResetEditada, setEditComprobanteResetEditada] = useState(false)
+  const [editComprobanteLoading, setEditComprobanteLoading] = useState(false)
+  const [duplicateComprobanteInfo, setDuplicateComprobanteInfo] = useState<{id: string, estado: string, mes_pago: string} | null>(null)
+  const [filterEditados, setFilterEditados] = useState(false)
+
   // Estados para códigos de invitación
   const [generatingCode, setGeneratingCode] = useState(false)
   const [newCodeType, setNewCodeType] = useState<'cliente' | 'empresa'>('cliente')
@@ -542,6 +578,113 @@ export default function DevPage() {
     }
   }
 
+  // === Funciones de edición de comprobantes ===
+  const openEditComprobanteModal = (receipt: PaymentReceipt) => {
+    setEditingComprobante(receipt)
+    setEditComprobanteFile(null)
+    setEditComprobanteMonto(receipt.monto_declarado?.toString() || '')
+    setEditComprobanteMes(receipt.mes_pago)
+    setEditComprobanteNota(receipt.nota_revision || '')
+    setEditComprobanteEstado(receipt.estado)
+    setEditComprobanteReason('')
+    setEditComprobanteResetEditada(false)
+    setDuplicateComprobanteInfo(null)
+    setShowEditComprobanteModal(true)
+  }
+
+  const handleEditComprobanteFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase()
+      if (ext && ['pdf', 'jpg', 'jpeg', 'png'].includes(ext)) {
+        setEditComprobanteFile(file)
+      } else {
+        alert('Solo se permiten archivos PDF, JPG o PNG')
+        e.target.value = ''
+      }
+    }
+  }
+
+  const getEditComprobanteSummary = () => {
+    if (!editingComprobante) return []
+    const changes: string[] = []
+    if (editComprobanteFile) {
+      changes.push(`Archivo: se reemplazara con "${editComprobanteFile.name}"`)
+    }
+    if (editComprobanteMes && editComprobanteMes !== editingComprobante.mes_pago) {
+      changes.push(`Mes: ${editingComprobante.mes_pago} -> ${editComprobanteMes}`)
+    }
+    const originalMonto = editingComprobante.monto_declarado?.toString() || ''
+    if (editComprobanteMonto !== originalMonto) {
+      changes.push(`Monto: ₡${editingComprobante.monto_declarado?.toLocaleString() || '0'} -> ₡${parseFloat(editComprobanteMonto || '0').toLocaleString()}`)
+    }
+    if (editComprobanteNota !== (editingComprobante.nota_revision || '')) {
+      changes.push('Nota de revision: actualizada')
+    }
+    if (editComprobanteEstado !== editingComprobante.estado) {
+      changes.push(`Estado: ${editingComprobante.estado} -> ${editComprobanteEstado}`)
+    }
+    if (editComprobanteResetEditada && editingComprobante.editada) {
+      changes.push('Badge "editada": se quitara para el cliente')
+    }
+    return changes
+  }
+
+  const handleEditComprobante = async (reemplazar = false) => {
+    if (!editingComprobante) return
+    setEditComprobanteLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append('receiptId', editingComprobante.id)
+      formData.append('reason', editComprobanteReason.trim())
+      if (editComprobanteFile) {
+        formData.append('file', editComprobanteFile)
+      }
+      if (editComprobanteMes !== editingComprobante.mes_pago) {
+        formData.append('mesPago', editComprobanteMes)
+      }
+      formData.append('notaRevision', editComprobanteNota)
+      formData.append('monto', editComprobanteMonto)
+      if (editComprobanteEstado !== editingComprobante.estado) {
+        formData.append('estado', editComprobanteEstado)
+      }
+      formData.append('resetEditada', editComprobanteResetEditada ? 'true' : 'false')
+      if (reemplazar) {
+        formData.append('reemplazarDuplicado', 'true')
+      }
+
+      const res = await fetch('/api/payment-receipts', {
+        method: 'PUT',
+        body: formData
+      })
+      const data = await res.json()
+
+      if (data.duplicado) {
+        setDuplicateComprobanteInfo(data.duplicadoInfo)
+        setShowEditComprobanteConfirmModal(false)
+        return
+      }
+
+      if (data.success) {
+        const msg = data.warning
+          ? `Comprobante editado. Advertencia: ${data.warning}`
+          : 'Comprobante editado exitosamente'
+        alert(msg)
+        setShowEditComprobanteConfirmModal(false)
+        setShowEditComprobanteModal(false)
+        setEditingComprobante(null)
+        setDuplicateComprobanteInfo(null)
+        await loadPaymentData()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      alert('Error editando comprobante')
+    } finally {
+      setEditComprobanteLoading(false)
+    }
+  }
+
   // Resetear modoPago de todos los clientes y empresas
   const handleResetAllModoPago = async () => {
     if (!confirm('¿Estás seguro de quitar el modoPago a TODOS los clientes y empresas? Esta acción no se puede deshacer.')) {
@@ -627,6 +770,120 @@ export default function DevPage() {
       alert('Error subiendo factura')
     } finally {
       setUploadingInvoice(false)
+    }
+  }
+
+  // EDICIÓN DE FACTURAS
+  const openEditInvoiceModal = async (invoice: InvoiceFile) => {
+    setEditingInvoice(invoice)
+    setEditInvoiceFile(null)
+    setEditInvoiceMes(invoice.mesFactura || '')
+    setEditInvoiceNota(invoice.nota || '')
+    setEditEstadoPago('mantener')
+    setEditAccionComprobante('mantener')
+    setEditReason('')
+    setEditResetEditada(false)
+    setHasLinkedComprobante(false)
+    setShowEditInvoiceModal(true)
+
+    // Verificar si hay comprobante vinculado
+    try {
+      const mes = invoice.mesFactura || ''
+      if (mes) {
+        const res = await fetch('/api/payment-receipts/history', {
+          headers: {
+            'x-user-id': invoice.clientId,
+            'x-user-type': invoice.clientType
+          }
+        })
+        const data = await res.json()
+        if (data.comprobantes) {
+          const linked = data.comprobantes.some(
+            (c: { mes_pago: string; estado: string }) => c.mes_pago === mes && c.estado === 'pendiente'
+          )
+          setHasLinkedComprobante(linked)
+        }
+      }
+    } catch (err) {
+      console.error('Error verificando comprobante vinculado:', err)
+    }
+  }
+
+  const handleEditFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase()
+      if (ext === 'xml') {
+        setEditInvoiceFile(file)
+      } else {
+        alert('Solo se permiten archivos XML')
+        e.target.value = ''
+      }
+    }
+  }
+
+  const getEditChangeSummary = () => {
+    if (!editingInvoice) return []
+    const changes: string[] = []
+    if (editInvoiceFile) {
+      changes.push(`Archivo: se reemplazará con "${editInvoiceFile.name}"`)
+    }
+    if (editInvoiceMes && editInvoiceMes !== editingInvoice.mesFactura) {
+      changes.push(`Mes: ${editingInvoice.mesFactura} → ${editInvoiceMes}`)
+    }
+    if (editInvoiceNota !== (editingInvoice.nota || '')) {
+      changes.push('Nota: actualizada')
+    }
+    if (editEstadoPago === 'pendiente' && editingInvoice.estadoPago !== 'pendiente') {
+      changes.push('Estado: se reseteará a pendiente')
+    }
+    if (hasLinkedComprobante && editAccionComprobante === 'invalidar') {
+      changes.push('Comprobante vinculado: se invalidará (rechazar)')
+    }
+    if (editResetEditada && editingInvoice.editada) {
+      changes.push('Badge "editada": se quitará para el cliente')
+    }
+    return changes
+  }
+
+  const handleEditInvoice = async () => {
+    if (!editingInvoice || !editingInvoice.deadlineId) return
+    setEditingInvoiceLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append('invoiceId', editingInvoice.deadlineId)
+      if (editInvoiceFile) {
+        formData.append('file', editInvoiceFile)
+      }
+      if (editInvoiceMes && editInvoiceMes !== editingInvoice.mesFactura) {
+        formData.append('mesFactura', editInvoiceMes)
+      }
+      formData.append('nota', editInvoiceNota)
+      formData.append('estadoPago', editEstadoPago)
+      formData.append('accionComprobante', editAccionComprobante)
+      if (editReason.trim()) {
+        formData.append('reason', editReason.trim())
+      }
+      formData.append('resetEditada', editResetEditada ? 'true' : 'false')
+
+      const res = await fetch('/api/upload-invoice', {
+        method: 'PATCH',
+        body: formData
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert('Factura editada exitosamente')
+        setShowEditConfirmModal(false)
+        setShowEditInvoiceModal(false)
+        setEditingInvoice(null)
+        await loadMonthInvoices()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      alert('Error editando factura')
+    } finally {
+      setEditingInvoiceLoading(false)
     }
   }
 
@@ -1944,8 +2201,18 @@ export default function DevPage() {
                 className={`${styles.button} ${styles.buttonDanger}`}
                 onClick={handleResetAllModoPago}
               >
-                🔄 Resetear modoPago de todos
+                Resetear modoPago de todos
               </button>
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                <input
+                  type="checkbox"
+                  checked={filterEditados}
+                  onChange={(e) => setFilterEditados(e.target.checked)}
+                />
+                Solo editados
+              </label>
             </div>
             {loadingReceipts ? (
               <div className={styles.loadingState}><div className={styles.spinner}></div><p>Cargando comprobantes...</p></div>
@@ -1965,8 +2232,9 @@ export default function DevPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {receipts.map((receipt) => {
-                      // Buscar el nombre del cliente en clientesModoPago
+                    {receipts
+                      .filter(r => !filterEditados || r.editada)
+                      .map((receipt) => {
                       const cliente = clientesModoPago.find(c => c.id === receipt.user_id && c.tipo === receipt.tipo_cliente)
                       const nombreCliente = cliente ? `${cliente.nombre} (${cliente.cedula})` : receipt.user_id
                       
@@ -1978,7 +2246,7 @@ export default function DevPage() {
                             <small style={{ color: '#999' }}>{receipt.tipo_cliente}</small>
                           </td>
                           <td>{receipt.mes_pago}</td>
-                          <td>₡{receipt.monto_declarado?.toLocaleString()}</td>
+                          <td>{receipt.monto_declarado != null ? `₡${receipt.monto_declarado.toLocaleString()}` : 'N/A'}</td>
                           <td>
                             <span className={`${styles.badge} ${
                               receipt.estado === 'pendiente' ? styles.badgeWarning :
@@ -1986,6 +2254,11 @@ export default function DevPage() {
                             }`}>
                               {receipt.estado}
                             </span>
+                            {receipt.editada && (
+                              <span className={styles.badge} style={{ background: '#dbeafe', color: '#1e40af', marginLeft: '0.25rem', fontSize: '0.7rem' }}>
+                                editada
+                              </span>
+                            )}
                           </td>
                           <td>
                             <button 
@@ -1996,31 +2269,40 @@ export default function DevPage() {
                             </button>
                           </td>
                           <td>
-                          {receipt.estado === 'pendiente' && (
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                              <button 
-                                className={`${styles.button} ${styles.buttonSuccess}`}
-                                onClick={() => handleApproveReceipt(receipt.id)}
-                                disabled={reviewingReceipt === receipt.id}
+                              {receipt.estado === 'pendiente' && (
+                                <>
+                                  <button 
+                                    className={`${styles.button} ${styles.buttonSuccess}`}
+                                    onClick={() => handleApproveReceipt(receipt.id)}
+                                    disabled={reviewingReceipt === receipt.id}
+                                  >
+                                    Aprobar
+                                  </button>
+                                  <button 
+                                    className={`${styles.button} ${styles.buttonDanger}`}
+                                    onClick={() => {
+                                      const nota = prompt('Razón del rechazo:')
+                                      if (nota && nota.trim()) {
+                                        handleRejectReceipt(receipt.id, nota)
+                                      }
+                                    }}
+                                    disabled={reviewingReceipt === receipt.id}
+                                  >
+                                    Rechazar
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                className={styles.button}
+                                onClick={() => openEditComprobanteModal(receipt)}
+                                style={{ border: '1px solid #d1d5db' }}
                               >
-                                Aprobar
-                              </button>
-                              <button 
-                                className={`${styles.button} ${styles.buttonDanger}`}
-                                onClick={() => {
-                                  const nota = prompt('Razón del rechazo:')
-                                  if (nota && nota.trim()) {
-                                    handleRejectReceipt(receipt.id, nota)
-                                  }
-                                }}
-                                disabled={reviewingReceipt === receipt.id}
-                              >
-                                Rechazar
+                                Editar
                               </button>
                             </div>
-                          )}
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
                       )
                     })}
                   </tbody>
@@ -2069,7 +2351,9 @@ export default function DevPage() {
                       <th>Cédula</th>
                       <th>Tipo</th>
                       <th>Archivo</th>
+                      <th>Estado</th>
                       <th>Subida</th>
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2078,8 +2362,36 @@ export default function DevPage() {
                         <td>{invoice.clientName}</td>
                         <td>{invoice.clientCedula}</td>
                         <td><span className={styles.badge}>{invoice.clientType}</span></td>
-                        <td>{invoice.name}</td>
+                        <td>
+                          {invoice.name}
+                          {invoice.editada && (
+                            <span className={styles.badge} style={{ marginLeft: '0.5rem', background: '#dbeafe', color: '#1e40af', fontSize: '0.7rem' }}>
+                              editada
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={styles.badge} style={{
+                            background: invoice.estadoPago === 'pagado' ? '#d1fae5' : '#fef3c7',
+                            color: invoice.estadoPago === 'pagado' ? '#065f46' : '#92400e'
+                          }}>
+                            {invoice.estadoPago === 'pagado' ? 'Pagado' : 'Pendiente'}
+                          </span>
+                        </td>
                         <td>{new Date(invoice.created_at).toLocaleDateString()}</td>
+                        <td>
+                          {invoice.deadlineId ? (
+                            <button
+                              className={styles.buttonSecondary}
+                              style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
+                              onClick={() => openEditInvoiceModal(invoice)}
+                            >
+                              Editar
+                            </button>
+                          ) : (
+                            <span style={{ color: '#999', fontSize: '0.8rem' }}>Sin registro</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -4907,6 +5219,458 @@ export default function DevPage() {
                 disabled={!selectedClient || !selectedFile || !selectedInvoiceMonth || uploadingInvoice}
               >
                 {uploadingInvoice ? 'Subiendo...' : 'Subir Factura'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de edición de comprobante */}
+      {showEditComprobanteModal && editingComprobante && (
+        <div className={styles.modalOverlay} onClick={() => { setShowEditComprobanteModal(false); setEditingComprobante(null); setDuplicateComprobanteInfo(null) }}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Editar Comprobante</h2>
+              <button className={styles.modalClose} onClick={() => { setShowEditComprobanteModal(false); setEditingComprobante(null); setDuplicateComprobanteInfo(null) }}>×</button>
+            </div>
+            <div className={styles.modalBody}>
+              {/* Info actual */}
+              <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <div><strong>Archivo actual:</strong> {editingComprobante.file_name}{' '}
+                  <button className={styles.linkButton} onClick={() => handleViewFile(editingComprobante.file_path)} style={{ fontSize: '0.8rem' }}>
+                    Ver archivo
+                  </button>
+                </div>
+                <div><strong>Mes:</strong> {editingComprobante.mes_pago}</div>
+                <div><strong>Monto:</strong> {editingComprobante.monto_declarado != null ? `₡${editingComprobante.monto_declarado.toLocaleString()}` : 'N/A'}</div>
+                <div><strong>Estado:</strong> {editingComprobante.estado}</div>
+              </div>
+
+              {/* Advertencia si aprobado */}
+              {editingComprobante.estado === 'aprobado' && (
+                <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#92400e' }}>
+                  <strong>Advertencia:</strong> Este comprobante ya fue aprobado. Los ingresos y pagos procesados NO se revertiran.
+                </div>
+              )}
+
+              {/* Duplicado warning */}
+              {duplicateComprobanteInfo && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                  <strong>Conflicto:</strong> Ya existe un comprobante para {duplicateComprobanteInfo.mes_pago} (estado: {duplicateComprobanteInfo.estado}).
+                  <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className={`${styles.button} ${styles.buttonDanger}`}
+                      onClick={() => handleEditComprobante(true)}
+                      disabled={editComprobanteLoading}
+                      style={{ fontSize: '0.8rem' }}
+                    >
+                      Rechazar el otro y continuar
+                    </button>
+                    <button
+                      className={styles.buttonSecondary}
+                      onClick={() => setDuplicateComprobanteInfo(null)}
+                      style={{ fontSize: '0.8rem' }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Checkbox para quitar badge editada */}
+              {editingComprobante.editada && (
+                <div className={styles.formGroup}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editComprobanteResetEditada}
+                      onChange={(e) => setEditComprobanteResetEditada(e.target.checked)}
+                    />
+                    Quitar indicador &quot;Editado&quot; para el cliente
+                  </label>
+                </div>
+              )}
+
+              {/* Reemplazar archivo */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Reemplazar archivo (opcional)</label>
+                <input
+                  type="file"
+                  className={styles.input}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={handleEditComprobanteFileSelect}
+                />
+                {editComprobanteFile && (
+                  <small style={{ color: '#388e3c', display: 'block', marginTop: '4px' }}>
+                    Nuevo: {editComprobanteFile.name} ({(editComprobanteFile.size / 1024).toFixed(0)} KB)
+                  </small>
+                )}
+              </div>
+
+              {/* Monto declarado */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Monto declarado</label>
+                <input
+                  type="number"
+                  className={styles.input}
+                  value={editComprobanteMonto}
+                  onChange={(e) => setEditComprobanteMonto(e.target.value)}
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+              </div>
+
+              {/* Mes de pago */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Mes de Pago</label>
+                <input
+                  type="month"
+                  className={styles.input}
+                  value={editComprobanteMes}
+                  onChange={(e) => setEditComprobanteMes(e.target.value)}
+                />
+              </div>
+
+              {/* Nota de revisión */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Nota de revision</label>
+                <textarea
+                  className={styles.input}
+                  value={editComprobanteNota}
+                  onChange={(e) => setEditComprobanteNota(e.target.value)}
+                  rows={2}
+                  placeholder="Nota visible para el cliente..."
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Estado */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Estado</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="editComprobanteEstado"
+                      checked={editComprobanteEstado === 'pendiente'}
+                      onChange={() => setEditComprobanteEstado('pendiente')}
+                      disabled={editingComprobante.estado === 'aprobado'}
+                    />
+                    Pendiente {editingComprobante.estado === 'aprobado' && '(bloqueado)'}
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="editComprobanteEstado"
+                      checked={editComprobanteEstado === 'aprobado'}
+                      onChange={() => setEditComprobanteEstado('aprobado')}
+                    />
+                    Aprobado
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="editComprobanteEstado"
+                      checked={editComprobanteEstado === 'rechazado'}
+                      onChange={() => setEditComprobanteEstado('rechazado')}
+                    />
+                    Rechazado
+                  </label>
+                </div>
+              </div>
+
+              {/* Motivo del cambio */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Motivo del cambio (obligatorio)</label>
+                <textarea
+                  className={styles.input}
+                  value={editComprobanteReason}
+                  onChange={(e) => setEditComprobanteReason(e.target.value)}
+                  rows={2}
+                  placeholder="Explique por que se edita este comprobante..."
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.buttonSecondary} onClick={() => { setShowEditComprobanteModal(false); setEditingComprobante(null); setDuplicateComprobanteInfo(null) }}>
+                Cancelar
+              </button>
+              <button
+                className={styles.button}
+                onClick={() => {
+                  if (!editComprobanteReason.trim()) {
+                    alert('El motivo del cambio es obligatorio')
+                    return
+                  }
+                  const changes = getEditComprobanteSummary()
+                  if (changes.length === 0 && !editComprobanteResetEditada) {
+                    alert('No hay cambios para guardar')
+                    return
+                  }
+                  setShowEditComprobanteConfirmModal(true)
+                }}
+                disabled={editComprobanteLoading}
+              >
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de edición de comprobante */}
+      {showEditComprobanteConfirmModal && editingComprobante && (
+        <div className={styles.modalOverlay} onClick={() => setShowEditComprobanteConfirmModal(false)} style={{ zIndex: 1001 }}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Confirmar cambios</h2>
+              <button className={styles.modalClose} onClick={() => setShowEditComprobanteConfirmModal(false)}>×</button>
+            </div>
+            <div className={styles.modalBody}>
+              {editingComprobante.estado === 'aprobado' && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                  <strong>Atencion:</strong> Este comprobante esta aprobado. Los ingresos y pagos NO se revertiran.
+                </div>
+              )}
+              <p style={{ marginBottom: '0.75rem', fontWeight: 600 }}>Se aplicaran los siguientes cambios:</p>
+              <ul style={{ margin: 0, padding: '0 0 0 1.25rem', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                {getEditComprobanteSummary().map((change, i) => (
+                  <li key={i}>{change}</li>
+                ))}
+                {editComprobanteResetEditada && editingComprobante.editada && !getEditComprobanteSummary().some(c => c.includes('Badge')) && (
+                  <li>Badge &quot;editada&quot;: se quitara para el cliente</li>
+                )}
+              </ul>
+              <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#6b7280' }}>
+                Motivo: {editComprobanteReason}
+              </p>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.buttonSecondary} onClick={() => setShowEditComprobanteConfirmModal(false)}>
+                Volver
+              </button>
+              <button
+                className={styles.button}
+                onClick={() => handleEditComprobante()}
+                disabled={editComprobanteLoading}
+              >
+                {editComprobanteLoading ? 'Guardando...' : 'Confirmar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de edición de factura */}
+      {showEditInvoiceModal && editingInvoice && (
+        <div className={styles.modalOverlay} onClick={() => { setShowEditInvoiceModal(false); setEditingInvoice(null) }}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Editar Factura — {editingInvoice.clientName}</h2>
+              <button className={styles.modalClose} onClick={() => { setShowEditInvoiceModal(false); setEditingInvoice(null) }}>×</button>
+            </div>
+            <div className={styles.modalBody}>
+              {/* Info actual */}
+              <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem' }}>
+                <div><strong>Archivo actual:</strong> {editingInvoice.name}</div>
+                <div><strong>Mes:</strong> {editingInvoice.mesFactura}</div>
+                <div><strong>Estado:</strong> {editingInvoice.estadoPago || 'N/A'}</div>
+              </div>
+
+              {/* Advertencia si pagada */}
+              {editingInvoice.estadoPago === 'pagado' && (
+                <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#92400e' }}>
+                  <strong>Advertencia:</strong> Esta factura ya está marcada como pagada.
+                </div>
+              )}
+
+              {/* Checkbox para quitar badge editada */}
+              {editingInvoice.editada && (
+                <div className={styles.formGroup}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editResetEditada}
+                      onChange={(e) => setEditResetEditada(e.target.checked)}
+                    />
+                    Quitar indicador &quot;Factura actualizada&quot; para el cliente
+                  </label>
+                </div>
+              )}
+
+              {/* Reemplazar archivo */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Reemplazar archivo XML (opcional)</label>
+                <input
+                  type="file"
+                  className={styles.input}
+                  accept=".xml"
+                  onChange={handleEditFileSelect}
+                />
+                {editInvoiceFile && (
+                  <small style={{ color: '#388e3c', display: 'block', marginTop: '4px' }}>
+                    Nuevo: {editInvoiceFile.name} ({(editInvoiceFile.size / 1024).toFixed(0)} KB)
+                  </small>
+                )}
+              </div>
+
+              {/* Mes de facturación */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Mes de Facturación</label>
+                <input
+                  type="month"
+                  className={styles.input}
+                  value={editInvoiceMes}
+                  onChange={(e) => setEditInvoiceMes(e.target.value)}
+                />
+              </div>
+
+              {/* Nota */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Nota</label>
+                <textarea
+                  className={styles.input}
+                  value={editInvoiceNota}
+                  onChange={(e) => setEditInvoiceNota(e.target.value)}
+                  rows={3}
+                  placeholder="Nota opcional..."
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Motivo del cambio */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  Motivo del cambio {editInvoiceFile ? '(obligatorio)' : '(opcional)'}
+                </label>
+                <textarea
+                  className={styles.input}
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  rows={2}
+                  placeholder={editInvoiceFile ? 'Explique por qué se reemplaza el archivo...' : 'Motivo opcional...'}
+                  style={{ resize: 'vertical' }}
+                />
+              </div>
+
+              {/* Estado de pago */}
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Estado de pago</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="editEstadoPago"
+                      checked={editEstadoPago === 'mantener'}
+                      onChange={() => setEditEstadoPago('mantener')}
+                    />
+                    Mantener actual ({editingInvoice.estadoPago || 'pendiente'})
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="editEstadoPago"
+                      checked={editEstadoPago === 'pendiente'}
+                      onChange={() => setEditEstadoPago('pendiente')}
+                    />
+                    Resetear a pendiente
+                  </label>
+                </div>
+              </div>
+
+              {/* Comprobante vinculado */}
+              {hasLinkedComprobante && (
+                <div className={styles.formGroup}>
+                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', marginBottom: '0.5rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                    Existe un comprobante de pago pendiente vinculado a esta factura.
+                  </div>
+                  <label className={styles.formLabel}>Acción sobre comprobante</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="editAccionComprobante"
+                        checked={editAccionComprobante === 'mantener'}
+                        onChange={() => setEditAccionComprobante('mantener')}
+                      />
+                      Mantener comprobante
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="radio"
+                        name="editAccionComprobante"
+                        checked={editAccionComprobante === 'invalidar'}
+                        onChange={() => setEditAccionComprobante('invalidar')}
+                      />
+                      Invalidar comprobante (rechazar)
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.buttonSecondary} onClick={() => { setShowEditInvoiceModal(false); setEditingInvoice(null) }}>
+                Cancelar
+              </button>
+              <button
+                className={styles.button}
+                onClick={() => {
+                  if (editInvoiceFile && !editReason.trim()) {
+                    alert('El motivo es obligatorio al reemplazar el archivo')
+                    return
+                  }
+                  const changes = getEditChangeSummary()
+                  if (changes.length === 0 && !editResetEditada) {
+                    alert('No hay cambios para guardar')
+                    return
+                  }
+                  setShowEditConfirmModal(true)
+                }}
+                disabled={editingInvoiceLoading}
+              >
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de edición */}
+      {showEditConfirmModal && editingInvoice && (
+        <div className={styles.modalOverlay} onClick={() => setShowEditConfirmModal(false)} style={{ zIndex: 1001 }}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Confirmar cambios</h2>
+              <button className={styles.modalClose} onClick={() => setShowEditConfirmModal(false)}>×</button>
+            </div>
+            <div className={styles.modalBody}>
+              {editingInvoice.estadoPago === 'pagado' && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                  <strong>Atención:</strong> Esta factura está marcada como pagada. Confirme que desea editarla.
+                </div>
+              )}
+              <p style={{ marginBottom: '0.75rem', fontWeight: 600 }}>Se aplicarán los siguientes cambios:</p>
+              <ul style={{ margin: 0, padding: '0 0 0 1.25rem', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                {getEditChangeSummary().map((change, i) => (
+                  <li key={i}>{change}</li>
+                ))}
+                {editResetEditada && editingInvoice.editada && !getEditChangeSummary().some(c => c.includes('Badge')) && (
+                  <li>Badge &quot;editada&quot;: se quitará para el cliente</li>
+                )}
+              </ul>
+            </div>
+            <div className={styles.modalFooter}>
+              <button className={styles.buttonSecondary} onClick={() => setShowEditConfirmModal(false)}>
+                Volver
+              </button>
+              <button
+                className={styles.button}
+                onClick={handleEditInvoice}
+                disabled={editingInvoiceLoading}
+              >
+                {editingInvoiceLoading ? 'Guardando...' : 'Confirmar cambios'}
               </button>
             </div>
           </div>
