@@ -1573,7 +1573,7 @@ export async function DELETE(request: NextRequest) {
       const fechaFin = new Date(year, month, 0).toISOString().slice(0, 10) // último día del mes
 
       const { error: ingresoError } = await supabase
-        .from('ingresos')
+        .from('ingresos' as any)
         .delete()
         .eq('id_cliente', userId)
         .eq('tipo_cliente', tipoCliente)
@@ -1589,7 +1589,7 @@ export async function DELETE(request: NextRequest) {
     // Revertir factura del mes a pendiente si se solicita
     if (revertirFactura && mesPago) {
       const { error: facturaError } = await supabase
-        .from('invoice_payment_deadlines')
+        .from('invoice_payment_deadlines' as any)
         .update({ estado_pago: 'pendiente', fecha_pago: null })
         .eq('client_id', userId)
         .eq('client_type', tipoCliente)
