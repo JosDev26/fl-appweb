@@ -1607,7 +1607,7 @@ export async function DELETE(request: NextRequest) {
                      request.headers.get('x-real-ip') || '127.0.0.1'
     const userAgent = request.headers.get('user-agent') || ''
 
-    await supabase.from('audit_log').insert({
+    await supabase.from('audit_log' as any).insert({
       action: 'comprobante_deleted',
       actor_id: authResult.adminId,
       actor_type: 'admin',
