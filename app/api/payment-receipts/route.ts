@@ -1481,3 +1481,165 @@ export async function PUT(request: NextRequest) {
     )
   }
 }
+
+/**
+ * DELETE - Eliminar un comprobante de pago
+ * Protected: Requires dev admin authentication
+ */
+export async function DELETE(request: NextRequest) {
+  const rateLimitResponse = await checkStandardRateLimit(request)
+  if (rateLimitResponse) return rateLimitResponse
+
+  const authResult = await verifyDevAdminSession(request)
+  if (!authResult.valid) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+  }
+
+  try {
+    const { searchParams } = new URL(request.url)
+    const receiptId = searchParams.get('receiptId')
+    const filePath = searchParams.get('filePath')
+    const reactivarModoPago = searchParams.get('reactivarModoPago') === 'true'
+    const eliminarIngreso = searchParams.get('eliminarIngreso') === 'true'
+    const revertirFactura = searchParams.get('revertirFactura') === 'true'
+
+    if (!receiptId || !isValidUUID(receiptId)) {
+      return NextResponse.json({ error: 'ID de comprobante inválido' }, { status: 400 })
+    }
+
+    // Obtener el registro actual
+    const { data: receipt, error: fetchError } = await supabase
+      .from('payment_receipts' as any)
+      .select('*')
+      .eq('id', receiptId)
+      .single()
+
+    if (fetchError || !receipt) {
+      return NextResponse.json({ error: 'Comprobante no encontrado' }, { status: 404 })
+    }
+
+    // Eliminar archivo del storage primero; si falla, abortar sin tocar BD
+    const targetFilePath = filePath || (receipt as any).file_path
+    if (targetFilePath) {
+      const { error: storageError } = await supabase.storage
+        .from('payment-receipts')
+        .remove([targetFilePath])
+
+      if (storageError) {
+        console.error('Error al eliminar archivo del comprobante:', storageError)
+        return NextResponse.json(
+          { error: 'Error al eliminar el archivo del storage' },
+          { status: 500 }
+        )
+      }
+    }
+
+    // Eliminar registro en BD (comprobante_versions se borra por CASCADE)
+    const { error: deleteError } = await supabase
+      .from('payment_receipts' as any)
+      .delete()
+      .eq('id', receiptId)
+
+    if (deleteError) {
+      console.error('Error al eliminar comprobante:', deleteError)
+      return NextResponse.json(
+        { error: 'Error al eliminar el registro del comprobante' },
+        { status: 500 }
+      )
+    }
+
+    const userId = (receipt as any).user_id
+    const tipoCliente = (receipt as any).tipo_cliente
+    const mesPago = (receipt as any).mes_pago
+
+    // Reactivar modoPago si se solicita
+    if (reactivarModoPago) {
+      const tabla = tipoCliente === 'empresa' ? 'empresas' : 'usuarios'
+      const { error: modoPagoError } = await supabase
+        .from(tabla)
+        .update({ modoPago: true })
+        .eq('id', userId)
+
+      if (modoPagoError) {
+        console.error('Error al reactivar modoPago:', modoPagoError)
+        // No bloquear la respuesta
+      }
+    }
+
+    // Eliminar ingreso vinculado si se solicita
+    if (eliminarIngreso && mesPago) {
+      const [year, month] = mesPago.split('-').map(Number)
+      const fechaInicio = `${year}-${String(month).padStart(2, '0')}-01`
+      const fechaFin = new Date(year, month, 0).toISOString().slice(0, 10) // último día del mes
+
+      const { error: ingresoError } = await supabase
+        .from('ingresos')
+        .delete()
+        .eq('id_cliente', userId)
+        .eq('tipo_cliente', tipoCliente)
+        .gte('fecha_pago', fechaInicio)
+        .lte('fecha_pago', fechaFin)
+
+      if (ingresoError) {
+        console.error('Error al eliminar ingreso:', ingresoError)
+        // No bloquear la respuesta
+      }
+    }
+
+    // Revertir factura del mes a pendiente si se solicita
+    if (revertirFactura && mesPago) {
+      const { error: facturaError } = await supabase
+        .from('invoice_payment_deadlines')
+        .update({ estado_pago: 'pendiente', fecha_pago: null })
+        .eq('client_id', userId)
+        .eq('client_type', tipoCliente)
+        .eq('mes_factura', mesPago)
+        .eq('estado_pago', 'pagado')
+
+      if (facturaError) {
+        console.error('Error al revertir factura a pendiente:', facturaError)
+        // No bloquear la respuesta
+      }
+    }
+
+    // Registrar en audit_log
+    const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+                     request.headers.get('x-real-ip') || '127.0.0.1'
+    const userAgent = request.headers.get('user-agent') || ''
+
+    await supabase.from('audit_log').insert({
+      action: 'comprobante_deleted',
+      actor_id: authResult.adminId,
+      actor_type: 'admin',
+      resource_type: 'payment_receipt',
+      resource_id: receiptId,
+      changes: {
+        deleted: {
+          user_id: userId,
+          tipo_cliente: tipoCliente,
+          mes_pago: mesPago,
+          estado: (receipt as any).estado,
+          monto_declarado: (receipt as any).monto_declarado,
+          file_path: targetFilePath
+        },
+        reactivarModoPago,
+        eliminarIngreso,
+        revertirFactura
+      },
+      ip_address: clientIP,
+      user_agent: userAgent
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Comprobante eliminado exitosamente'
+    })
+
+  } catch (error) {
+    console.error('Error en DELETE /api/payment-receipts:', error)
+    return NextResponse.json(
+      { error: 'Error interno del servidor' },
+      { status: 500 }
+    )
+  }
+}

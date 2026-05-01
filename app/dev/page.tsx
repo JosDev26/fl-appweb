@@ -343,12 +343,16 @@ export default function DevPage() {
   const [editInvoiceFile, setEditInvoiceFile] = useState<File | null>(null)
   const [editInvoiceMes, setEditInvoiceMes] = useState<string>('')
   const [editInvoiceNota, setEditInvoiceNota] = useState<string>('')
-  const [editEstadoPago, setEditEstadoPago] = useState<'mantener' | 'pendiente'>('mantener')
+  const [editEstadoPago, setEditEstadoPago] = useState<'mantener' | 'pendiente' | 'pagado'>('mantener')
   const [editAccionComprobante, setEditAccionComprobante] = useState<'mantener' | 'invalidar'>('mantener')
   const [editReason, setEditReason] = useState<string>('')
   const [editResetEditada, setEditResetEditada] = useState(false)
   const [editingInvoiceLoading, setEditingInvoiceLoading] = useState(false)
   const [hasLinkedComprobante, setHasLinkedComprobante] = useState(false)
+  const [editFechaPago, setEditFechaPago] = useState<string>('')
+  const [editAprobarComprobante, setEditAprobarComprobante] = useState(false)
+  const [showDeleteInvoiceModal, setShowDeleteInvoiceModal] = useState(false)
+  const [deletingInvoiceLoading, setDeletingInvoiceLoading] = useState(false)
   
   // Estados para edición de comprobantes
   const [editingComprobante, setEditingComprobante] = useState<PaymentReceipt | null>(null)
@@ -364,6 +368,12 @@ export default function DevPage() {
   const [editComprobanteLoading, setEditComprobanteLoading] = useState(false)
   const [duplicateComprobanteInfo, setDuplicateComprobanteInfo] = useState<{id: string, estado: string, mes_pago: string} | null>(null)
   const [filterEditados, setFilterEditados] = useState(false)
+  const [showDeleteComprobanteModal, setShowDeleteComprobanteModal] = useState(false)
+  const [deletingComprobanteLoading, setDeletingComprobanteLoading] = useState(false)
+  const [deleteReactivarModoPago, setDeleteReactivarModoPago] = useState(false)
+  const [deleteEliminarIngreso, setDeleteEliminarIngreso] = useState(false)
+  const [deleteRevertirFactura, setDeleteRevertirFactura] = useState(false)
+  const [deleteComprobanteClientName, setDeleteComprobanteClientName] = useState<string>('')
 
   // Estados para códigos de invitación
   const [generatingCode, setGeneratingCode] = useState(false)
@@ -592,6 +602,57 @@ export default function DevPage() {
     setShowEditComprobanteModal(true)
   }
 
+  const openDeleteComprobanteModal = async (receipt: PaymentReceipt) => {
+    setDeleteReactivarModoPago(false)
+    setDeleteEliminarIngreso(false)
+    setDeleteRevertirFactura(false)
+    // Buscar nombre en clientesModoPago primero
+    const found = clientesModoPago.find(c => c.id === receipt.user_id && c.tipo === receipt.tipo_cliente)
+    if (found) {
+      setDeleteComprobanteClientName(`${found.nombre} (${found.cedula})`)
+    } else {
+      // Fallback: buscar via API
+      try {
+        const res = await fetch(`/api/client?tipo=${receipt.tipo_cliente}`)
+        const data = await res.json()
+        const client = (data.clients || []).find((c: { id: string }) => c.id === receipt.user_id)
+        setDeleteComprobanteClientName(client ? `${client.nombre} (${client.cedula})` : receipt.user_id)
+      } catch {
+        setDeleteComprobanteClientName(receipt.user_id)
+      }
+    }
+    setShowDeleteComprobanteModal(true)
+  }
+
+  const handleDeleteComprobante = async () => {
+    if (!editingComprobante) return
+    setDeletingComprobanteLoading(true)
+    try {
+      const params = new URLSearchParams({ receiptId: editingComprobante.id })
+      if (editingComprobante.file_path) params.set('filePath', editingComprobante.file_path)
+      params.set('reactivarModoPago', deleteReactivarModoPago ? 'true' : 'false')
+      params.set('eliminarIngreso', deleteEliminarIngreso ? 'true' : 'false')
+      params.set('revertirFactura', deleteRevertirFactura ? 'true' : 'false')
+
+      const res = await fetch(`/api/payment-receipts?${params.toString()}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (data.success) {
+        alert('Comprobante eliminado exitosamente')
+        setShowDeleteComprobanteModal(false)
+        setShowEditComprobanteModal(false)
+        setEditingComprobante(null)
+        setDuplicateComprobanteInfo(null)
+        await loadPaymentData()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch {
+      alert('Error eliminando comprobante')
+    } finally {
+      setDeletingComprobanteLoading(false)
+    }
+  }
+
   const handleEditComprobanteFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -784,6 +845,8 @@ export default function DevPage() {
     setEditReason('')
     setEditResetEditada(false)
     setHasLinkedComprobante(false)
+    setEditFechaPago(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Costa_Rica' }).format(new Date()))
+    setEditAprobarComprobante(false)
     setShowEditInvoiceModal(true)
 
     // Verificar si hay comprobante vinculado
@@ -837,6 +900,12 @@ export default function DevPage() {
     if (editEstadoPago === 'pendiente' && editingInvoice.estadoPago !== 'pendiente') {
       changes.push('Estado: se reseteará a pendiente')
     }
+    if (editEstadoPago === 'pagado' && editingInvoice.estadoPago !== 'pagado') {
+      changes.push(`Estado: se marcará como pagado (fecha: ${editFechaPago})`)
+    }
+    if (editEstadoPago === 'pagado' && editAprobarComprobante && hasLinkedComprobante) {
+      changes.push('Comprobante vinculado: se aprobará automáticamente')
+    }
     if (hasLinkedComprobante && editAccionComprobante === 'invalidar') {
       changes.push('Comprobante vinculado: se invalidará (rechazar)')
     }
@@ -860,6 +929,10 @@ export default function DevPage() {
       }
       formData.append('nota', editInvoiceNota)
       formData.append('estadoPago', editEstadoPago)
+      if (editEstadoPago === 'pagado') {
+        formData.append('fechaPago', editFechaPago)
+        formData.append('aprobarComprobante', editAprobarComprobante ? 'true' : 'false')
+      }
       formData.append('accionComprobante', editAccionComprobante)
       if (editReason.trim()) {
         formData.append('reason', editReason.trim())
@@ -884,6 +957,34 @@ export default function DevPage() {
       alert('Error editando factura')
     } finally {
       setEditingInvoiceLoading(false)
+    }
+  }
+
+  const handleDeleteInvoice = async () => {
+    if (!editingInvoice?.deadlineId) return
+    setDeletingInvoiceLoading(true)
+    try {
+      const params = new URLSearchParams({ deadlineId: editingInvoice.deadlineId })
+      if (editingInvoice.path) {
+        params.set('filePath', editingInvoice.path)
+      }
+      const res = await fetch(`/api/upload-invoice?${params.toString()}`, {
+        method: 'DELETE'
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert('Factura eliminada exitosamente')
+        setShowDeleteInvoiceModal(false)
+        setShowEditInvoiceModal(false)
+        setEditingInvoice(null)
+        await loadMonthInvoices()
+      } else {
+        alert('Error: ' + data.error)
+      }
+    } catch (error) {
+      alert('Error eliminando factura')
+    } finally {
+      setDeletingInvoiceLoading(false)
     }
   }
 
@@ -2334,6 +2435,9 @@ export default function DevPage() {
                   setSelectedInvoiceMonth(e.target.value)
                 }}
               />
+              <p style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: '0.3rem', marginBottom: '0' }}>
+                Este es el <strong>mes de facturación</strong> (período trabajado), no la fecha de subida. Por ejemplo, febrero corresponde al trabajo de febrero, que el cliente paga en marzo.
+              </p>
               <button className={styles.button} onClick={loadMonthInvoices} style={{ marginTop: '0.75rem' }}>
                 Buscar Facturas
               </button>
@@ -5393,27 +5497,110 @@ export default function DevPage() {
                 />
               </div>
             </div>
+            <div className={styles.modalFooter} style={{ justifyContent: 'space-between' }}>
+              <button
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', cursor: 'pointer', fontWeight: 500 }}
+                onClick={() => openDeleteComprobanteModal(editingComprobante!)}
+                disabled={editComprobanteLoading}
+              >
+                Eliminar comprobante
+              </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className={styles.buttonSecondary} onClick={() => { setShowEditComprobanteModal(false); setEditingComprobante(null); setDuplicateComprobanteInfo(null) }}>
+                  Cancelar
+                </button>
+                <button
+                  className={styles.button}
+                  onClick={() => {
+                    if (!editComprobanteReason.trim()) {
+                      alert('El motivo del cambio es obligatorio')
+                      return
+                    }
+                    const changes = getEditComprobanteSummary()
+                    if (changes.length === 0 && !editComprobanteResetEditada) {
+                      alert('No hay cambios para guardar')
+                      return
+                    }
+                    setShowEditComprobanteConfirmModal(true)
+                  }}
+                  disabled={editComprobanteLoading}
+                >
+                  Guardar cambios
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de eliminación de comprobante */}
+      {showDeleteComprobanteModal && editingComprobante && (
+        <div className={styles.modalOverlay} onClick={() => setShowDeleteComprobanteModal(false)} style={{ zIndex: 1002 }}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Eliminar comprobante</h2>
+              <button className={styles.modalClose} onClick={() => setShowDeleteComprobanteModal(false)}>×</button>
+            </div>
+            <div className={styles.modalBody}>
+              <p style={{ marginBottom: '1rem' }}>
+                <strong>{deleteComprobanteClientName}</strong> — {editingComprobante.mes_pago}
+              </p>
+              {editingComprobante.estado === 'rechazado' && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fbbf24', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#92400e' }}>
+                  <strong>Nota:</strong> Este comprobante ya fue rechazado.
+                </div>
+              )}
+              {editingComprobante.estado === 'aprobado' && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#991b1b' }}>
+                  <strong>Advertencia:</strong> Este comprobante está aprobado. Al eliminarlo, el pago quedará sin comprobante registrado.
+                </div>
+              )}
+              {editingComprobante.estado === 'aprobado' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={deleteReactivarModoPago}
+                      onChange={(e) => setDeleteReactivarModoPago(e.target.checked)}
+                    />
+                    Reactivar modoPago del cliente
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={deleteEliminarIngreso}
+                      onChange={(e) => setDeleteEliminarIngreso(e.target.checked)}
+                    />
+                    Eliminar también el ingreso registrado del mes
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={deleteRevertirFactura}
+                      onChange={(e) => setDeleteRevertirFactura(e.target.checked)}
+                    />
+                    Revertir factura del mes a pendiente (si estaba pagada)
+                  </label>
+                </div>
+              )}
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', color: '#991b1b' }}>
+                <strong>Esta acción no se puede deshacer.</strong> Se eliminará el comprobante y su historial de ediciones.
+              </div>
+            </div>
             <div className={styles.modalFooter}>
-              <button className={styles.buttonSecondary} onClick={() => { setShowEditComprobanteModal(false); setEditingComprobante(null); setDuplicateComprobanteInfo(null) }}>
+              <button
+                className={styles.buttonSecondary}
+                onClick={() => setShowDeleteComprobanteModal(false)}
+                disabled={deletingComprobanteLoading}
+              >
                 Cancelar
               </button>
               <button
-                className={styles.button}
-                onClick={() => {
-                  if (!editComprobanteReason.trim()) {
-                    alert('El motivo del cambio es obligatorio')
-                    return
-                  }
-                  const changes = getEditComprobanteSummary()
-                  if (changes.length === 0 && !editComprobanteResetEditada) {
-                    alert('No hay cambios para guardar')
-                    return
-                  }
-                  setShowEditComprobanteConfirmModal(true)
-                }}
-                disabled={editComprobanteLoading}
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', cursor: deletingComprobanteLoading ? 'not-allowed' : 'pointer', fontWeight: 500, opacity: deletingComprobanteLoading ? 0.7 : 1 }}
+                onClick={handleDeleteComprobante}
+                disabled={deletingComprobanteLoading}
               >
-                Guardar cambios
+                {deletingComprobanteLoading ? 'Eliminando...' : 'Eliminar'}
               </button>
             </div>
           </div>
@@ -5576,8 +5763,42 @@ export default function DevPage() {
                       onChange={() => setEditEstadoPago('pendiente')}
                     />
                     Resetear a pendiente
+                    {editEstadoPago === 'pendiente' && editingInvoice.estadoPago === 'pagado' && (
+                      <span style={{ fontSize: '0.78rem', color: '#b45309', marginLeft: '0.25rem' }}>(⚠ factura actualmente pagada)</span>
+                    )}
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="editEstadoPago"
+                      checked={editEstadoPago === 'pagado'}
+                      onChange={() => setEditEstadoPago('pagado')}
+                    />
+                    Marcar como pagado
                   </label>
                 </div>
+                {editEstadoPago === 'pagado' && (
+                  <div style={{ marginTop: '0.6rem' }}>
+                    <label className={styles.formLabel} style={{ fontSize: '0.83rem' }}>Fecha de pago</label>
+                    <input
+                      type="date"
+                      className={styles.input}
+                      value={editFechaPago}
+                      onChange={(e) => setEditFechaPago(e.target.value)}
+                      style={{ marginTop: '0.25rem' }}
+                    />
+                    {hasLinkedComprobante && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={editAprobarComprobante}
+                          onChange={(e) => setEditAprobarComprobante(e.target.checked)}
+                        />
+                        Aprobar también el comprobante vinculado
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Comprobante vinculado */}
@@ -5610,28 +5831,37 @@ export default function DevPage() {
                 </div>
               )}
             </div>
-            <div className={styles.modalFooter}>
-              <button className={styles.buttonSecondary} onClick={() => { setShowEditInvoiceModal(false); setEditingInvoice(null) }}>
-                Cancelar
-              </button>
+            <div className={styles.modalFooter} style={{ justifyContent: 'space-between' }}>
               <button
-                className={styles.button}
-                onClick={() => {
-                  if (editInvoiceFile && !editReason.trim()) {
-                    alert('El motivo es obligatorio al reemplazar el archivo')
-                    return
-                  }
-                  const changes = getEditChangeSummary()
-                  if (changes.length === 0 && !editResetEditada) {
-                    alert('No hay cambios para guardar')
-                    return
-                  }
-                  setShowEditConfirmModal(true)
-                }}
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', cursor: 'pointer', fontWeight: 500 }}
+                onClick={() => setShowDeleteInvoiceModal(true)}
                 disabled={editingInvoiceLoading}
               >
-                Guardar cambios
+                Eliminar factura
               </button>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className={styles.buttonSecondary} onClick={() => { setShowEditInvoiceModal(false); setEditingInvoice(null) }}>
+                  Cancelar
+                </button>
+                <button
+                  className={styles.button}
+                  onClick={() => {
+                    if (editInvoiceFile && !editReason.trim()) {
+                      alert('El motivo es obligatorio al reemplazar el archivo')
+                      return
+                    }
+                    const changes = getEditChangeSummary()
+                    if (changes.length === 0 && !editResetEditada) {
+                      alert('No hay cambios para guardar')
+                      return
+                    }
+                    setShowEditConfirmModal(true)
+                  }}
+                  disabled={editingInvoiceLoading}
+                >
+                  Guardar cambios
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -5671,6 +5901,47 @@ export default function DevPage() {
                 disabled={editingInvoiceLoading}
               >
                 {editingInvoiceLoading ? 'Guardando...' : 'Confirmar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de eliminación */}
+      {showDeleteInvoiceModal && editingInvoice && (
+        <div className={styles.modalOverlay} onClick={() => setShowDeleteInvoiceModal(false)} style={{ zIndex: 1002 }}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Eliminar factura</h2>
+              <button className={styles.modalClose} onClick={() => setShowDeleteInvoiceModal(false)}>×</button>
+            </div>
+            <div className={styles.modalBody}>
+              <p style={{ marginBottom: '1rem' }}>
+                <strong>{editingInvoice.clientName}</strong> — {editingInvoice.mesFactura || 'Sin mes'}
+              </p>
+              {hasLinkedComprobante && (
+                <div style={{ background: '#fff7ed', border: '1px solid #fdba74', padding: '0.75rem', borderRadius: '6px', marginBottom: '1rem', fontSize: '0.85rem', color: '#9a3412' }}>
+                  <strong>Advertencia:</strong> Esta factura tiene un comprobante de pago vinculado pendiente. Al eliminarla, el comprobante quedará sin factura asociada.
+                </div>
+              )}
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', color: '#991b1b' }}>
+                <strong>Esta acción no se puede deshacer.</strong> Se eliminará el registro de la factura y su historial de ediciones.
+              </div>
+            </div>
+            <div className={styles.modalFooter}>
+              <button
+                className={styles.buttonSecondary}
+                onClick={() => setShowDeleteInvoiceModal(false)}
+                disabled={deletingInvoiceLoading}
+              >
+                Cancelar
+              </button>
+              <button
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', cursor: deletingInvoiceLoading ? 'not-allowed' : 'pointer', fontWeight: 500, opacity: deletingInvoiceLoading ? 0.7 : 1 }}
+                onClick={handleDeleteInvoice}
+                disabled={deletingInvoiceLoading}
+              >
+                {deletingInvoiceLoading ? 'Eliminando...' : 'Eliminar'}
               </button>
             </div>
           </div>

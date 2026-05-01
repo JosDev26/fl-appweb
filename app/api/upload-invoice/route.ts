@@ -549,23 +549,41 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
+    const deadlineId = searchParams.get('deadlineId')
     const filePath = searchParams.get('filePath')
 
-    if (!filePath) {
+    if (!deadlineId) {
       return NextResponse.json(
-        { error: 'Ruta del archivo no proporcionada' },
+        { error: 'ID de factura no proporcionado' },
         { status: 400 }
       )
     }
 
-    const { error } = await supabase.storage
-      .from('electronic-invoices')
-      .remove([filePath])
+    // Si hay archivo en storage, eliminarlo primero; si falla, abortar sin tocar BD
+    if (filePath) {
+      const { error: storageError } = await supabase.storage
+        .from('electronic-invoices')
+        .remove([filePath])
 
-    if (error) {
-      console.error('Error al eliminar factura:', error)
+      if (storageError) {
+        console.error('Error al eliminar archivo de factura:', storageError)
+        return NextResponse.json(
+          { error: 'Error al eliminar el archivo del storage' },
+          { status: 500 }
+        )
+      }
+    }
+
+    // Eliminar registro en BD (invoice_versions se borra por CASCADE)
+    const { error: dbError } = await supabase
+      .from('invoice_payment_deadlines')
+      .delete()
+      .eq('id', deadlineId)
+
+    if (dbError) {
+      console.error('Error al eliminar registro de factura:', dbError)
       return NextResponse.json(
-        { error: 'Error al eliminar el archivo' },
+        { error: 'Error al eliminar el registro de la factura' },
         { status: 500 }
       )
     }
@@ -727,6 +745,8 @@ export async function PATCH(request: NextRequest) {
     const newMesFactura = formData.get('mesFactura') as string | null
     const newNota = formData.get('nota') as string | null
     const estadoPago = formData.get('estadoPago') as string || 'mantener'
+    const fechaPago = formData.get('fechaPago') as string | null
+    const aprobarComprobante = formData.get('aprobarComprobante') === 'true'
     const accionComprobante = formData.get('accionComprobante') as string || 'mantener'
     const reason = formData.get('reason') as string | null
     const resetEditada = formData.get('resetEditada') === 'true'
@@ -889,6 +909,9 @@ export async function PATCH(request: NextRequest) {
     if (estadoPago === 'pendiente') {
       updateData.estado_pago = 'pendiente'
       updateData.fecha_pago = null
+    } else if (estadoPago === 'pagado') {
+      updateData.estado_pago = 'pagado'
+      updateData.fecha_pago = fechaPago ? new Date(fechaPago).toISOString() : new Date().toISOString()
     }
     // Si es 'mantener', no tocamos estado_pago
 
@@ -904,6 +927,33 @@ export async function PATCH(request: NextRequest) {
         { error: 'Error al actualizar la factura' },
         { status: 500 }
       )
+    }
+
+    // Si se debe aprobar comprobante vinculado (al marcar como pagado)
+    if (estadoPago === 'pagado' && aprobarComprobante) {
+      const targetMes = newMesFactura || currentDeadline.mes_factura
+      const { data: receipt } = await supabase
+        .from('payment_receipts')
+        .select('id')
+        .eq('mes_pago', targetMes)
+        .eq('user_id', currentDeadline.client_id)
+        .eq('tipo_cliente', currentDeadline.client_type)
+        .eq('estado', 'pendiente')
+        .single()
+
+      if (receipt?.id) {
+        const { error: approveError } = await (supabase as any).rpc('approve_payment_receipt', {
+          p_receipt_id: receipt.id,
+          p_user_id: currentDeadline.client_id,
+          p_tipo_cliente: currentDeadline.client_type,
+          p_mes_pago: targetMes,
+          p_nota: 'Aprobado automáticamente al marcar factura como pagada'
+        })
+        if (approveError) {
+          console.error('Error al aprobar comprobante vinculado:', approveError)
+          // No bloquear la edición
+        }
+      }
     }
 
     // Si se debe invalidar comprobante vinculado
