@@ -291,7 +291,22 @@ interface TotalesPorGrupo {
   ivaServiciosProfesionales: number
 }
 
-type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'gastos-estado' | 'servicios-estado' | 'vista-pago' | 'pagar-cliente'
+type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'invitaciones' | 'ingresos' | 'fecha' | 'sync' | 'config' | 'grupos' | 'deudas' | 'expedientes-inactivos' | 'gastos-estado' | 'servicios-estado' | 'vista-pago' | 'pagar-cliente'
+
+interface ExpedienteInactivo {
+  id: string
+  titulo: string | null
+  modalidad_pago: string | null
+  etapa_actual: string | null
+  estado_pago: string | null
+  id_cliente: string | null
+  clienteNombre: string
+  diasInactivo: number
+  ultimoMovimiento: string | null
+  tipoUltimoMovimiento: string | null
+  nuncaTuvoActividad: boolean
+  ultimoPago: { fecha: string; mes: string } | null
+}
 
 // ===== COMPONENTE PRINCIPAL =====
 export default function DevPage() {
@@ -448,6 +463,15 @@ export default function DevPage() {
   const [editandoNota, setEditandoNota] = useState<string | null>(null)
   const [notaTemp, setNotaTemp] = useState<string>('')
 
+  // Estados para Expedientes Inactivos
+  const [expedientesInactivos, setExpedientesInactivos] = useState<ExpedienteInactivo[]>([])
+  const [loadingExpedientes, setLoadingExpedientes] = useState(false)
+  const [totalExpedientes, setTotalExpedientes] = useState(0)
+  const [paginaExpedientes, setPaginaExpedientes] = useState(1)
+  const [totalPaginasExpedientes, setTotalPaginasExpedientes] = useState(0)
+  const [filtroExpModalidad, setFiltroExpModalidad] = useState<'all' | 'mensualidad' | 'pago_unico' | 'etapa'>('all')
+  const [filtroExpCliente, setFiltroExpCliente] = useState('')
+
   // Estados para Pagar por Cliente
   const [clientesParaPago, setClientesParaPago] = useState<{id: string, nombre: string, tipo: 'empresa' | 'cliente', cedula?: string}[]>([])
   const [loadingClientesPago, setLoadingClientesPago] = useState(false)
@@ -496,8 +520,42 @@ export default function DevPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ingresosYear, ingresosMes, activeSection])
 
+  // Effect para cargar expedientes inactivos cuando cambia sección, página o filtros
+  useEffect(() => {
+    if (activeSection === 'expedientes-inactivos') {
+      loadExpedientesInactivos()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, paginaExpedientes, filtroExpModalidad, filtroExpCliente])
+
   // ===== FUNCIONES DE CARGA POR SECCIÓN =====
-  
+
+  // EXPEDIENTES INACTIVOS
+  const loadExpedientesInactivos = async (pagina?: number, modalidad?: string, cliente?: string) => {
+    setLoadingExpedientes(true)
+    try {
+      const p = pagina ?? paginaExpedientes
+      const m = modalidad ?? filtroExpModalidad
+      const c = cliente ?? filtroExpCliente
+      const params = new URLSearchParams({
+        page: String(p),
+        filtroModalidad: m,
+        filtroCliente: c,
+      })
+      const res = await fetch(`/api/expedientes-inactivos?${params}`)
+      const data = await res.json()
+      if (data.solicitudes) {
+        setExpedientesInactivos(data.solicitudes)
+        setTotalExpedientes(data.total ?? 0)
+        setTotalPaginasExpedientes(data.totalPages ?? 0)
+      }
+    } catch (error) {
+      console.error('Error cargando expedientes inactivos:', error)
+    } finally {
+      setLoadingExpedientes(false)
+    }
+  }
+
   // COMPROBANTES
   const loadPaymentData = async () => {
     setLoadingReceipts(true)
@@ -2218,6 +2276,13 @@ export default function DevPage() {
           >
             <span className={styles.navIcon}>💰</span>
             <span className={styles.navLabel}>Deudas Clientes</span>
+          </button>
+          <button 
+            className={`${styles.navItem} ${activeSection === 'expedientes-inactivos' ? styles.active : ''}`}
+            onClick={() => { setPaginaExpedientes(1); setActiveSection('expedientes-inactivos') }}
+          >
+            <span className={styles.navIcon}>🕐</span>
+            <span className={styles.navLabel}>Expedientes Inactivos</span>
           </button>
           <button 
             className={`${styles.navItem} ${activeSection === 'vista-pago' ? styles.active : ''}`}
@@ -4203,6 +4268,184 @@ export default function DevPage() {
                 <strong>Nota:</strong> Los servicios marcados como &quot;Cancelado&quot; no aparecerán en los totales de pago del cliente.
               </p>
             </div>
+          </div>
+        )}
+
+        {/* EXPEDIENTES INACTIVOS */}
+        {activeSection === 'expedientes-inactivos' && (
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Expedientes Inactivos</h2>
+                <p className={styles.sectionDescription}>
+                  Solicitudes (mensualidad, pago único y etapa) sin movimientos en los últimos 15 días
+                </p>
+              </div>
+              <button
+                className={styles.button}
+                onClick={() => loadExpedientesInactivos()}
+                disabled={loadingExpedientes}
+              >
+                {loadingExpedientes ? 'Cargando...' : 'Refrescar'}
+              </button>
+            </div>
+
+            {/* Filtros */}
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Modalidad:</label>
+                <select
+                  className={styles.input}
+                  value={filtroExpModalidad}
+                  onChange={e => {
+                    setFiltroExpModalidad(e.target.value as typeof filtroExpModalidad)
+                    setPaginaExpedientes(1)
+                  }}
+                  style={{ minWidth: '180px' }}
+                >
+                  <option value="all">Todas</option>
+                  <option value="mensualidad">Mensualidad</option>
+                  <option value="pago_unico">Pago Único</option>
+                  <option value="etapa">Etapa</option>
+                </select>
+              </div>
+              <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                <label className={styles.formLabel}>Buscar cliente:</label>
+                <input
+                  className={styles.input}
+                  type="text"
+                  placeholder="Nombre del cliente..."
+                  value={filtroExpCliente}
+                  onChange={e => {
+                    setFiltroExpCliente(e.target.value)
+                    setPaginaExpedientes(1)
+                  }}
+                  style={{ minWidth: '200px' }}
+                />
+              </div>
+            </div>
+
+            {/* Resumen */}
+            {!loadingExpedientes && totalExpedientes > 0 && (
+              <div className={styles.expInactivoResumen}>
+                <span className={styles.expInactivoBadgeTotal}>{totalExpedientes} expediente{totalExpedientes !== 1 ? 's' : ''} inactivo{totalExpedientes !== 1 ? 's' : ''}</span>
+                {expedientesInactivos.filter(e => e.nuncaTuvoActividad).length > 0 && (
+                  <span className={styles.expInactivoBadgeSinAct}>
+                    {expedientesInactivos.filter(e => e.nuncaTuvoActividad).length} sin actividad histórica
+                  </span>
+                )}
+              </div>
+            )}
+
+            {loadingExpedientes && (
+              <div className={styles.loadingState}>
+                <div className={styles.spinner}></div>
+                <p>Cargando expedientes inactivos...</p>
+              </div>
+            )}
+
+            {!loadingExpedientes && expedientesInactivos.length === 0 && (
+              <div className={styles.emptyState}>
+                <p>✅ No hay expedientes inactivos con más de 15 días sin movimientos.</p>
+              </div>
+            )}
+
+            {!loadingExpedientes && expedientesInactivos.length > 0 && (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Cliente</th>
+                        <th>Título</th>
+                        <th>Modalidad</th>
+                        <th>Etapa</th>
+                        <th>Estado Pago</th>
+                        <th>Días Inactivo</th>
+                        <th>Último Movimiento</th>
+                        <th>Tipo</th>
+                        <th>Último Pago</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expedientesInactivos.map(exp => {
+                        const dias = exp.diasInactivo === Infinity ? '—' : exp.diasInactivo
+                        const diasColor =
+                          exp.diasInactivo >= 60
+                            ? styles.expDiasRojo
+                            : exp.diasInactivo >= 30
+                            ? styles.expDiasNaranja
+                            : styles.expDiasAmarillo
+
+                        return (
+                          <tr key={exp.id} className={exp.nuncaTuvoActividad ? styles.expFilaSinAct : ''}>
+                            <td>{exp.clienteNombre}</td>
+                            <td>{exp.titulo || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin título</span>}</td>
+                            <td>
+                              <span className={styles.expModalidadBadge}>
+                                {exp.modalidad_pago || '—'}
+                              </span>
+                            </td>
+                            <td>{exp.etapa_actual || '—'}</td>
+                            <td>{exp.estado_pago || <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                            <td>
+                              <span className={`${styles.expDiasBadge} ${diasColor}`}>
+                                {dias === '—' ? '—' : `${dias} días`}
+                              </span>
+                            </td>
+                            <td>
+                              {exp.ultimoMovimiento
+                                ? new Date(exp.ultimoMovimiento).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin registro</span>
+                              }
+                            </td>
+                            <td>
+                              {exp.nuncaTuvoActividad
+                                ? <span className={styles.expBadgeSinAct}>Sin actividad</span>
+                                : (exp.tipoUltimoMovimiento || '—')
+                              }
+                            </td>
+                            <td>
+                              {exp.ultimoPago
+                                ? (
+                                  <span title={`Aprobado: ${new Date(exp.ultimoPago.fecha).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })}`}>
+                                    {exp.ultimoPago.mes}
+                                  </span>
+                                )
+                                : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin pagos</span>
+                              }
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Paginación */}
+                {totalPaginasExpedientes > 1 && (
+                  <div className={styles.expPaginacion}>
+                    <button
+                      className={styles.button}
+                      onClick={() => setPaginaExpedientes(p => Math.max(1, p - 1))}
+                      disabled={paginaExpedientes <= 1}
+                    >
+                      ← Anterior
+                    </button>
+                    <span className={styles.expPaginacionInfo}>
+                      Mostrando {((paginaExpedientes - 1) * 20) + 1}–{Math.min(paginaExpedientes * 20, totalExpedientes)} de {totalExpedientes}
+                    </span>
+                    <button
+                      className={styles.button}
+                      onClick={() => setPaginaExpedientes(p => Math.min(totalPaginasExpedientes, p + 1))}
+                      disabled={paginaExpedientes >= totalPaginasExpedientes}
+                    >
+                      Siguiente →
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

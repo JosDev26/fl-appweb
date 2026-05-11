@@ -417,6 +417,28 @@ export async function GET(request: Request) {
         (allDeadlines || []).map(d => [`${d.client_id}_${d.client_type}`, d])
       )
 
+      // Agregar facturas que están en la DB (invoice_payment_deadlines) pero no fueron
+      // encontradas en el escaneo de storage. Esto ocurre cuando el nombre del archivo
+      // usa la fecha de emisión (ej. 2026-01) pero el mes de factura es diferente (ej. 2025-12).
+      if (allDeadlines) {
+        const existingPaths = new Set(invoices.map(inv => inv.path))
+        for (const deadline of allDeadlines) {
+          if (deadline.file_path && !existingPaths.has(deadline.file_path)) {
+            const pathParts = deadline.file_path.split('/')
+            const fileName = pathParts[pathParts.length - 1] || ''
+            invoices.push({
+              name: fileName,
+              id: deadline.id,
+              created_at: deadline.created_at,
+              clientId: deadline.client_id,
+              clientType: deadline.client_type,
+              path: deadline.file_path,
+            })
+            existingPaths.add(deadline.file_path)
+          }
+        }
+      }
+
       // Auto-crear deadline records faltantes (pueden faltar si el insert original falló)
       const missingDeadlineInvoices = invoices.filter(inv => {
         return !deadlinesByPath.has(inv.path) && !deadlinesByClient.has(`${inv.clientId}_${inv.clientType}`)

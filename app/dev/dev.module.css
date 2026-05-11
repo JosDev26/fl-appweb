@@ -1137,6 +1137,137 @@
   color: #2e7d32;
 }
 
+/* ===================================================
+   ESTILOS PARA SECCIÓN DE EXPEDIENTES INACTIVOS
+   =================================================== */
+
+.expInactivoResumen {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  align-items: center;
+}
+
+.expInactivoBadgeTotal {
+  display: inline-block;
+  padding: 0.35rem 0.875rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(25, 48, 75, 0.1);
+  color: #19304B;
+}
+
+.expInactivoBadgeSinAct {
+  display: inline-block;
+  padding: 0.35rem 0.875rem;
+  border-radius: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.expFilaSinAct {
+  background: rgba(220, 38, 38, 0.03);
+}
+
+.expDiasBadge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.expDiasAmarillo {
+  background: rgba(234, 179, 8, 0.15);
+  color: #854d0e;
+}
+
+.expDiasNaranja {
+  background: rgba(249, 115, 22, 0.15);
+  color: #c2410c;
+}
+
+.expDiasRojo {
+  background: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+}
+
+.expBadgeSinAct {
+  display: inline-block;
+  padding: 0.2rem 0.625rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.expModalidadBadge {
+  display: inline-block;
+  padding: 0.2rem 0.625rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  background: rgba(25, 48, 75, 0.08);
+  color: #19304B;
+  white-space: nowrap;
+}
+
+.expPaginacion {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.expPaginacionInfo {
+  font-size: 0.9rem;
+  color: #555;
+}
+
+@media (prefers-color-scheme: dark) {
+  .expInactivoBadgeTotal {
+    background: rgba(250, 208, 44, 0.15);
+    color: #FAD02C;
+  }
+  .expInactivoBadgeSinAct {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+  .expFilaSinAct {
+    background: rgba(239, 68, 68, 0.05);
+  }
+  .expDiasAmarillo {
+    background: rgba(234, 179, 8, 0.15);
+    color: #fbbf24;
+  }
+  .expDiasNaranja {
+    background: rgba(249, 115, 22, 0.15);
+    color: #fb923c;
+  }
+  .expDiasRojo {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+  .expBadgeSinAct {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+  .expModalidadBadge {
+    background: rgba(250, 208, 44, 0.1);
+    color: #FAD02C;
+  }
+  .expPaginacionInfo {
+    color: #a0a0a0;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   .deudasResumenTotalValue {
     color: #81c784;
