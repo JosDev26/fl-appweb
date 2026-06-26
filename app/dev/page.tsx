@@ -486,6 +486,10 @@ export default function DevPage() {
   const [pagoResultado, setPagoResultado] = useState<{success: boolean, message: string} | null>(null)
   const [pagoDetalles, setPagoDetalles] = useState<any>(null)
   const [pagoConfirmando, setPagoConfirmando] = useState(false)
+  // Estados para selección de solicitud específica (etapa / pago único)
+  const [solicitudesPendientesCliente, setSolicitudesPendientesCliente] = useState<any[]>([])
+  const [pagoSolicitudId, setPagoSolicitudId] = useState<string>('')
+  const [pagoTipoModalidad, setPagoTipoModalidad] = useState<string>('mensualidad')
 
   // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
@@ -2003,13 +2007,35 @@ export default function DevPage() {
     setLoadingClientesPago(true)
     setPagoResultado(null)
     setPagoConfirmando(false)
+    setSolicitudesPendientesCliente([])
+    setPagoSolicitudId('')
+    setPagoTipoModalidad('mensualidad')
     try {
       const [empRes, cliRes] = await Promise.all([
         fetch('/api/client?tipo=empresa&all=true', { credentials: 'include' }),
         fetch('/api/client?tipo=cliente', { credentials: 'include' })
       ])
+
+      if (!empRes.ok) {
+        const err = await empRes.json().catch(() => ({}))
+        throw new Error(`Error cargando empresas (${empRes.status}): ${err.error || empRes.statusText}`)
+      }
+      if (!cliRes.ok) {
+        const err = await cliRes.json().catch(() => ({}))
+        throw new Error(`Error cargando clientes (${cliRes.status}): ${err.error || cliRes.statusText}`)
+      }
+
       const empData = await empRes.json()
       const cliData = await cliRes.json()
+
+      if (!empData.success && !empData.empresas) {
+        console.error('API empresas error:', empData)
+        throw new Error('Respuesta inválida de API empresas: ' + JSON.stringify(empData))
+      }
+      if (!cliData.success && !cliData.clients) {
+        console.error('API clientes error:', cliData)
+        throw new Error('Respuesta inválida de API clientes: ' + JSON.stringify(cliData))
+      }
 
       const empresas = (empData.empresas || []).map((e: any) => ({
         id: e.id, nombre: e.nombre, tipo: 'empresa' as const, cedula: e.cedula
@@ -2019,12 +2045,12 @@ export default function DevPage() {
       }))
       
       const combined = [...empresas, ...clientes].sort((a: any, b: any) => 
-        a.nombre.localeCompare(b.nombre)
+        (a.nombre || '').localeCompare(b.nombre || '')
       )
       setClientesParaPago(combined)
     } catch (error) {
       console.error('Error cargando clientes para pago:', error)
-      alert('Error cargando la lista de clientes')
+      alert('Error cargando la lista de clientes: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoadingClientesPago(false)
     }
@@ -2051,9 +2077,13 @@ export default function DevPage() {
         setPagoMontoCalculado(total)
         setPagoMonto(total.toString())
         setPagoDetalles(data)
+        if (data.solicitudesPendientes) {
+          setSolicitudesPendientesCliente(data.solicitudesPendientes)
+        }
       } else {
         setPagoMontoCalculado(0)
         setPagoMonto('0')
+        setSolicitudesPendientesCliente([])
       }
     } catch (error) {
       console.error('Error calculando monto:', error)
@@ -2068,6 +2098,10 @@ export default function DevPage() {
   const handlePagarPorCliente = async () => {
     if (!pagoClienteSeleccionado || !pagoMes || !pagoArchivo || !pagoMonto) {
       alert('Completa todos los campos antes de registrar el pago')
+      return
+    }
+    if (pagoTipoModalidad !== 'mensualidad' && !pagoSolicitudId) {
+      alert('Selecciona la solicitud específica que estás pagando')
       return
     }
 
@@ -2085,6 +2119,9 @@ export default function DevPage() {
       formData.append('mes_pago', pagoMes)
       if (isDateSimulated && simulatedDate) {
         formData.append('simulatedDate', simulatedDate)
+      }
+      if (pagoTipoModalidad !== 'mensualidad' && pagoSolicitudId) {
+        formData.append('solicitud_id', pagoSolicitudId)
       }
 
       const uploadRes = await fetch('/api/upload-comprobante', {
@@ -2144,6 +2181,7 @@ export default function DevPage() {
       // Limpiar formulario
       setPagoArchivo(null)
       setPagoConfirmando(false)
+      setPagoSolicitudId('')
       // Reset file input
       const fileInput = document.getElementById('pago-file-input') as HTMLInputElement
       if (fileInput) fileInput.value = ''
@@ -5332,12 +5370,16 @@ export default function DevPage() {
                       setPagoClienteSeleccionado(clienteId)
                       setPagoResultado(null)
                       setPagoConfirmando(false)
+                      setPagoSolicitudId('')
+                      setSolicitudesPendientesCliente([])
+                      setPagoMonto('')
+                      setPagoMontoCalculado(0)
+                      setPagoDetalles(null)
                       const found = clientesParaPago.find(c => c.id === clienteId)
                       if (found) {
                         setPagoTipoSeleccionado(found.tipo)
                         if (pagoMes) loadMontoPago(clienteId, found.tipo)
                       } else {
-                        setPagoMontoCalculado(0)
                         setPagoMonto('')
                         setPagoDetalles(null)
                       }
@@ -5357,6 +5399,94 @@ export default function DevPage() {
                   </select>
                 </div>
 
+                {/* Selector de tipo de pago */}
+                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                  <label className={styles.formLabel}>Tipo de Pago</label>
+                  <select
+                    className={styles.input}
+                    value={pagoTipoModalidad}
+                    onChange={(e) => {
+                      setPagoTipoModalidad(e.target.value)
+                      setPagoSolicitudId('')
+                      setPagoConfirmando(false)
+                      // Para mensualidad: mantener monto calculado; para otros: limpiar
+                      if (e.target.value !== 'mensualidad') {
+                        setPagoMonto('')
+                      } else {
+                        setPagoMonto(pagoMontoCalculado > 0 ? pagoMontoCalculado.toString() : '')
+                      }
+                    }}
+                  >
+                    <option value="mensualidad">Mensualidad (auto-calculado)</option>
+                    <option value="etapa">Etapa Finalizada</option>
+                    <option value="pago_unico">Único Pago</option>
+                  </select>
+                </div>
+
+                {/* Selector de solicitud específica (etapa / pago único) */}
+                {pagoTipoModalidad !== 'mensualidad' && pagoClienteSeleccionado && (
+                  <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                    <label className={styles.formLabel}>Solicitud a Pagar</label>
+                    {loadingPagoMonto ? (
+                      <p style={{ fontSize: '0.875rem', color: '#666' }}>Cargando solicitudes...</p>
+                    ) : (() => {
+                      const filtradas = solicitudesPendientesCliente.filter(s => {
+                        const m = (s.modalidad_pago || '').toLowerCase()
+                        if (pagoTipoModalidad === 'etapa') return m.includes('etapa')
+                        if (pagoTipoModalidad === 'pago_unico') return m.includes('pago') || m.includes('único') || m.includes('unico')
+                        return true
+                      })
+                      return filtradas.length === 0 ? (
+                        <p style={{ fontSize: '0.875rem', color: '#888', padding: '0.5rem 0' }}>
+                          No hay solicitudes pendientes de este tipo para este cliente.
+                        </p>
+                      ) : (
+                        <select
+                          className={styles.input}
+                          value={pagoSolicitudId}
+                          onChange={(e) => {
+                            setPagoSolicitudId(e.target.value)
+                            setPagoConfirmando(false)
+                          }}
+                        >
+                          <option value="">Seleccionar solicitud...</option>
+                          {filtradas.map((s: any) => (
+                            <option key={s.id} value={s.id}>
+                              {s.titulo || s.expediente || s.id} — {s.modalidad_pago} — Saldo: {(s.saldo_pendiente ?? s.total_a_pagar ?? 0).toLocaleString()}
+                            </option>
+                          ))}
+                        </select>
+                      )
+                    })()}
+                  </div>
+                )}
+
+                {/* Panel de desglose de solicitud seleccionada */}
+                {pagoTipoModalidad !== 'mensualidad' && pagoSolicitudId && (() => {
+                  const sol = solicitudesPendientesCliente.find(s => s.id === pagoSolicitudId)
+                  if (!sol) return null
+                  const saldo = sol.saldo_pendiente ?? sol.total_a_pagar ?? 0
+                  const cuota = sol.monto_por_cuota ?? 0
+                  const ivaAmt = sol.se_cobra_iva ? (sol.monto_iva || 0) : 0
+                  const costoNeto = sol.costo_neto || 0
+                  return (
+                    <div className={styles.infoBox} style={{ borderLeft: '4px solid #1565c0', background: '#e8f0fe' }}>
+                      <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.5rem' }}>{sol.titulo || sol.expediente}</p>
+                      <div style={{ display: 'grid', gap: '0.25rem', fontSize: '0.85rem', color: '#333' }}>
+                        <p><strong>Modalidad:</strong> {sol.modalidad_pago}</p>
+                        <p><strong>Costo neto:</strong> {costoNeto.toLocaleString()}</p>
+                        {sol.se_cobra_iva && <p><strong>IVA ({((ivaAmt / (costoNeto || 1)) * 100).toFixed(0)}%):</strong> {ivaAmt.toLocaleString()}</p>}
+                        {cuota > 0 && <p><strong>Siguiente cuota:</strong> {cuota.toLocaleString()}</p>}
+                        <p style={{ fontWeight: 600, color: '#1565c0' }}><strong>Saldo pendiente:</strong> {saldo.toLocaleString()}</p>
+                        {sol.monto_pagado > 0 && <p><strong>Ya pagado:</strong> {sol.monto_pagado.toLocaleString()}</p>}
+                      </div>
+                      <p style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#555' }}>
+                        Ingresa el monto a pagar manualmente. Los valores anteriores son de referencia.
+                      </p>
+                    </div>
+                  )
+                })()}
+
                 {/* Mes de pago */}
                 <div className={styles.formGroup} style={{ marginBottom: 0 }}>
                   <label className={styles.formLabel}>Mes de Pago</label>
@@ -5367,7 +5497,7 @@ export default function DevPage() {
                       const mes = e.target.value
                       setPagoMes(mes)
                       setPagoConfirmando(false)
-                      if (pagoClienteSeleccionado && mes) {
+                      if (pagoClienteSeleccionado && mes && pagoTipoModalidad === 'mensualidad') {
                         loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado)
                       }
                     }}
@@ -5383,7 +5513,7 @@ export default function DevPage() {
                 <div className={styles.formGroup} style={{ marginBottom: 0 }}>
                   <label className={styles.formLabel}>
                     Monto a Pagar
-                    {loadingPagoMonto && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>(calculando...)</span>}
+                    {loadingPagoMonto && pagoTipoModalidad === 'mensualidad' && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>(calculando...)</span>}
                   </label>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <input
@@ -5391,13 +5521,13 @@ export default function DevPage() {
                       className={styles.input}
                       value={pagoMonto}
                       onChange={(e) => { setPagoMonto(e.target.value); setPagoConfirmando(false) }}
-                      placeholder="0.00"
+                      placeholder={pagoTipoModalidad === 'mensualidad' ? '0.00' : 'Ingresar monto manualmente'}
                       min="0"
                       step="0.01"
-                      disabled={loadingPagoMonto}
+                      disabled={loadingPagoMonto && pagoTipoModalidad === 'mensualidad'}
                       style={{ flex: 1 }}
                     />
-                    {pagoClienteSeleccionado && pagoMes && (
+                    {pagoTipoModalidad === 'mensualidad' && pagoClienteSeleccionado && pagoMes && (
                       <button
                         className={styles.buttonSecondary}
                         onClick={() => loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado)}
@@ -5408,12 +5538,12 @@ export default function DevPage() {
                       </button>
                     )}
                   </div>
-                  {pagoMontoCalculado > 0 && pagoMonto !== pagoMontoCalculado.toString() && (
+                  {pagoTipoModalidad === 'mensualidad' && pagoMontoCalculado > 0 && pagoMonto !== pagoMontoCalculado.toString() && (
                     <small style={{ color: '#f57c00', display: 'block', marginTop: '0.25rem' }}>
                       Monto editado manualmente. Calculado original: {pagoMontoCalculado.toLocaleString()}
                     </small>
                   )}
-                  {pagoDetalles && (
+                  {pagoTipoModalidad === 'mensualidad' && pagoDetalles && (
                     <small style={{ color: '#666', display: 'block', marginTop: '0.25rem' }}>
                       Moneda: {pagoDetalles.moneda || '—'}
                       {pagoDetalles.desglose && ` | Honorarios: ${(pagoDetalles.desglose?.honorarios || 0).toLocaleString()} | Gastos: ${(pagoDetalles.desglose?.gastos || 0).toLocaleString()}`}
@@ -5462,7 +5592,8 @@ export default function DevPage() {
                 )}
 
                 {/* Resumen y confirmación */}
-                {pagoClienteSeleccionado && pagoMes && pagoMonto && pagoArchivo && !pagoConfirmando && (
+                {pagoClienteSeleccionado && pagoMes && pagoMonto && pagoArchivo && !pagoConfirmando &&
+                  (pagoTipoModalidad === 'mensualidad' || pagoSolicitudId) && (
                   <button
                     className={styles.button}
                     onClick={() => setPagoConfirmando(true)}
@@ -5478,12 +5609,18 @@ export default function DevPage() {
                     <h3 style={{ marginBottom: '0.75rem', fontSize: '1rem' }}>Confirmar Registro de Pago</h3>
                     <div style={{ display: 'grid', gap: '0.35rem', fontSize: '0.9rem' }}>
                       <p><strong>Cliente:</strong> {clientesParaPago.find(c => c.id === pagoClienteSeleccionado)?.nombre} ({pagoTipoSeleccionado})</p>
+                      {pagoTipoModalidad !== 'mensualidad' && pagoSolicitudId && (() => {
+                        const sol = solicitudesPendientesCliente.find(s => s.id === pagoSolicitudId)
+                        return sol ? <p><strong>Solicitud:</strong> {sol.titulo || sol.expediente} — {sol.modalidad_pago}</p> : null
+                      })()}
                       <p><strong>Mes:</strong> {getNombreMes(pagoMes)}</p>
                       <p><strong>Monto:</strong> {Number(pagoMonto).toLocaleString()}</p>
                       <p><strong>Archivo:</strong> {pagoArchivo?.name}</p>
                     </div>
                     <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#0d47a1' }}>
-                      Esta accion registrara el ingreso, actualizara el estado de solicitudes/gastos/servicios, y el comprobante sera visible para el cliente.
+                      {pagoTipoModalidad === 'mensualidad'
+                        ? 'Esta accion registrara el ingreso, actualizara el estado de solicitudes/gastos/servicios, y el comprobante sera visible para el cliente.'
+                        : 'Esta accion registrara el ingreso, actualizara el saldo pendiente de la solicitud seleccionada, y el comprobante sera visible para el cliente.'}
                     </p>
                     <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
                       <button

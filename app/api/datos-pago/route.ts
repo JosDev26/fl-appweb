@@ -354,7 +354,8 @@ export async function GET(request: NextRequest) {
     // Obtener trabajos por hora del mes anterior
     let trabajosPorHora: any[] = [];
     let trabajosPendientesAnteriores: any[] = [];
-    if (tipoCliente === 'usuario') {
+    const esUsuario = tipoCliente === 'usuario' || tipoCliente === 'cliente';
+    if (esUsuario) {
       // Para usuarios, buscar directamente por id_cliente
       const { data, error } = await supabase
         .from('trabajos_por_hora')
@@ -641,6 +642,19 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('id_cliente', userId)
       .ilike('modalidad_pago', 'mensualidad');
+
+    // Obtener todas las solicitudes pendientes (no mensualidad) para selección individual
+    const { data: todasSolicitudesRaw } = await supabase
+      .from('solicitudes')
+      .select('id, titulo, modalidad_pago, costo_neto, total_a_pagar, monto_pagado, saldo_pendiente, se_cobra_iva, monto_iva, monto_por_cuota, cantidad_cuotas, estado_pago, expediente, materia')
+      .eq('id_cliente', userId)
+      .order('created_at' as any, { ascending: false });
+
+    const solicitudesPendientes = (todasSolicitudesRaw || []).filter((s: any) => {
+      const estado = (s.estado_pago || '').toLowerCase()
+      const modalidad = (s.modalidad_pago || '').toLowerCase()
+      return estado !== 'pagado' && estado !== 'cancelado' && !modalidad.includes('mensualidad')
+    })
 
     if (solicitudesError) throw solicitudesError;
 
@@ -982,7 +996,9 @@ export async function GET(request: NextRequest) {
       totalGrupoAPagar: esGrupoPrincipal ? totalGrupoAPagar : 0,
       granTotalSubtotal: esGrupoPrincipal ? granTotalSubtotal : subtotal,
       granTotalIVA: esGrupoPrincipal ? granTotalIVA : montoIVA,
-      granTotalAPagar: esGrupoPrincipal ? granTotalAPagar : totalAPagar
+      granTotalAPagar: esGrupoPrincipal ? granTotalAPagar : totalAPagar,
+      // Solicitudes pendientes individuales (etapa, pago_unico, etc.) para selección en panel admin
+      solicitudesPendientes
     });
 
   } catch (error: any) {

@@ -153,7 +153,9 @@ export async function PATCH(request: NextRequest) {
 
     const userId = (receipt as any).user_id
     const tipoCliente = (receipt as any).tipo_cliente
-    const mesPago = (receipt as any).mes_pago // Mover aquí para uso en grupos
+    const mesPago = (receipt as any).mes_pago
+    const solicitudId: string | null = (receipt as any).solicitud_id || null
+    const montoDeclarado: number = (receipt as any).monto_declarado || 0
 
     // Validate mesPago format if present
     if (mesPago && !isValidMesPago(mesPago)) {
@@ -585,6 +587,7 @@ export async function PATCH(request: NextRequest) {
 
       // Actualizar solicitudes con modalidad mensual
       // IMPORTANTE: Los gastos NO se incluyen en monto_pagado
+      if (!solicitudId) {
       if (isDev) console.log(' Actualizando solicitudes mensualidades del cliente:', userId)
       try {
         const { data: solicitudesMensuales, error: solicitudesError } = await supabase
@@ -989,10 +992,55 @@ export async function PATCH(request: NextRequest) {
           console.error(' Error al actualizar estado de factura:', err)
         }
       } else {
-        if (isDev) console.warn('âš ï¸ El comprobante no tiene mes_pago asociado')
+        if (isDev) console.warn('El comprobante no tiene mes_pago asociado')
+      }
+      } // end !solicitudId
+
+      // ===== PAGO DE SOLICITUD ESPECÍFICA (etapa / pago único) =====
+      if (solicitudId) {
+        if (isDev) console.log(' Actualizando solicitud específica:', solicitudId, '| monto:', montoDeclarado)
+        try {
+          const { data: solData, error: solFetchError } = await supabase
+            .from('solicitudes')
+            .select('id, monto_pagado, total_a_pagar, costo_neto, se_cobra_iva, monto_iva, estado_pago')
+            .eq('id', solicitudId)
+            .single()
+
+          if (solFetchError || !solData) {
+            console.error(' Solicitud no encontrada al aprobar comprobante:', solicitudId)
+          } else {
+            const prevMontoPagado = (solData as any).monto_pagado || 0
+            const nuevoMontoPagado = prevMontoPagado + montoDeclarado
+            const costoNeto = (solData as any).costo_neto || 0
+            const ivaGuardado = (solData as any).se_cobra_iva
+              ? ((solData as any).monto_iva || costoNeto * 0.13)
+              : 0
+            const totalAPagar = (solData as any).total_a_pagar || (costoNeto + ivaGuardado)
+            const nuevoSaldoPendiente = Math.max(0, totalAPagar - nuevoMontoPagado)
+            const nuevoEstado = nuevoSaldoPendiente <= 0 ? 'Pagado' : (solData as any).estado_pago
+
+            const { error: solUpdateError } = await supabase
+              .from('solicitudes')
+              .update({
+                monto_pagado: nuevoMontoPagado,
+                saldo_pendiente: nuevoSaldoPendiente,
+                estado_pago: nuevoEstado,
+                updated_at: fechaAprobacion
+              })
+              .eq('id', solicitudId)
+
+            if (solUpdateError) {
+              console.error(' Error al actualizar solicitud específica:', solUpdateError)
+            } else {
+              if (isDev) console.log(` Solicitud ${solicitudId}: monto_pagado=${nuevoMontoPagado}, saldo=${nuevoSaldoPendiente}, estado=${nuevoEstado}`)
+            }
+          }
+        } catch (err) {
+          console.error(' Error inesperado al actualizar solicitud específica:', err)
+        }
       }
 
-      // ===== ESCRIBIR EN HOJA "Ingresos" DE GOOGLE SHEETS =====
+      // ===== ESCRIBIR EN HOJA "Ingresos" DE GOOGLE SHEETS ===== DE GOOGLE SHEETS =====
       try {
         if (isDev) console.log(' Preparando registro de ingreso para Google Sheets...')
         

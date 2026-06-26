@@ -54,11 +54,12 @@ export async function GET(request: NextRequest) {
     if (tipo === 'cliente') {
       const { data: usuarios, error } = await supabase
         .from('usuarios')
-        .select('id, id_sheets, nombre, cedula, correo, modoPago, darVistoBueno')
+        .select('id, nombre, cedula')
         .order('nombre', { ascending: true })
 
       if (error) {
-        return NextResponse.json({ error: 'Error al obtener clientes' }, { status: 500 })
+        console.error('[/api/client tipo=cliente] Supabase error:', error)
+        return NextResponse.json({ error: 'Error al obtener clientes', details: error.message, code: error.code }, { status: 500 })
       }
 
       return NextResponse.json({

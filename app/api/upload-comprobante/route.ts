@@ -97,6 +97,15 @@ export async function POST(request: NextRequest) {
     const montoPago = formData.get('monto') as string
     const simulatedDate = formData.get('simulatedDate') as string | null // Fecha simulada desde el cliente
     const mesEspecifico = formData.get('mes_pago') as string | null // Mes específico (pagos parciales por mes)
+    const solicitudId = (formData.get('solicitud_id') as string | null) || null // Solicitud específica (etapa/pago_unico)
+
+    // Validar solicitud_id si se proporcionó (UUID format)
+    if (solicitudId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(solicitudId)) {
+      return NextResponse.json(
+        { error: 'solicitud_id inválido' },
+        { status: 400 }
+      )
+    }
     
     if (!file) {
       return NextResponse.json(
@@ -127,33 +136,68 @@ export async function POST(request: NextRequest) {
       console.log('📅 Mes de pago (mes anterior):', mesPago, '| Fecha actual CR:', toDateString(now))
     }
 
-    // Verificar si ya existe un comprobante pendiente o aprobado para este mes
-    const { data: existingReceipts, error: existingError } = await supabase
-      .from('payment_receipts' as any)
-      .select('id, estado')
-      .eq('user_id', userId)
-      .eq('tipo_cliente', tipoCliente)
-      .eq('mes_pago', mesPago)
-      .in('estado', ['pendiente', 'aprobado'])
+    // Verificar duplicados: lógica diferente según si es pago de solicitud específica o mensual
+    if (solicitudId) {
+      // Para etapa/pago_unico: verificar que la solicitud no esté ya pagada
+      const { data: solicitudData } = await supabase
+        .from('solicitudes')
+        .select('id, estado_pago, titulo')
+        .eq('id', solicitudId)
+        .single()
 
-    console.log('🔍 Verificando comprobantes existentes:', { 
-      userId, 
-      tipoCliente, 
-      mesPago, 
-      count: existingReceipts?.length || 0,
-      estados: existingReceipts?.map((r: any) => r.estado)
-    })
+      if (!solicitudData) {
+        return NextResponse.json({ error: 'Solicitud no encontrada' }, { status: 400 })
+      }
+      if ((solicitudData as any).estado_pago?.toLowerCase() === 'pagado') {
+        return NextResponse.json({ error: 'Esta solicitud ya está completamente pagada' }, { status: 400 })
+      }
 
-    if (existingReceipts && existingReceipts.length > 0) {
-      const estado = (existingReceipts[0] as any).estado
-      return NextResponse.json(
-        { 
-          error: estado === 'aprobado' 
-            ? 'Ya existe un comprobante aprobado para este mes. No puedes subir otro comprobante.'
-            : 'Ya existe un comprobante pendiente de revisión para este mes. Espera a que sea revisado antes de subir otro.'
-        },
-        { status: 400 }
-      )
+      // Verificar que no exista otro comprobante para la misma solicitud en el mismo mes
+      const { data: existingBySolicitud } = await (supabase as any)
+        .from('payment_receipts')
+        .select('id, estado')
+        .eq('user_id', userId)
+        .eq('solicitud_id' as any, solicitudId)
+        .eq('mes_pago', mesPago)
+        .in('estado', ['pendiente', 'aprobado'])
+
+      console.log('🔍 Verificando comprobantes por solicitud:', { userId, solicitudId, mesPago, count: existingBySolicitud?.length || 0 })
+
+      if (existingBySolicitud && existingBySolicitud.length > 0) {
+        const estado = (existingBySolicitud[0] as any).estado
+        return NextResponse.json(
+          {
+            error: estado === 'aprobado'
+              ? 'Ya existe un comprobante aprobado para esta solicitud en este mes.'
+              : 'Ya existe un comprobante pendiente para esta solicitud en este mes. Espera a que sea revisado.'
+          },
+          { status: 400 }
+        )
+      }
+    } else {
+      // Para pagos mensuales consolidados: unicidad por (user_id, tipo_cliente, mes_pago)
+      const { data: existingReceipts } = await supabase
+        .from('payment_receipts' as any)
+        .select('id, estado')
+        .eq('user_id', userId)
+        .eq('tipo_cliente', tipoCliente)
+        .eq('mes_pago', mesPago)
+        .is('solicitud_id' as any, null)
+        .in('estado', ['pendiente', 'aprobado'])
+
+      console.log('🔍 Verificando comprobantes mensuales:', { userId, tipoCliente, mesPago, count: existingReceipts?.length || 0 })
+
+      if (existingReceipts && existingReceipts.length > 0) {
+        const estado = (existingReceipts[0] as any).estado
+        return NextResponse.json(
+          {
+            error: estado === 'aprobado'
+              ? 'Ya existe un comprobante aprobado para este mes. No puedes subir otro comprobante.'
+              : 'Ya existe un comprobante pendiente de revisión para este mes. Espera a que sea revisado antes de subir otro.'
+          },
+          { status: 400 }
+        )
+      }
     }
 
     // 5. VALIDACIONES DE SEGURIDAD DEL ARCHIVO
@@ -232,8 +276,9 @@ export async function POST(request: NextRequest) {
         mes_pago: mesPago,
         monto_declarado: montoPago ? parseFloat(montoPago) : null,
         estado: 'pendiente',
-        uploaded_at: uploadedAt
-      })
+        uploaded_at: uploadedAt,
+        ...(solicitudId ? { solicitud_id: solicitudId } : {})
+      } as any)
       .select()
       .single()
 
