@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export async function POST() {
   try {
@@ -9,7 +9,7 @@ export async function POST() {
 
     if (sessionToken) {
       // Desactivar sesión en la base de datos
-      await supabase
+      await supabaseAdmin
         .from('dev_sessions')
         .update({ is_active: false })
         .eq('session_token', sessionToken)

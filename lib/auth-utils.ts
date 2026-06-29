@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { sessionVerifyRateLimit, isRedisConfigured } from '@/lib/rate-limit'
 
 const isDev = process.env.NODE_ENV === 'development'
@@ -113,7 +113,7 @@ export async function verifyDevAdminSession(request: Request): Promise<DevAdminS
     }
 
     // Verify session in database
-    const { data: session, error } = await supabase
+    const { data: session, error } = await supabaseAdmin
       .from('dev_sessions')
       .select('id, is_active, expires_at')
       .eq('session_token', devAuth)
@@ -132,7 +132,7 @@ export async function verifyDevAdminSession(request: Request): Promise<DevAdminS
       // Deactivate expired session - await to ensure completion before returning
       // This prevents race conditions where session remains briefly active
       try {
-        const { error: deactivateError } = await supabase
+        const { error: deactivateError } = await supabaseAdmin
           .from('dev_sessions')
           .update({ is_active: false })
           .eq('id', session.id)

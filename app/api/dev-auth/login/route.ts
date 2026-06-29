@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { Resend } from 'resend'
@@ -133,9 +133,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Buscar admin por email
-    const { data: admin, error: adminError } = await supabase
+    const { data: admin, error: adminError } = await supabaseAdmin
       .from('dev_admins')
-      .select('*')
+      .select('id, email, password_hash, name, is_active')
       .eq('email', email.toLowerCase())
       .eq('is_active', true)
       .single()
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verificar límite de códigos activos (máximo 3 códigos no usados)
-    const { data: activeCodes } = await supabase
+    const { data: activeCodes } = await supabaseAdmin
       .from('dev_auth_codes')
       .select('id')
       .eq('admin_id', admin.id)
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
     const userAgent = request.headers.get('user-agent') || 'unknown'
 
     // Guardar código en la base de datos
-    const { data: authCode, error: codeError } = await supabase
+    const { data: authCode, error: codeError } = await supabaseAdmin
       .from('dev_auth_codes')
       .insert({
         admin_id: admin.id,
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
 
     if (!emailResult.success) {
       // Si falla el envío, eliminar el código de la DB
-      await supabase
+      await supabaseAdmin
         .from('dev_auth_codes')
         .delete()
         .eq('id', authCode.id)

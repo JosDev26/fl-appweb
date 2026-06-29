@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getCurrentDateCR, getMesAnterior, getRangoMes } from "@/lib/dateUtils";
-import { cookies } from 'next/headers';
-import crypto from 'crypto';
+import { verifyDevAdminSession } from '@/lib/auth-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,104 +126,13 @@ async function getDatosEmpresa(
   };
 }
 
-// ============================================================================
-// VERIFICACIÓN DE SESIÓN DE ADMIN (dev-auth)
-// Solo usuarios con sesión activa en /dev pueden acceder a este endpoint
-// ============================================================================
-async function verifyDevSession(request: NextRequest): Promise<{ 
-  valid: boolean; 
-  admin?: { id: string; email: string; name: string }; 
-  error?: string 
-}> {
-  try {
-    const cookieStore = await cookies();
-    const sessionToken = cookieStore.get('dev-auth')?.value;
-    const adminId = cookieStore.get('dev-admin-id')?.value;
-    
-    // Verificación 1: Cookies presentes
-    if (!sessionToken || !adminId) {
-      return { valid: false, error: 'No hay sesión activa. Inicie sesión en /dev' };
-    }
-    
-    // Verificación 2: Token tiene formato correcto (64 caracteres hex)
-    if (!/^[a-f0-9]{64}$/i.test(sessionToken)) {
-      return { valid: false, error: 'Token de sesión inválido' };
-    }
-    
-    // Verificación 3: AdminId tiene formato UUID válido
-    if (!/^[a-f0-9-]{36}$/i.test(adminId)) {
-      return { valid: false, error: 'ID de admin inválido' };
-    }
-    
-    // Verificación 4: Buscar sesión en base de datos
-    const { data: session, error: sessionError } = await supabase
-      .from('dev_sessions')
-      .select('*, dev_admins(*)')
-      .eq('session_token', sessionToken)
-      .eq('admin_id', adminId)
-      .eq('is_active', true)
-      .single();
-    
-    if (sessionError || !session) {
-      return { valid: false, error: 'Sesión no encontrada o inactiva' };
-    }
-    
-    // Verificación 5: Sesión no expirada
-    const now = new Date();
-    const expiresAt = new Date(session.expires_at);
-    if (now > expiresAt) {
-      // Desactivar sesión expirada
-      await supabase
-        .from('dev_sessions')
-        .update({ is_active: false })
-        .eq('id', session.id);
-      return { valid: false, error: 'Sesión expirada. Inicie sesión nuevamente.' };
-    }
-    
-    // Verificación 6: Admin sigue activo
-    if (!session.dev_admins || !session.dev_admins.is_active) {
-      return { valid: false, error: 'Usuario admin desactivado' };
-    }
-    
-    // Verificación 7: IP match (opcional pero recomendado)
-    const currentIP = request.headers.get('x-forwarded-for') || 
-                      request.headers.get('x-real-ip') || 
-                      'unknown';
-    // Solo advertir si cambia, no bloquear (puede cambiar legítimamente)
-    const ipChanged = session.ip_address !== currentIP && session.ip_address !== 'unknown';
-    
-    // Verificación 8: Generar hash de verificación adicional
-    const verificationHash = crypto
-      .createHash('sha256')
-      .update(`${sessionToken}:${adminId}:${session.created_at}`)
-      .digest('hex')
-      .substring(0, 16);
-    
-    // Log de acceso para auditoría
-    console.log(`[DEBUG-API] Acceso autorizado: admin=${session.dev_admins.email}, ip=${currentIP}, ipChanged=${ipChanged}`);
-    
-    return { 
-      valid: true, 
-      admin: {
-        id: session.dev_admins.id,
-        email: session.dev_admins.email,
-        name: session.dev_admins.name
-      }
-    };
-    
-  } catch (error: any) {
-    console.error('[DEBUG-API] Error verificando sesión:', error);
-    return { valid: false, error: 'Error interno de autenticación' };
-  }
-}
-
 // Endpoint para verificar datos de pago de un cliente específico
 // Uso: GET /api/debug-vista-pago?nombre=Natalia
 //      GET /api/debug-vista-pago?cedula=503180434
 //      GET /api/debug-vista-pago?id=5a7b0357
 export async function GET(request: NextRequest) {
   // ===== VERIFICACIÓN DE AUTENTICACIÓN OBLIGATORIA =====
-  const authResult = await verifyDevSession(request);
+  const authResult = await verifyDevAdminSession(request);
   if (!authResult.valid) {
     return NextResponse.json({
       error: 'Acceso denegado',
@@ -765,7 +673,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       _auth: {
-        accessedBy: authResult.admin?.email,
+        accessedBy: authResult.adminId,
         accessedAt: new Date().toISOString()
       },
       cliente: {

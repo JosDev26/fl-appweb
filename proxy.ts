@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 // Rutas que requieren autenticación
 const protectedRoutes = ['/home', '/caso', '/admin', '/pago', '/solicitud']
@@ -29,12 +30,7 @@ export default async function proxy(request: NextRequest) {
 
     // Verificar sesión en la base de datos
     try {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      )
-
-      const { data: session, error } = await supabase
+      const { data: session, error } = await supabaseAdmin
         .from('dev_sessions')
         .select('id, is_active, expires_at')
         .eq('session_token', devAuth)
@@ -56,7 +52,7 @@ export default async function proxy(request: NextRequest) {
       const expiresAt = new Date(session.expires_at)
 
       if (now > expiresAt) {
-        await supabase
+        await supabaseAdmin
           .from('dev_sessions')
           .update({ is_active: false })
           .eq('id', session.id)

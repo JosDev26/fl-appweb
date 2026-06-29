@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
-import { checkStandardRateLimit, sessionVerifyRateLimit, isRedisConfigured } from '@/lib/rate-limit'
+import { checkStandardRateLimit } from '@/lib/rate-limit'
+import { verifyDevAdminSession } from '@/lib/auth-utils'
 
 // Configuración de límites para códigos de invitación
 const MAX_MAX_USES = 100 // Máximo número de usos permitido
@@ -24,142 +25,6 @@ function generateSecureCode(): string {
 function isValidUUID(id: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   return uuidRegex.test(id)
-}
-
-// Validar formato de session token (64 caracteres hexadecimales)
-function isValidSessionToken(token: string): boolean {
-  return typeof token === 'string' && /^[0-9a-f]{64}$/i.test(token)
-}
-
-// Parse cookies from Cookie header (RFC 6265 compliant)
-function parseCookies(cookieHeader: string): Record<string, string> {
-  const cookies: Record<string, string> = {}
-  
-  if (!cookieHeader) {
-    return cookies
-  }
-
-  cookieHeader.split(';').forEach(cookie => {
-    const parts = cookie.trim().split('=')
-    if (parts.length >= 2) {
-      const key = parts[0].trim()
-      const value = parts.slice(1).join('=').trim() // Handle '=' in value
-      if (key) {
-        // Safely decode cookie value, fallback to raw value on malformed escapes
-        try {
-          cookies[key] = decodeURIComponent(value)
-        } catch (error) {
-          // URIError on malformed escape sequences - use raw value
-          cookies[key] = value
-        }
-      }
-    }
-  })
-
-  return cookies
-}
-
-// Verificar sesión de admin de desarrollo con rate limiting
-async function verifyDevAdminSession(request: Request): Promise<{ valid: boolean; adminId?: string; error?: string }> {
-  try {
-    // Rate limiting para verificación de sesiones (prevenir ataques de fuerza bruta)
-    if (isRedisConfigured()) {
-      const clientIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
-                       request.headers.get('x-real-ip') || 
-                       '127.0.0.1'
-      
-      const identifier = `session-verify:${clientIP}`
-      
-      try {
-        const result = await sessionVerifyRateLimit.limit(identifier)
-        if (!result.success) {
-          console.warn('[Session Verify] Rate limit exceeded for IP:', clientIP)
-          return { valid: false, error: 'Invalid admin session' }
-        }
-      } catch (error) {
-        // Fail-closed: Si Redis falla, rechazar la solicitud por seguridad
-        console.error('[Session Verify] Rate limit check failed - blocking request:', error)
-        return { valid: false, error: 'Service temporarily unavailable' }
-      }
-    }
-
-    // Obtener y parsear cookies del request
-    const cookieHeader = request.headers.get('cookie')
-    if (!cookieHeader) {
-      console.warn('[Session Verify] No cookie header present')
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    const cookies = parseCookies(cookieHeader)
-    const devAuth = cookies['dev-auth']
-    const adminId = cookies['dev-admin-id']
-
-    // Validar presencia de cookies requeridas
-    if (!devAuth || !adminId) {
-      console.warn('[Session Verify] Missing required cookies:', { 
-        hasDevAuth: !!devAuth, 
-        hasAdminId: !!adminId 
-      })
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    // Validar formato del session token (64 caracteres hex)
-    if (!isValidSessionToken(devAuth)) {
-      console.warn('[Session Verify] Invalid session token format')
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    // Validar formato del admin ID (UUID)
-    if (!isValidUUID(adminId)) {
-      console.warn('[Session Verify] Invalid admin ID format')
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    // Verificar sesión en la base de datos
-    const { data: session, error } = await supabase
-      .from('dev_sessions')
-      .select('id, is_active, expires_at')
-      .eq('session_token', devAuth)
-      .eq('admin_id', adminId)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (error) {
-      console.error('[Session Verify] Database error:', error)
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    if (!session) {
-      console.warn('[Session Verify] Session not found or inactive:', { adminId })
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    // Verificar expiración
-    const now = new Date()
-    const expiresAt = new Date(session.expires_at)
-
-    if (now > expiresAt) {
-      console.warn('[Session Verify] Session expired:', { adminId, expiresAt })
-      
-      // Desactivar sesión expirada de forma asíncrona (no bloqueante)
-      supabase
-        .from('dev_sessions')
-        .update({ is_active: false })
-        .eq('id', session.id)
-        .then(({ error }) => {
-          if (error) {
-            console.error('[Session Verify] Failed to deactivate expired session:', error)
-          }
-        })
-
-      return { valid: false, error: 'Invalid admin session' }
-    }
-
-    return { valid: true, adminId }
-  } catch (error) {
-    console.error('[Session Verify] Unexpected error:', error)
-    return { valid: false, error: 'Invalid admin session' }
-  }
 }
 
 // Enmascarar código para mostrar solo los últimos 8 caracteres

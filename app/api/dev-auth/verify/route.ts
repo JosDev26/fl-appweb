@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
 import { checkAuthRateLimit } from '@/lib/rate-limit'
@@ -27,9 +27,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Buscar el código
-    const { data: authCode, error: fetchError } = await supabase
+    const { data: authCode, error: fetchError } = await supabaseAdmin
       .from('dev_auth_codes')
-      .select('*, dev_admins(*)')
+      .select('*, dev_admins(id, email, name, is_active)')
       .eq('code', code.trim())
       .eq('admin_id', adminId)
       .eq('is_active', true)
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     if (now > expiresAt) {
       // Desactivar código expirado
-      await supabase
+      await supabaseAdmin
         .from('dev_auth_codes')
         .update({ is_active: false })
         .eq('id', authCode.id)
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Marcar código como usado
-    const { error: updateCodeError } = await supabase
+    const { error: updateCodeError } = await supabaseAdmin
       .from('dev_auth_codes')
       .update({
         used_at: now.toISOString(),
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
     const userAgent = request.headers.get('user-agent') || 'unknown'
 
     // Crear sesión en la base de datos
-    const { error: sessionError } = await supabase
+    const { error: sessionError } = await supabaseAdmin
       .from('dev_sessions')
       .insert({
         admin_id: authCode.admin_id,
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Actualizar último login
-    await supabase
+    await supabaseAdmin
       .from('dev_admins')
       .update({ last_login: now.toISOString() })
       .eq('id', authCode.admin_id)
