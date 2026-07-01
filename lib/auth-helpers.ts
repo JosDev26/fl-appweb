@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { supabase } from './supabase'
 import { createClient } from '@supabase/supabase-js'
 import { logIdorAttempt, logAccessDenied } from './security-logger'
+import { verifyDevAdminSession } from './auth-utils'
 
 // ============================================
 // AUTHORIZATION HELPERS
@@ -136,6 +137,29 @@ export async function getAuthenticatedUser(
     console.error('[Auth] getAuthenticatedUser - error:', error)
     return null
   }
+}
+
+export interface ResolvedIdentity {
+  id: string
+  type: UserType
+  source: 'self' | 'admin-impersonation'
+  adminId?: string
+}
+
+export async function resolveUserIdentity(request: NextRequest): Promise<ResolvedIdentity | null> {
+  const user = await getAuthenticatedUser(request)
+  if (user) {
+    return { id: user.id, type: user.type, source: 'self' }
+  }
+  const admin = await verifyDevAdminSession(request)
+  if (admin.valid && admin.adminId) {
+    const targetId = request.headers.get('x-user-id')
+    const targetTipo = request.headers.get('x-tipo-cliente')
+    if (targetId && (targetTipo === 'cliente' || targetTipo === 'empresa')) {
+      return { id: targetId, type: targetTipo, source: 'admin-impersonation', adminId: admin.adminId }
+    }
+  }
+  return null
 }
 
 // ============================================

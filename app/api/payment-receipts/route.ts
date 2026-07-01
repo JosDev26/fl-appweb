@@ -156,6 +156,7 @@ export async function PATCH(request: NextRequest) {
     const mesPago = (receipt as any).mes_pago
     const solicitudId: string | null = (receipt as any).solicitud_id || null
     const montoDeclarado: number = (receipt as any).monto_declarado || 0
+    const itemsPagados: any = (receipt as any).items_pagados || null
 
     // Validate mesPago format if present
     if (mesPago && !isValidMesPago(mesPago)) {
@@ -588,6 +589,91 @@ export async function PATCH(request: NextRequest) {
       // Actualizar solicitudes con modalidad mensual
       // IMPORTANTE: Los gastos NO se incluyen en monto_pagado
       if (!solicitudId) {
+      // ===== MARCADO SELECTIVO (admin /dev con items_pagados) =====
+      if (itemsPagados) {
+        if (isDev) console.log(' Marcado selectivo por items_pagados para cliente:', userId)
+        try {
+          // Gastos
+          if (Array.isArray(itemsPagados.gastos) && itemsPagados.gastos.length > 0) {
+            const { error: gErr } = await supabase
+              .from('gastos' as any)
+              .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+              .in('id', itemsPagados.gastos)
+            if (gErr) console.error(' Error marcando gastos selectivos:', gErr)
+            else if (isDev) console.log(` Gastos selectivos marcados: ${itemsPagados.gastos.length}`)
+          }
+          // Servicios profesionales
+          if (Array.isArray(itemsPagados.servicios) && itemsPagados.servicios.length > 0) {
+            const { error: sErr } = await supabase
+              .from('servicios_profesionales' as any)
+              .update({ estado_pago: 'pagado' })
+              .in('id', itemsPagados.servicios)
+            if (sErr) console.error(' Error marcando servicios selectivos:', sErr)
+            else if (isDev) console.log(` Servicios selectivos marcados: ${itemsPagados.servicios.length}`)
+          }
+          // Trabajos por hora
+          if (Array.isArray(itemsPagados.tph) && itemsPagados.tph.length > 0) {
+            const { error: tErr } = await supabase
+              .from('trabajos_por_hora')
+              .update({ estado_pago: 'pagado', updated_at: fechaAprobacion })
+              .in('id', itemsPagados.tph)
+            if (tErr) console.error(' Error marcando TPH selectivos:', tErr)
+            else if (isDev) console.log(` TPH selectivos marcados: ${itemsPagados.tph.length}`)
+          }
+          // Mensualidades (por solicitud + mes)
+          if (Array.isArray(itemsPagados.mensualidades) && itemsPagados.mensualidades.length > 0) {
+            // Insertar registros de meses pagados (ON CONFLICT DO NOTHING)
+            const mpRows = itemsPagados.mensualidades.map((m: any) => ({
+              solicitud_id: m.solicitudId,
+              client_id: userId,
+              tipo_cliente: tipoCliente,
+              mes_pago: m.mes,
+              receipt_id: receiptId,
+            }))
+            const { error: mpErr } = await (supabase as any)
+              .from('mensualidad_pagos')
+              .upsert(mpRows, { onConflict: 'solicitud_id,mes_pago', ignoreDuplicates: true })
+            if (mpErr) console.error(' Error insertando mensualidad_pagos:', mpErr)
+
+            // Agrupar por solicitudId para actualizar monto_pagado/saldo_pendiente
+            const porSolicitud = new Map<string, number>()
+            for (const m of itemsPagados.mensualidades) {
+              porSolicitud.set(m.solicitudId, (porSolicitud.get(m.solicitudId) || 0) + 1)
+            }
+            const solIds = Array.from(porSolicitud.keys())
+            if (solIds.length > 0) {
+              const { data: solsData } = await supabase
+                .from('solicitudes')
+                .select('id, monto_por_cuota, monto_pagado, costo_neto, se_cobra_iva, monto_iva, total_a_pagar, estado_pago')
+                .in('id', solIds)
+              for (const sol of (solsData || []) as any[]) {
+                const count = porSolicitud.get(sol.id) || 0
+                const montoCuota = sol.monto_por_cuota || 0
+                const pagoRealizado = montoCuota * count
+                const nuevoMontoPagado = (sol.monto_pagado || 0) + pagoRealizado
+                const costoNeto = sol.costo_neto || 0
+                const iva = sol.se_cobra_iva ? (sol.monto_iva || costoNeto * 0.13) : 0
+                const totalAPagar = sol.total_a_pagar || (costoNeto + iva)
+                const nuevoSaldo = Math.max(0, totalAPagar - nuevoMontoPagado)
+                const nuevoEstado = nuevoSaldo <= 0 ? 'Pagado' : sol.estado_pago
+                const { error: solErr } = await supabase
+                  .from('solicitudes')
+                  .update({
+                    monto_pagado: nuevoMontoPagado,
+                    saldo_pendiente: nuevoSaldo,
+                    estado_pago: nuevoEstado,
+                    updated_at: fechaAprobacion
+                  })
+                  .eq('id', sol.id)
+                if (solErr) console.error(` Error actualizando solicitud ${sol.id}:`, solErr)
+              }
+              if (isDev) console.log(` Mensualidades selectivas: ${itemsPagados.mensualidades.length} meses, ${solIds.length} solicitudes`)
+            }
+          }
+        } catch (selErr) {
+          console.error(' Error en marcado selectivo:', selErr)
+        }
+      } else {
       if (isDev) console.log(' Actualizando solicitudes mensualidades del cliente:', userId)
       try {
         const { data: solicitudesMensuales, error: solicitudesError } = await supabase
@@ -949,6 +1035,7 @@ export async function PATCH(request: NextRequest) {
           console.error(' Error al procesar gastos:', err)
         }
       }
+      } // end else (!itemsPagados)
 
       // Marcar factura como pagada directamente en la base de datos
       if (isDev) console.log(' Intentando actualizar factura con mes_pago:', mesPago)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import styles from './dev.module.css'
 
 // ===== DEV LOGGER =====
@@ -473,12 +473,18 @@ export default function DevPage() {
   const [filtroExpCliente, setFiltroExpCliente] = useState('')
 
   // Estados para Pagar por Cliente
+  // Nombre del mes (definido aquí para estar disponible en memos/handlers)
+  const getNombreMes = (mesStr: string) => {
+    const [year, month] = mesStr.split('-')
+    const meses = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    return `${meses[parseInt(month)]} ${year}`
+  }
   const [clientesParaPago, setClientesParaPago] = useState<{id: string, nombre: string, tipo: 'empresa' | 'cliente', cedula?: string}[]>([])
   const [loadingClientesPago, setLoadingClientesPago] = useState(false)
   const [pagoClienteSeleccionado, setPagoClienteSeleccionado] = useState<string>('')
   const [pagoTipoSeleccionado, setPagoTipoSeleccionado] = useState<'empresa' | 'cliente'>('empresa')
   const [pagoMes, setPagoMes] = useState<string>('')
-  const [pagoMontoCalculado, setPagoMontoCalculado] = useState<number>(0)
   const [pagoMonto, setPagoMonto] = useState<string>('')
   const [pagoArchivo, setPagoArchivo] = useState<File | null>(null)
   const [loadingPagoMonto, setLoadingPagoMonto] = useState(false)
@@ -490,6 +496,117 @@ export default function DevPage() {
   const [solicitudesPendientesCliente, setSolicitudesPendientesCliente] = useState<any[]>([])
   const [pagoSolicitudId, setPagoSolicitudId] = useState<string>('')
   const [pagoTipoModalidad, setPagoTipoModalidad] = useState<string>('mensualidad')
+
+  // Desglose seleccionable (Pagar por cliente - mensualidad)
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set())
+
+  // Construye el desglose de items seleccionables desde los datos de pago
+  const desglosePago = useMemo(() => {
+    if (pagoTipoModalidad !== 'mensualidad' || !pagoDetalles) return null
+    const tarifaHora = pagoDetalles.tarifaHora || 90000
+    const ivaPerc = pagoDetalles.ivaPerc ?? 0.13
+    const parseMin = (d: string | null | undefined): number => {
+      if (!d) return 0
+      if (d.includes(':')) { const [h, m] = d.split(':').map(Number); return (h * 60) + m }
+      return Math.round(parseFloat(d) * 60)
+    }
+    const cats: { nombre: string; items: any[] }[] = []
+
+    const gastosItems = [
+      ...((pagoDetalles.gastos || []) as any[]).map(g => ({ key: `gasto:${g.id}`, id: g.id, tipo: 'gastos', desc: g.producto || 'Gasto', fecha: g.fecha, monto: g.total_cobro || 0, iva: 0, arrastrado: false, pagado: g.estado_pago === 'pagado' })),
+      ...((pagoDetalles.gastosPendientesAnteriores || []) as any[]).map(g => ({ key: `gasto:${g.id}`, id: g.id, tipo: 'gastos', desc: g.producto || 'Gasto', fecha: g.fecha, monto: g.total_cobro || 0, iva: 0, arrastrado: true, pagado: g.estado_pago === 'pagado' })),
+    ]
+    if (gastosItems.length) cats.push({ nombre: 'Gastos', items: gastosItems })
+
+    const servItems = [
+      ...((pagoDetalles.serviciosProfesionales || []) as any[]).map(s => ({ key: `servicio:${s.id}`, id: s.id, tipo: 'servicios', desc: s.lista_servicios?.titulo || s.id_servicio || 'Servicio', fecha: s.fecha, monto: s.total || 0, iva: 0, arrastrado: false, pagado: s.estado_pago === 'pagado' })),
+      ...((pagoDetalles.serviciosPendientesAnteriores || []) as any[]).map(s => ({ key: `servicio:${s.id}`, id: s.id, tipo: 'servicios', desc: s.lista_servicios?.titulo || s.id_servicio || 'Servicio', fecha: s.fecha, monto: s.total || 0, iva: 0, arrastrado: true, pagado: s.estado_pago === 'pagado' })),
+    ]
+    if (servItems.length) cats.push({ nombre: 'Servicios Profesionales', items: servItems })
+
+    const tphItems: any[] = []
+    ;((pagoDetalles.trabajosPorHora || []) as any[]).forEach((grupo: any) => {
+      (grupo.trabajos || []).forEach((t: any) => {
+        const min = parseMin(t.duracion)
+        const monto = (min / 60) * tarifaHora
+        tphItems.push({ key: `tph:${t.id}`, id: t.id, tipo: 'tph', desc: `${t.titulo || 'Trabajo'} — ${grupo.caso?.nombre || grupo.caso?.expediente || ''}`, fecha: t.fecha, monto, iva: monto * ivaPerc, arrastrado: false, pagado: t.estado_pago === 'pagado' })
+      })
+    })
+    ;((pagoDetalles.trabajosPendientesAnteriores || []) as any[]).forEach((t: any) => {
+      const min = parseMin(t.duracion)
+      const monto = (min / 60) * tarifaHora
+      tphItems.push({ key: `tph:${t.id}`, id: t.id, tipo: 'tph', desc: `${t.titulo || 'Trabajo'} — ${t.casos?.nombre || t.casos?.expediente || ''}`, fecha: t.fecha, monto, iva: monto * ivaPerc, arrastrado: true, pagado: t.estado_pago === 'pagado' })
+    })
+    if (tphItems.length) cats.push({ nombre: 'Horas Trabajadas', items: tphItems })
+
+    const mensItems = ((pagoDetalles.mensualidadesPendientes || []) as any[]).map(m => ({
+      key: `mensualidad:${m.solicitudId}:${m.mes}`, id: m.solicitudId, tipo: 'mensualidades', mes: m.mes,
+      desc: `${m.titulo} — ${getNombreMes(m.mes)}`, monto: m.montoNeto, iva: m.montoIVA, arrastrado: m.esArrastrado, pagado: false
+    }))
+    if (mensItems.length) cats.push({ nombre: 'Mensualidad', items: mensItems })
+
+    return { categorias: cats, tarifaHora, ivaPerc }
+  }, [pagoTipoModalidad, pagoDetalles])
+
+  // Total derivado de los items seleccionados (excluye pagados)
+  const totalSeleccionado = useMemo(() => {
+    if (!desglosePago) return 0
+    let total = 0
+    for (const cat of desglosePago.categorias) {
+      for (const it of cat.items) {
+        if (it.pagado) continue
+        if (selectedItems.has(it.key)) total += (it.monto || 0) + (it.iva || 0)
+      }
+    }
+    return Math.round(total * 100) / 100
+  }, [desglosePago, selectedItems])
+
+  // Construye el objeto items_pagados para el backend (excluye pagados)
+  const construirItemsPagados = useCallback(() => {
+    if (!desglosePago) return null
+    const result: { gastos: string[]; servicios: string[]; tph: string[]; mensualidades: { solicitudId: string; mes: string }[] } = { gastos: [], servicios: [], tph: [], mensualidades: [] }
+    for (const cat of desglosePago.categorias) {
+      for (const it of cat.items) {
+        if (it.pagado) continue
+        if (!selectedItems.has(it.key)) continue
+        if (it.tipo === 'gastos') result.gastos.push(it.id)
+        else if (it.tipo === 'servicios') result.servicios.push(it.id)
+        else if (it.tipo === 'tph') result.tph.push(it.id)
+        else if (it.tipo === 'mensualidades') result.mensualidades.push({ solicitudId: it.id, mes: it.mes })
+      }
+    }
+    const hasAny = result.gastos.length || result.servicios.length || result.tph.length || result.mensualidades.length
+    return hasAny ? result : null
+  }, [desglosePago, selectedItems])
+
+  // Pre-seleccionar items del mes actual (no arrastrados, no pagados) al cargar el desglose
+  useEffect(() => {
+    if (!desglosePago) { setSelectedItems(new Set()); return }
+    const pre = new Set<string>()
+    for (const cat of desglosePago.categorias) {
+      for (const it of cat.items) {
+        if (!it.arrastrado && !it.pagado) pre.add(it.key)
+      }
+    }
+    setSelectedItems(pre)
+  }, [desglosePago])
+
+  // Monto auto-calculado para etapa/pago_unico (cuota o saldo de la solicitud)
+  const montoSolicitudSeleccionada = useMemo(() => {
+    if (pagoTipoModalidad === 'mensualidad' || !pagoSolicitudId) return 0
+    const sol = solicitudesPendientesCliente.find(s => s.id === pagoSolicitudId)
+    if (!sol) return 0
+    const cuota = sol.monto_por_cuota ?? 0
+    const saldo = sol.saldo_pendiente ?? sol.total_a_pagar ?? 0
+    return cuota > 0 ? cuota : saldo
+  }, [pagoTipoModalidad, pagoSolicitudId, solicitudesPendientesCliente])
+
+  // Sincronizar pagoMonto con el total derivado (items seleccionados o solicitud)
+  useEffect(() => {
+    const m = pagoTipoModalidad === 'mensualidad' ? totalSeleccionado : montoSolicitudSeleccionada
+    setPagoMonto(m > 0 ? m.toString() : '')
+    setPagoConfirmando(false)
+  }, [totalSeleccionado, montoSolicitudSeleccionada, pagoTipoModalidad])
 
   // Montaje del componente - cargar fecha simulada global
   useEffect(() => {
@@ -2057,13 +2174,15 @@ export default function DevPage() {
   }
 
   // PAGAR POR CLIENTE - Calcular monto adeudado
-  const loadMontoPago = async (clientId: string, tipoCliente: string) => {
+  const loadMontoPago = async (clientId: string, tipoCliente: string, mesOverride?: string) => {
     setLoadingPagoMonto(true)
     setPagoDetalles(null)
     try {
-      const url = isDateSimulated && simulatedDate
-        ? `/api/datos-pago?simulatedDate=${simulatedDate}`
-        : '/api/datos-pago'
+      const mes = mesOverride ?? pagoMes
+      const params = new URLSearchParams()
+      if (isDateSimulated && simulatedDate) params.append('simulatedDate', simulatedDate)
+      if (mes) params.append('mes', mes)
+      const url = `/api/datos-pago${params.toString() ? '?' + params.toString() : ''}`
       const res = await fetch(url, {
         credentials: 'include',
         headers: {
@@ -2073,22 +2192,18 @@ export default function DevPage() {
       })
       const data = await res.json()
       if (data.success || data.totalAPagar !== undefined) {
-        const total = data.granTotalAPagar || data.totalAPagar || 0
-        setPagoMontoCalculado(total)
-        setPagoMonto(total.toString())
         setPagoDetalles(data)
         if (data.solicitudesPendientes) {
           setSolicitudesPendientesCliente(data.solicitudesPendientes)
         }
+        // pagoMonto se deriva del desglose seleccionado (sync effect), no del total del API
       } else {
-        setPagoMontoCalculado(0)
-        setPagoMonto('0')
+        setPagoDetalles(null)
         setSolicitudesPendientesCliente([])
       }
     } catch (error) {
       console.error('Error calculando monto:', error)
-      setPagoMontoCalculado(0)
-      setPagoMonto('0')
+      setPagoDetalles(null)
     } finally {
       setLoadingPagoMonto(false)
     }
@@ -2122,6 +2237,13 @@ export default function DevPage() {
       }
       if (pagoTipoModalidad !== 'mensualidad' && pagoSolicitudId) {
         formData.append('solicitud_id', pagoSolicitudId)
+      }
+      // Para mensualidad: enviar items seleccionados para marcado selectivo
+      if (pagoTipoModalidad === 'mensualidad') {
+        const itemsPagados = construirItemsPagados()
+        if (itemsPagados) {
+          formData.append('items_pagados', JSON.stringify(itemsPagados))
+        }
       }
 
       const uploadRes = await fetch('/api/upload-comprobante', {
@@ -2199,9 +2321,9 @@ export default function DevPage() {
   // PAGAR POR CLIENTE - Generar opciones de meses (últimos 12)
   const getMesesPago = () => {
     const meses: {value: string, label: string}[] = []
-    const now = new Date()
+    const base = (isDateSimulated && simulatedDate) ? new Date(simulatedDate + 'T12:00:00') : new Date()
     for (let i = 1; i <= 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const d = new Date(base.getFullYear(), base.getMonth() - i, 1)
       const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       meses.push({ value: val, label: getNombreMes(val) })
     }
@@ -2213,14 +2335,6 @@ export default function DevPage() {
     const h = Math.floor(horas)
     const m = Math.round((horas - h) * 60)
     return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-
-  // Nombre del mes
-  const getNombreMes = (mesStr: string) => {
-    const [year, month] = mesStr.split('-')
-    const meses = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
-                   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-    return `${meses[parseInt(month)]} ${year}`
   }
 
   const handleLogout = async () => {
@@ -5373,12 +5487,12 @@ export default function DevPage() {
                       setPagoSolicitudId('')
                       setSolicitudesPendientesCliente([])
                       setPagoMonto('')
-                      setPagoMontoCalculado(0)
                       setPagoDetalles(null)
+                      setSelectedItems(new Set())
                       const found = clientesParaPago.find(c => c.id === clienteId)
                       if (found) {
                         setPagoTipoSeleccionado(found.tipo)
-                        if (pagoMes) loadMontoPago(clienteId, found.tipo)
+                        if (pagoMes) loadMontoPago(clienteId, found.tipo, pagoMes)
                       } else {
                         setPagoMonto('')
                         setPagoDetalles(null)
@@ -5409,12 +5523,7 @@ export default function DevPage() {
                       setPagoTipoModalidad(e.target.value)
                       setPagoSolicitudId('')
                       setPagoConfirmando(false)
-                      // Para mensualidad: mantener monto calculado; para otros: limpiar
-                      if (e.target.value !== 'mensualidad') {
-                        setPagoMonto('')
-                      } else {
-                        setPagoMonto(pagoMontoCalculado > 0 ? pagoMontoCalculado.toString() : '')
-                      }
+                      setPagoMonto('')
                     }}
                   >
                     <option value="mensualidad">Mensualidad (auto-calculado)</option>
@@ -5498,7 +5607,7 @@ export default function DevPage() {
                       setPagoMes(mes)
                       setPagoConfirmando(false)
                       if (pagoClienteSeleccionado && mes && pagoTipoModalidad === 'mensualidad') {
-                        loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado)
+                        loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado, mes)
                       }
                     }}
                   >
@@ -5509,47 +5618,124 @@ export default function DevPage() {
                   </select>
                 </div>
 
-                {/* Monto */}
-                <div className={styles.formGroup} style={{ marginBottom: 0 }}>
-                  <label className={styles.formLabel}>
-                    Monto a Pagar
-                    {loadingPagoMonto && pagoTipoModalidad === 'mensualidad' && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>(calculando...)</span>}
-                  </label>
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    <input
-                      type="number"
-                      className={styles.input}
-                      value={pagoMonto}
-                      onChange={(e) => { setPagoMonto(e.target.value); setPagoConfirmando(false) }}
-                      placeholder={pagoTipoModalidad === 'mensualidad' ? '0.00' : 'Ingresar monto manualmente'}
-                      min="0"
-                      step="0.01"
-                      disabled={loadingPagoMonto && pagoTipoModalidad === 'mensualidad'}
-                      style={{ flex: 1 }}
-                    />
-                    {pagoTipoModalidad === 'mensualidad' && pagoClienteSeleccionado && pagoMes && (
-                      <button
-                        className={styles.buttonSecondary}
-                        onClick={() => loadMontoPago(pagoClienteSeleccionado, pagoTipoSeleccionado)}
-                        disabled={loadingPagoMonto}
-                        style={{ whiteSpace: 'nowrap' }}
-                      >
-                        Recalcular
-                      </button>
+                {/* Desglose / Monto */}
+                {pagoTipoModalidad === 'mensualidad' ? (
+                  <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                    <label className={styles.formLabel}>
+                      Desglose del Mes
+                      {loadingPagoMonto && <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#666' }}>(cargando...)</span>}
+                    </label>
+                    {loadingPagoMonto ? (
+                      <p style={{ fontSize: '0.875rem', color: '#666', padding: '0.5rem 0' }}>Cargando items...</p>
+                    ) : desglosePago && desglosePago.categorias.length > 0 ? (
+                      <>
+                        <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
+                          Selecciona los items a pagar. Los del mes están pre-seleccionados; los arrastrados son opcionales.
+                        </p>
+                        {desglosePago.categorias.map((cat: any) => {
+                          const pagables = cat.items.filter((it: any) => !it.pagado)
+                          const pagados = cat.items.filter((it: any) => it.pagado)
+                          const catTotal = pagables.reduce((s: number, it: any) => s + (it.monto || 0) + (it.iva || 0), 0)
+                          const catSelected = pagables.filter((it: any) => selectedItems.has(it.key)).reduce((s: number, it: any) => s + (it.monto || 0) + (it.iva || 0), 0)
+                          const allSelected = pagables.length > 0 && pagables.every((it: any) => selectedItems.has(it.key))
+                          return (
+                            <div key={cat.nombre} style={{ border: '1px solid #e0e0e0', borderRadius: '6px', marginBottom: '0.5rem', overflow: 'hidden' }}>
+                              <div style={{ background: '#f5f5f5', padding: '0.5rem 0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <label style={{ fontWeight: 600, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: pagables.length > 0 ? 'pointer' : 'default' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={allSelected}
+                                    disabled={pagables.length === 0}
+                                    onChange={(e) => {
+                                      const next = new Set(selectedItems)
+                                      pagables.forEach((it: any) => { if (e.target.checked) next.add(it.key); else next.delete(it.key) })
+                                      setSelectedItems(next); setPagoConfirmando(false)
+                                    }}
+                                  />
+                                  {cat.nombre}
+                                </label>
+                                <span style={{ fontSize: '0.8rem', color: catSelected > 0 ? '#1565c0' : '#888' }}>
+                                  {catSelected.toLocaleString()} / {catTotal.toLocaleString()}
+                                  {pagados.length > 0 && <span style={{ color: '#388e3c', marginLeft: '0.4rem' }}>· {pagados.length} pagado{pagados.length > 1 ? 's' : ''}</span>}
+                                </span>
+                              </div>
+                              <div style={{ padding: '0.25rem 0' }}>
+                                {cat.items.map((it: any) => (
+                                  <label key={it.key} style={{
+                                    display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0.75rem',
+                                    cursor: it.pagado ? 'default' : 'pointer',
+                                    background: it.pagado ? '#f5f5f5' : (selectedItems.has(it.key) ? '#f0f7ff' : 'transparent'),
+                                    opacity: it.pagado ? 0.7 : 1
+                                  }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={it.pagado ? false : selectedItems.has(it.key)}
+                                      disabled={it.pagado}
+                                      onChange={(e) => {
+                                        if (it.pagado) return
+                                        const next = new Set(selectedItems)
+                                        if (e.target.checked) next.add(it.key); else next.delete(it.key)
+                                        setSelectedItems(next); setPagoConfirmando(false)
+                                      }}
+                                    />
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: '0.85rem', color: it.pagado ? '#888' : '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: it.pagado ? 'line-through' : 'none' }}>
+                                        {it.desc}
+                                        {it.fecha && <span style={{ color: '#999', fontSize: '0.75rem' }}> · {it.fecha}</span>}
+                                      </div>
+                                      {it.pagado ? (
+                                        <span style={{ display: 'inline-block', fontSize: '0.7rem', background: '#c8e6c9', color: '#1b5e20', padding: '0.05rem 0.4rem', borderRadius: '3px', marginTop: '0.15rem' }}>
+                                          ✓ Pagado
+                                        </span>
+                                      ) : it.arrastrado ? (
+                                        <span style={{ display: 'inline-block', fontSize: '0.7rem', background: '#fff3cd', color: '#856404', padding: '0.05rem 0.4rem', borderRadius: '3px', marginTop: '0.15rem' }}>
+                                          ⚠ Mes arrastrado
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: it.pagado ? '#aaa' : '#333', whiteSpace: 'nowrap' }}>
+                                      {(Math.round((it.monto + it.iva) * 100) / 100).toLocaleString()}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: '#e3f2fd', borderRadius: '6px', marginTop: '0.5rem' }}>
+                          <strong style={{ fontSize: '0.95rem' }}>Total a Pagar</strong>
+                          <strong style={{ fontSize: '1.05rem', color: '#1565c0' }}>{totalSeleccionado.toLocaleString()}</strong>
+                        </div>
+                        {pagoDetalles && (
+                          <small style={{ color: '#666', display: 'block', marginTop: '0.25rem' }}>
+                            Moneda: {pagoDetalles.moneda || '—'} | Tarifa/hora: {desglosePago?.tarifaHora?.toLocaleString() || '—'}
+                          </small>
+                        )}
+                      </>
+                    ) : (
+                      <p style={{ fontSize: '0.875rem', color: '#888', padding: '0.5rem 0' }}>
+                        {pagoClienteSeleccionado && pagoMes ? 'No hay items pendientes para este cliente/mes.' : 'Selecciona un cliente y mes para ver el desglose.'}
+                      </p>
                     )}
                   </div>
-                  {pagoTipoModalidad === 'mensualidad' && pagoMontoCalculado > 0 && pagoMonto !== pagoMontoCalculado.toString() && (
-                    <small style={{ color: '#f57c00', display: 'block', marginTop: '0.25rem' }}>
-                      Monto editado manualmente. Calculado original: {pagoMontoCalculado.toLocaleString()}
-                    </small>
-                  )}
-                  {pagoTipoModalidad === 'mensualidad' && pagoDetalles && (
-                    <small style={{ color: '#666', display: 'block', marginTop: '0.25rem' }}>
-                      Moneda: {pagoDetalles.moneda || '—'}
-                      {pagoDetalles.desglose && ` | Honorarios: ${(pagoDetalles.desglose?.honorarios || 0).toLocaleString()} | Gastos: ${(pagoDetalles.desglose?.gastos || 0).toLocaleString()}`}
-                    </small>
-                  )}
-                </div>
+                ) : (
+                  <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                    <label className={styles.formLabel}>Monto a Pagar (auto-calculado)</label>
+                    <input
+                      type="text"
+                      className={styles.input}
+                      value={pagoSolicitudId ? montoSolicitudSeleccionada.toLocaleString() : ''}
+                      readOnly
+                      placeholder="Selecciona una solicitud..."
+                      style={{ background: '#f5f5f5' }}
+                    />
+                    {pagoSolicitudId && (
+                      <small style={{ color: '#666', display: 'block', marginTop: '0.25rem' }}>
+                        Monto derivado de la solicitud seleccionada (cuota o saldo pendiente).
+                      </small>
+                    )}
+                  </div>
+                )}
 
                 {/* Upload de archivo */}
                 <div className={styles.formGroup} style={{ marginBottom: 0 }}>
@@ -5578,26 +5764,27 @@ export default function DevPage() {
                 </div>
 
                 {/* Info box para meses atrasados */}
-                {pagoMes && (() => {
-                  const now = new Date()
-                  const mesAnterior = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`
-                  const mesAct = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+                {pagoMes && pagoTipoModalidad === 'mensualidad' && (() => {
+                  const base = (isDateSimulated && simulatedDate) ? new Date(simulatedDate + 'T12:00:00') : new Date()
+                  const mesAnterior = `${base.getFullYear()}-${String(base.getMonth()).padStart(2, '0')}`
+                  const mesAct = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`
                   return pagoMes !== mesAnterior && pagoMes !== mesAct
                 })() && (
                   <div className={styles.infoBox} style={{ borderLeft: '4px solid #f57c00', background: '#fff8e1' }}>
                     <p style={{ fontSize: '0.85rem', color: '#856404' }}>
-                      <strong>Mes atrasado:</strong> El monto auto-calculado refleja la deuda actual, no la de ese mes especifico. Ajuste el monto manualmente si es necesario.
+                      <strong>Mes atrasado:</strong> Se mostrarán los items pendientes de meses anteriores (arrastrados) como opcionales. Selecciona solo lo que quieras pagar.
                     </p>
                   </div>
                 )}
 
                 {/* Resumen y confirmación */}
-                {pagoClienteSeleccionado && pagoMes && pagoMonto && pagoArchivo && !pagoConfirmando &&
-                  (pagoTipoModalidad === 'mensualidad' || pagoSolicitudId) && (
+                {pagoClienteSeleccionado && pagoMes && pagoArchivo && !pagoConfirmando &&
+                  (pagoTipoModalidad === 'mensualidad' || pagoSolicitudId) &&
+                  Number(pagoMonto) > 0 && (
                   <button
                     className={styles.button}
                     onClick={() => setPagoConfirmando(true)}
-                    disabled={loadingPago || Number(pagoMonto) <= 0}
+                    disabled={loadingPago}
                     style={{ width: 'fit-content' }}
                   >
                     Revisar y Registrar Pago

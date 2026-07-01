@@ -314,8 +314,10 @@ export async function GET(request: NextRequest) {
     
     if (isDev) console.log('📅 [datos-pago] Mes:', mesPago, '| Rango:', inicioMesStr, 'a', finMesStr)
 
-    // Cuando se pide un mes específico, no incluir carry-forward de otros meses
-    const incluirCarryForward = !mesParam;
+    // Carry-forward siempre activo: los items de meses anteriores se devuelven
+    // en arrays separados (gastosPendientesAnteriores, etc.) para mostrarse
+    // como items seleccionables opcionales con aviso de "mes arrastrado".
+    const incluirCarryForward = true;
 
     // Verificar si es empresa principal de un grupo
     let esGrupoPrincipal = false;
@@ -454,7 +456,7 @@ export async function GET(request: NextRequest) {
     // Obtener gastos del mes anterior del cliente con detalles (SIN FK join)
     const { data: gastosRaw, error: gastosError } = await supabase
       .from('gastos' as any)
-      .select('id, producto, fecha, total_cobro, id_responsable')
+      .select('id, producto, fecha, total_cobro, id_responsable, estado_pago')
       .eq('id_cliente', userId)
       .gte('fecha', inicioMesStr)
       .lte('fecha', finMesStr)
@@ -480,7 +482,7 @@ export async function GET(request: NextRequest) {
       }));
     }
     
-    const totalGastos = gastos.reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+    const totalGastos = gastos.filter((g: any) => (g.estado_pago || 'pendiente') !== 'pagado').reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
     // ========== GASTOS PENDIENTES DE MESES ANTERIORES ==========
     const fechaLimite12Meses = new Date(year, month - 12, 1); // 12 meses antes del mes de reporte
@@ -574,10 +576,10 @@ export async function GET(request: NextRequest) {
     }
     
     // Calcular total de servicios profesionales (el campo 'total' ya incluye todo)
-    const totalServiciosProfesionales = serviciosProfesionales.reduce(
-      (sum: number, s: any) => sum + (s.total || 0), 
-      0
-    );
+    // Excluir los ya pagados para no inflar el total a pagar
+    const totalServiciosProfesionales = serviciosProfesionales
+      .filter((s: any) => (s.estado_pago || 'pendiente') !== 'pagado')
+      .reduce((sum: number, s: any) => sum + (s.total || 0), 0);
 
     // ========== SERVICIOS PROFESIONALES PENDIENTES DE MESES ANTERIORES ==========
     let serviciosPendientesAnteriores: any[] = [];
@@ -658,6 +660,79 @@ export async function GET(request: NextRequest) {
 
     if (solicitudesError) throw solicitudesError;
 
+    // ===== MENSUALIDADES PENDIENTES POR MES (desglose seleccionable) =====
+    // Para cada solicitud de mensualidad, calcular los meses pendientes desde
+    // created_at hasta mesPago, excluyendo los meses ya pagados en mensualidad_pagos.
+    // El número de meses se limita al saldo restante (saldo_pendiente / monto_por_cuota).
+    const mensualidadesPendientes: any[] = [];
+    if (solicitudes && solicitudes.length > 0) {
+      const { data: pagosMensualidad, error: pagosError } = await supabase
+        .from('mensualidad_pagos' as any)
+        .select('solicitud_id, mes_pago')
+        .eq('client_id', userId);
+
+      if (pagosError && isDev) {
+        console.warn('⚠️ [datos-pago] No se pudo consultar mensualidad_pagos (¿migración aplicada?):', pagosError.message);
+      }
+
+      const paidMonthsBySolicitud = new Map<string, Set<string>>();
+      (pagosMensualidad || []).forEach((p: any) => {
+        if (!paidMonthsBySolicitud.has(p.solicitud_id)) paidMonthsBySolicitud.set(p.solicitud_id, new Set());
+        paidMonthsBySolicitud.get(p.solicitud_id)!.add(p.mes_pago);
+      });
+
+      const generateMonths = (startYYYYMM: string, endYYYYMM: string): string[] => {
+        const [sy, sm] = startYYYYMM.split('-').map(Number);
+        const [ey, em] = endYYYYMM.split('-').map(Number);
+        const result: string[] = [];
+        let y = sy, m = sm;
+        while (y < ey || (y === ey && m <= em)) {
+          result.push(`${y}-${String(m).padStart(2, '0')}`);
+          m++;
+          if (m > 12) { m = 1; y++; }
+        }
+        return result;
+      };
+
+      for (const s of solicitudes) {
+        const montoCuota = s.monto_por_cuota || 0;
+        if (montoCuota <= 0) continue;
+        if ((s.saldo_pendiente ?? 0) <= 0) continue;
+
+        const createdAt = s.created_at ? new Date(s.created_at) : null;
+        const startMonth = createdAt
+          ? `${createdAt.getUTCFullYear()}-${String(createdAt.getUTCMonth() + 1).padStart(2, '0')}`
+          : mesPago;
+
+        const candidateMonths = generateMonths(startMonth, mesPago);
+        const paidSet = paidMonthsBySolicitud.get(s.id) || new Set<string>();
+        const unpaidMonths = candidateMonths.filter((mes: string) => !paidSet.has(mes));
+
+        const remainingCuotas = Math.floor((s.saldo_pendiente ?? 0) / montoCuota);
+        // Tomar los meses más recientes (los antiguos se asumen pagados primero)
+        const pendingMonths = unpaidMonths.slice(Math.max(0, unpaidMonths.length - remainingCuotas));
+
+        const seCobraIva = !!s.se_cobra_iva;
+        const subtotalCuota = seCobraIva ? montoCuota / (1 + ivaPerc) : montoCuota;
+        const ivaCuota = seCobraIva ? montoCuota - subtotalCuota : 0;
+
+        for (const mes of pendingMonths) {
+          mensualidadesPendientes.push({
+            solicitudId: s.id,
+            titulo: s.titulo || s.expediente || 'Mensualidad',
+            mes,
+            montoCuota,
+            seCobraIva,
+            montoNeto: parseFloat(subtotalCuota.toFixed(2)),
+            montoIVA: parseFloat(ivaCuota.toFixed(2)),
+            esArrastrado: mes !== mesPago,
+          });
+        }
+      }
+
+      if (isDev) console.log('📅 Mensualidades pendientes (items):', mensualidadesPendientes.length);
+    }
+
     // Calcular totales de mensualidades
     // Si se_cobra_iva = true: monto_por_cuota incluye IVA (ej: ₡50,000 = ₡44,248 + ₡5,752 IVA)
     // Si se_cobra_iva = false: monto_por_cuota NO incluye IVA (ej: ₡50,000 sin IVA)
@@ -701,7 +776,8 @@ export async function GET(request: NextRequest) {
       trabajosPorCaso[casoId].trabajos.push(trabajo);
       
       // Sumar minutos (formato puede ser "2:30" o "2.5")
-      if (trabajo.duracion) {
+      // Excluir trabajos ya pagados del cómputo de horas/monto a pagar
+      if (trabajo.duracion && (trabajo.estado_pago || 'pendiente') !== 'pagado') {
         const duracion = trabajo.duracion;
         let minutos = 0;
         if (duracion.includes(':')) {
@@ -961,6 +1037,7 @@ export async function GET(request: NextRequest) {
       darVistoBueno,
       trabajosPorHora: Object.values(trabajosPorCaso),
       solicitudesMensuales: solicitudes || [],
+      mensualidadesPendientes,
       totalMensualidades,
       totalIVAMensualidades,
       gastos: gastos || [],

@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
     const simulatedDate = formData.get('simulatedDate') as string | null // Fecha simulada desde el cliente
     const mesEspecifico = formData.get('mes_pago') as string | null // Mes específico (pagos parciales por mes)
     const solicitudId = (formData.get('solicitud_id') as string | null) || null // Solicitud específica (etapa/pago_unico)
+    const itemsPagadosRaw = (formData.get('items_pagados') as string | null) || null // Items seleccionables (admin /dev)
 
     // Validar solicitud_id si se proporcionó (UUID format)
     if (solicitudId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(solicitudId)) {
@@ -105,6 +106,26 @@ export async function POST(request: NextRequest) {
         { error: 'solicitud_id inválido' },
         { status: 400 }
       )
+    }
+
+    // Parsear y validar items_pagados (JSON con IDs de items a marcar como pagados)
+    let itemsPagados: any = null
+    if (itemsPagadosRaw) {
+      try {
+        const parsed = JSON.parse(itemsPagadosRaw)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          // Validar estructura esperada: { gastos?: [ids], servicios?: [ids], tph?: [ids], mensualidades?: [{solicitudId, mes}] }
+          const allowed = ['gastos', 'servicios', 'tph', 'mensualidades']
+          const keys = Object.keys(parsed)
+          const valid = keys.every(k => allowed.includes(k))
+          if (!valid) {
+            return NextResponse.json({ error: 'items_pagados: claves inválidas' }, { status: 400 })
+          }
+          itemsPagados = parsed
+        }
+      } catch {
+        return NextResponse.json({ error: 'items_pagados: JSON inválido' }, { status: 400 })
+      }
     }
     
     if (!file) {
@@ -277,7 +298,8 @@ export async function POST(request: NextRequest) {
         monto_declarado: montoPago ? parseFloat(montoPago) : null,
         estado: 'pendiente',
         uploaded_at: uploadedAt,
-        ...(solicitudId ? { solicitud_id: solicitudId } : {})
+        ...(solicitudId ? { solicitud_id: solicitudId } : {}),
+        ...(itemsPagados ? { items_pagados: itemsPagados } : {})
       } as any)
       .select()
       .single()
