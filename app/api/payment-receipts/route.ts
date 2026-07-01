@@ -620,54 +620,72 @@ export async function PATCH(request: NextRequest) {
             if (tErr) console.error(' Error marcando TPH selectivos:', tErr)
             else if (isDev) console.log(` TPH selectivos marcados: ${itemsPagados.tph.length}`)
           }
-          // Mensualidades (por solicitud + mes)
-          if (Array.isArray(itemsPagados.mensualidades) && itemsPagados.mensualidades.length > 0) {
-            // Insertar registros de meses pagados (ON CONFLICT DO NOTHING)
-            const mpRows = itemsPagados.mensualidades.map((m: any) => ({
-              solicitud_id: m.solicitudId,
-              client_id: userId,
-              tipo_cliente: tipoCliente,
-              mes_pago: m.mes,
-              receipt_id: receiptId,
-            }))
-            const { error: mpErr } = await (supabase as any)
-              .from('mensualidad_pagos')
-              .upsert(mpRows, { onConflict: 'solicitud_id,mes_pago', ignoreDuplicates: true })
-            if (mpErr) console.error(' Error insertando mensualidad_pagos:', mpErr)
-
-            // Agrupar por solicitudId para actualizar monto_pagado/saldo_pendiente
-            const porSolicitud = new Map<string, number>()
-            for (const m of itemsPagados.mensualidades) {
-              porSolicitud.set(m.solicitudId, (porSolicitud.get(m.solicitudId) || 0) + 1)
+          // Mensualidades (por solicitud + mes) — idempotente: solo procesa meses no pagados
+          const mensualidades = (Array.isArray(itemsPagados.mensualidades) ? itemsPagados.mensualidades : []) as any[]
+          if (mensualidades.length > 0) {
+            // Consultar qué meses ya están pagados para no doble-decrementar el saldo
+            const solIdsMens = [...new Set(mensualidades.map((m: any) => m.solicitudId).filter(Boolean))]
+            const yaPagadasSet = new Set<string>()
+            if (solIdsMens.length > 0) {
+              const { data: mensYaPagadas } = await (supabase as any)
+                .from('mensualidad_pagos')
+                .select('solicitud_id, mes_pago')
+                .in('solicitud_id', solIdsMens)
+              ;((mensYaPagadas || []) as any[]).forEach((r: any) => yaPagadasSet.add(`${r.solicitud_id}|${r.mes_pago}`))
             }
-            const solIds = Array.from(porSolicitud.keys())
-            if (solIds.length > 0) {
-              const { data: solsData } = await supabase
-                .from('solicitudes')
-                .select('id, monto_por_cuota, monto_pagado, costo_neto, se_cobra_iva, monto_iva, total_a_pagar, estado_pago')
-                .in('id', solIds)
-              for (const sol of (solsData || []) as any[]) {
-                const count = porSolicitud.get(sol.id) || 0
-                const montoCuota = sol.monto_por_cuota || 0
-                const pagoRealizado = montoCuota * count
-                const nuevoMontoPagado = (sol.monto_pagado || 0) + pagoRealizado
-                const costoNeto = sol.costo_neto || 0
-                const iva = sol.se_cobra_iva ? (sol.monto_iva || costoNeto * 0.13) : 0
-                const totalAPagar = sol.total_a_pagar || (costoNeto + iva)
-                const nuevoSaldo = Math.max(0, totalAPagar - nuevoMontoPagado)
-                const nuevoEstado = nuevoSaldo <= 0 ? 'Pagado' : sol.estado_pago
-                const { error: solErr } = await supabase
-                  .from('solicitudes')
-                  .update({
-                    monto_pagado: nuevoMontoPagado,
-                    saldo_pendiente: nuevoSaldo,
-                    estado_pago: nuevoEstado,
-                    updated_at: fechaAprobacion
-                  })
-                  .eq('id', sol.id)
-                if (solErr) console.error(` Error actualizando solicitud ${sol.id}:`, solErr)
+            // Filtrar solo meses nuevos (no registrados previamente)
+            const mesesNuevos = mensualidades.filter((m: any) => !yaPagadasSet.has(`${m.solicitudId}|${m.mes}`))
+
+            if (mesesNuevos.length > 0) {
+              // Insertar registros de meses pagados (ON CONFLICT DO NOTHING)
+              const mpRows = mesesNuevos.map((m: any) => ({
+                solicitud_id: m.solicitudId,
+                client_id: userId,
+                tipo_cliente: tipoCliente,
+                mes_pago: m.mes,
+                receipt_id: receiptId,
+              }))
+              const { error: mpErr } = await (supabase as any)
+                .from('mensualidad_pagos')
+                .upsert(mpRows, { onConflict: 'solicitud_id,mes_pago', ignoreDuplicates: true })
+              if (mpErr) console.error(' Error insertando mensualidad_pagos:', mpErr)
+
+              // Agrupar por solicitudId para actualizar monto_pagado/saldo_pendiente (solo meses nuevos)
+              const porSolicitud = new Map<string, number>()
+              for (const m of mesesNuevos) {
+                porSolicitud.set(m.solicitudId, (porSolicitud.get(m.solicitudId) || 0) + 1)
               }
-              if (isDev) console.log(` Mensualidades selectivas: ${itemsPagados.mensualidades.length} meses, ${solIds.length} solicitudes`)
+              const solIds = Array.from(porSolicitud.keys())
+              if (solIds.length > 0) {
+                const { data: solsData } = await supabase
+                  .from('solicitudes')
+                  .select('id, monto_por_cuota, monto_pagado, costo_neto, se_cobra_iva, monto_iva, total_a_pagar, estado_pago')
+                  .in('id', solIds)
+                for (const sol of (solsData || []) as any[]) {
+                  const count = porSolicitud.get(sol.id) || 0
+                  const montoCuota = sol.monto_por_cuota || 0
+                  const pagoRealizado = montoCuota * count
+                  const nuevoMontoPagado = (sol.monto_pagado || 0) + pagoRealizado
+                  const costoNeto = sol.costo_neto || 0
+                  const iva = sol.se_cobra_iva ? (sol.monto_iva || costoNeto * 0.13) : 0
+                  const totalAPagar = sol.total_a_pagar || (costoNeto + iva)
+                  const nuevoSaldo = Math.max(0, totalAPagar - nuevoMontoPagado)
+                  const nuevoEstado = nuevoSaldo <= 0 ? 'Pagado' : sol.estado_pago
+                  const { error: solErr } = await supabase
+                    .from('solicitudes')
+                    .update({
+                      monto_pagado: nuevoMontoPagado,
+                      saldo_pendiente: nuevoSaldo,
+                      estado_pago: nuevoEstado,
+                      updated_at: fechaAprobacion
+                    })
+                    .eq('id', sol.id)
+                  if (solErr) console.error(` Error actualizando solicitud ${sol.id}:`, solErr)
+                }
+                if (isDev) console.log(` Mensualidades selectivas: ${mesesNuevos.length} meses nuevos (de ${mensualidades.length}), ${solIds.length} solicitudes`)
+              }
+            } else if (isDev) {
+              console.log(` Mensualidades selectivas: 0 meses nuevos (todos ya pagados) de ${mensualidades.length}`)
             }
           }
         } catch (selErr) {

@@ -195,8 +195,10 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
       }
-    } else {
-      // Para pagos mensuales consolidados: unicidad por (user_id, tipo_cliente, mes_pago)
+    } else if (!itemsPagados) {
+      // Para pagos mensuales consolidados (sin items_pagados): unicidad por (user_id, tipo_cliente, mes_pago)
+      // Cuando hay items_pagados (flujo selectivo admin /dev) se omite este chequeo para permitir
+      // múltiples comprobantes por mes (ej. uno de gastos y uno de honorarios).
       const { data: existingReceipts } = await supabase
         .from('payment_receipts' as any)
         .select('id, estado')
@@ -218,6 +220,64 @@ export async function POST(request: NextRequest) {
           },
           { status: 400 }
         )
+      }
+    }
+
+    // 4.1 VALIDACIÓN DEFENSIVA DE items_pagados: ningún item debe estar ya pagado
+    if (itemsPagados) {
+      // Gastos
+      const gastoIds = (itemsPagados.gastos || []) as string[]
+      if (gastoIds.length > 0) {
+        const { data: gastoPagados } = await (supabase as any)
+          .from('gastos')
+          .select('id')
+          .in('id', gastoIds)
+          .eq('estado_pago', 'pagado')
+        if (gastoPagados && gastoPagados.length > 0) {
+          return NextResponse.json({ error: `Estos gastos ya fueron pagados: ${gastoPagados.map((g: any) => g.id).join(', ')}` }, { status: 400 })
+        }
+      }
+      // Servicios profesionales
+      const servIds = (itemsPagados.servicios || []) as string[]
+      if (servIds.length > 0) {
+        const { data: servPagados } = await (supabase as any)
+          .from('servicios_profesionales')
+          .select('id')
+          .in('id', servIds)
+          .eq('estado_pago', 'pagado')
+        if (servPagados && servPagados.length > 0) {
+          return NextResponse.json({ error: `Estos servicios ya fueron pagados: ${servPagados.map((s: any) => s.id).join(', ')}` }, { status: 400 })
+        }
+      }
+      // Trabajos por hora
+      const tphIds = (itemsPagados.tph || []) as string[]
+      if (tphIds.length > 0) {
+        const { data: tphPagados } = await (supabase as any)
+          .from('trabajos_por_hora')
+          .select('id')
+          .in('id', tphIds)
+          .eq('estado_pago', 'pagado')
+        if (tphPagados && tphPagados.length > 0) {
+          return NextResponse.json({ error: `Estos trabajos por hora ya fueron pagados: ${tphPagados.map((t: any) => t.id).join(', ')}` }, { status: 400 })
+        }
+      }
+      // Mensualidades (por solicitud_id + mes en mensualidad_pagos)
+      const mensualidades = (itemsPagados.mensualidades || []) as any[]
+      if (mensualidades.length > 0) {
+        const solIdsMens = [...new Set(mensualidades.map((m: any) => m.solicitudId).filter(Boolean))] as string[]
+        if (solIdsMens.length > 0) {
+          const { data: mensYaPagadas } = await (supabase as any)
+            .from('mensualidad_pagos')
+            .select('solicitud_id, mes_pago')
+            .in('solicitud_id', solIdsMens)
+          const yaPagadasSet = new Set(((mensYaPagadas || []) as any[]).map((r: any) => `${r.solicitud_id}|${r.mes_pago}`))
+          const repetidas = mensualidades.filter((m: any) => yaPagadasSet.has(`${m.solicitudId}|${m.mes}`))
+          if (repetidas.length > 0) {
+            return NextResponse.json({
+              error: `Mensualidades ya pagadas: ${repetidas.map((m: any) => `${m.mes}`).join(', ')}`
+            }, { status: 400 })
+          }
+        }
       }
     }
 
