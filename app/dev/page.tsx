@@ -148,9 +148,12 @@ interface DeudaCliente {
     mes: string
     totalHoras: number
     montoHoras: number
+    ivaHoras: number
     totalGastos: number
     totalMensualidades: number
+    ivaMensualidades: number
     totalServiciosProfesionales: number
+    ivaServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -159,9 +162,12 @@ interface DeudaCliente {
     mes: string
     totalHoras: number
     montoHoras: number
+    ivaHoras: number
     totalGastos: number
     totalMensualidades: number
+    ivaMensualidades: number
     totalServiciosProfesionales: number
+    ivaServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -173,9 +179,12 @@ interface TotalesDeudas {
     mes: string
     totalHoras: number
     montoHoras: number
+    ivaHoras: number
     totalGastos: number
     totalMensualidades: number
+    ivaMensualidades: number
     totalServiciosProfesionales: number
+    ivaServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -184,9 +193,12 @@ interface TotalesDeudas {
     mes: string
     totalHoras: number
     montoHoras: number
+    ivaHoras: number
     totalGastos: number
     totalMensualidades: number
+    ivaMensualidades: number
     totalServiciosProfesionales: number
+    ivaServiciosProfesionales: number
     subtotal: number
     iva: number
     total: number
@@ -3865,9 +3877,21 @@ export default function DevPage() {
                     </p>
                   </div>
                   <div>
-                    <strong>IVA:</strong>
+                    <strong>Horas IVA:</strong>
                     <p className={styles.deudasResumenValue}>
-                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.iva : totalesDeudas.mesActual.iva)}
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.ivaHoras : totalesDeudas.mesActual.ivaHoras)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>SP IVA:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.ivaServiciosProfesionales : totalesDeudas.mesActual.ivaServiciosProfesionales)}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Mensualidad IVA:</strong>
+                    <p className={styles.deudasResumenValue}>
+                      {formatCurrency(vistaDeudas === 'mesAnterior' ? totalesDeudas.mesAnterior.ivaMensualidades : totalesDeudas.mesActual.ivaMensualidades)}
                     </p>
                   </div>
                   <div className={styles.deudasResumenTotal}>
@@ -3900,11 +3924,13 @@ export default function DevPage() {
                       <th>Grupo</th>
                       <th style={{ textAlign: 'right' }}>Horas</th>
                       <th style={{ textAlign: 'right' }}>Monto Horas</th>
+                      <th style={{ textAlign: 'right' }}>Horas IVA</th>
                       <th style={{ textAlign: 'right' }}>Gastos</th>
                       <th style={{ textAlign: 'right' }}>Mensualidades</th>
+                      <th style={{ textAlign: 'right' }}>Mensualidad IVA</th>
                       <th style={{ textAlign: 'right' }}>Servicios Prof.</th>
+                      <th style={{ textAlign: 'right' }}>SP IVA</th>
                       <th style={{ textAlign: 'right' }}>Subtotal</th>
-                      <th style={{ textAlign: 'right' }}>IVA</th>
                       <th style={{ textAlign: 'right' }}>Total</th>
                     </tr>
                   </thead>
@@ -3946,11 +3972,13 @@ export default function DevPage() {
                             </td>
                             <td style={{ textAlign: 'right' }}>{formatHoras(datos.totalHoras)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.montoHoras)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.ivaHoras)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalGastos)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalMensualidades)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.ivaMensualidades)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.totalServiciosProfesionales || 0)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.ivaServiciosProfesionales)}</td>
                             <td style={{ textAlign: 'right' }}>{formatCurrency(datos.subtotal)}</td>
-                            <td style={{ textAlign: 'right' }}>{formatCurrency(datos.iva)}</td>
                             <td style={{ textAlign: 'right', fontWeight: 600 }} className={styles.textSuccess}>
                               {formatCurrency(datos.total)}
                             </td>
@@ -3975,7 +4003,7 @@ export default function DevPage() {
                                   <td style={{ textAlign: 'right', fontWeight: 600 }}>
                                     {formatHoras(grupoTotal.totalHoras)}
                                   </td>
-                                  <td colSpan={6}></td>
+                                  <td colSpan={8}></td>
                                   <td style={{ textAlign: 'right', fontWeight: 700 }} className={styles.textSuccess}>
                                     {formatCurrency(grupoTotal.total)}
                                   </td>

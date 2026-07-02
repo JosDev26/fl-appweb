@@ -20,9 +20,12 @@ interface DeudaCliente {
     mes: string;
     totalHoras: number;
     montoHoras: number;
+    ivaHoras: number;
     totalGastos: number;
     totalMensualidades: number;
+    ivaMensualidades: number;
     totalServiciosProfesionales: number;
+    ivaServiciosProfesionales: number;
     subtotal: number;
     iva: number;
     total: number;
@@ -32,9 +35,12 @@ interface DeudaCliente {
     mes: string;
     totalHoras: number;
     montoHoras: number;
+    ivaHoras: number;
     totalGastos: number;
     totalMensualidades: number;
+    ivaMensualidades: number;
     totalServiciosProfesionales: number;
+    ivaServiciosProfesionales: number;
     subtotal: number;
     iva: number;
     total: number;
@@ -76,9 +82,12 @@ async function getDatosClienteMes(
 ): Promise<{
   totalHoras: number;
   montoHoras: number;
+  ivaHoras: number;
   totalGastos: number;
   totalMensualidades: number;
+  ivaMensualidades: number;
   totalServiciosProfesionales: number;
+  ivaServiciosProfesionales: number;
   subtotal: number;
   iva: number;
   total: number;
@@ -131,13 +140,14 @@ async function getDatosClienteMes(
   // IMPORTANTE: Excluir servicios cancelados igual que en vista-pago
   const { data: serviciosProfesionales } = await supabase
     .from('servicios_profesionales' as any)
-    .select('total')
+    .select('total, iva')
     .eq('id_cliente', clienteId)
     .neq('estado_pago', 'cancelado')
     .gte('fecha', inicioMes)
     .lte('fecha', finMes);
   
   const totalServiciosProfesionales = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+  const ivaServiciosProfesionales = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
 
   // Obtener mensualidades
   const { data: solicitudes } = await supabase
@@ -179,9 +189,12 @@ async function getDatosClienteMes(
   return {
     totalHoras: Math.round(totalHoras * 100) / 100,
     montoHoras: Math.round(montoHoras * 100) / 100,
+    ivaHoras: Math.round(ivaServicios * 100) / 100,
     totalGastos: Math.round(totalGastos * 100) / 100,
     totalMensualidades: Math.round(totalMensualidades * 100) / 100,
+    ivaMensualidades: Math.round(totalIVAMensualidades * 100) / 100,
     totalServiciosProfesionales: Math.round(totalServiciosProfesionales * 100) / 100,
+    ivaServiciosProfesionales: Math.round(ivaServiciosProfesionales * 100) / 100,
     subtotal: Math.round(subtotal * 100) / 100,
     iva: Math.round(iva * 100) / 100,
     total: Math.round(total * 100) / 100
@@ -339,9 +352,12 @@ export async function GET(request: NextRequest) {
         mes: mesPago,
         totalHoras: 0,
         montoHoras: 0,
+        ivaHoras: 0,
         totalGastos: 0,
         totalMensualidades: 0,
+        ivaMensualidades: 0,
         totalServiciosProfesionales: 0,
+        ivaServiciosProfesionales: 0,
         subtotal: 0,
         iva: 0,
         total: 0
@@ -350,9 +366,12 @@ export async function GET(request: NextRequest) {
         mes: mesActualStr,
         totalHoras: 0,
         montoHoras: 0,
+        ivaHoras: 0,
         totalGastos: 0,
         totalMensualidades: 0,
+        ivaMensualidades: 0,
         totalServiciosProfesionales: 0,
+        ivaServiciosProfesionales: 0,
         subtotal: 0,
         iva: 0,
         total: 0
@@ -362,18 +381,24 @@ export async function GET(request: NextRequest) {
     deudas.forEach(d => {
       totales.mesAnterior.totalHoras += d.mesAnterior.totalHoras;
       totales.mesAnterior.montoHoras += d.mesAnterior.montoHoras;
+      totales.mesAnterior.ivaHoras += d.mesAnterior.ivaHoras;
       totales.mesAnterior.totalGastos += d.mesAnterior.totalGastos;
       totales.mesAnterior.totalMensualidades += d.mesAnterior.totalMensualidades;
+      totales.mesAnterior.ivaMensualidades += d.mesAnterior.ivaMensualidades;
       totales.mesAnterior.totalServiciosProfesionales += d.mesAnterior.totalServiciosProfesionales;
+      totales.mesAnterior.ivaServiciosProfesionales += d.mesAnterior.ivaServiciosProfesionales;
       totales.mesAnterior.subtotal += d.mesAnterior.subtotal;
       totales.mesAnterior.iva += d.mesAnterior.iva;
       totales.mesAnterior.total += d.mesAnterior.total;
       
       totales.mesActual.totalHoras += d.mesActual.totalHoras;
       totales.mesActual.montoHoras += d.mesActual.montoHoras;
+      totales.mesActual.ivaHoras += d.mesActual.ivaHoras;
       totales.mesActual.totalGastos += d.mesActual.totalGastos;
       totales.mesActual.totalMensualidades += d.mesActual.totalMensualidades;
+      totales.mesActual.ivaMensualidades += d.mesActual.ivaMensualidades;
       totales.mesActual.totalServiciosProfesionales += d.mesActual.totalServiciosProfesionales;
+      totales.mesActual.ivaServiciosProfesionales += d.mesActual.ivaServiciosProfesionales;
       totales.mesActual.subtotal += d.mesActual.subtotal;
       totales.mesActual.iva += d.mesActual.iva;
       totales.mesActual.total += d.mesActual.total;
@@ -382,18 +407,24 @@ export async function GET(request: NextRequest) {
     // Redondear totales finales
     totales.mesAnterior.totalHoras = Math.round(totales.mesAnterior.totalHoras * 100) / 100;
     totales.mesAnterior.montoHoras = Math.round(totales.mesAnterior.montoHoras * 100) / 100;
+    totales.mesAnterior.ivaHoras = Math.round(totales.mesAnterior.ivaHoras * 100) / 100;
     totales.mesAnterior.totalGastos = Math.round(totales.mesAnterior.totalGastos * 100) / 100;
     totales.mesAnterior.totalMensualidades = Math.round(totales.mesAnterior.totalMensualidades * 100) / 100;
+    totales.mesAnterior.ivaMensualidades = Math.round(totales.mesAnterior.ivaMensualidades * 100) / 100;
     totales.mesAnterior.totalServiciosProfesionales = Math.round(totales.mesAnterior.totalServiciosProfesionales * 100) / 100;
+    totales.mesAnterior.ivaServiciosProfesionales = Math.round(totales.mesAnterior.ivaServiciosProfesionales * 100) / 100;
     totales.mesAnterior.subtotal = Math.round(totales.mesAnterior.subtotal * 100) / 100;
     totales.mesAnterior.iva = Math.round(totales.mesAnterior.iva * 100) / 100;
     totales.mesAnterior.total = Math.round(totales.mesAnterior.total * 100) / 100;
     
     totales.mesActual.totalHoras = Math.round(totales.mesActual.totalHoras * 100) / 100;
     totales.mesActual.montoHoras = Math.round(totales.mesActual.montoHoras * 100) / 100;
+    totales.mesActual.ivaHoras = Math.round(totales.mesActual.ivaHoras * 100) / 100;
     totales.mesActual.totalGastos = Math.round(totales.mesActual.totalGastos * 100) / 100;
     totales.mesActual.totalMensualidades = Math.round(totales.mesActual.totalMensualidades * 100) / 100;
+    totales.mesActual.ivaMensualidades = Math.round(totales.mesActual.ivaMensualidades * 100) / 100;
     totales.mesActual.totalServiciosProfesionales = Math.round(totales.mesActual.totalServiciosProfesionales * 100) / 100;
+    totales.mesActual.ivaServiciosProfesionales = Math.round(totales.mesActual.ivaServiciosProfesionales * 100) / 100;
     totales.mesActual.subtotal = Math.round(totales.mesActual.subtotal * 100) / 100;
     totales.mesActual.iva = Math.round(totales.mesActual.iva * 100) / 100;
     totales.mesActual.total = Math.round(totales.mesActual.total * 100) / 100;
