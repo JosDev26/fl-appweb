@@ -78,7 +78,8 @@ async function getDatosClienteMes(
   inicioMes: string,
   finMes: string,
   tarifaHora: number,
-  ivaPerc: number
+  ivaPerc: number,
+  mesLabel: string
 ): Promise<{
   totalHoras: number;
   montoHoras: number;
@@ -98,11 +99,11 @@ async function getDatosClienteMes(
     // Para usuarios, buscar por id_cliente directamente
     const { data } = await supabase
       .from('trabajos_por_hora')
-      .select('duracion')
+      .select('duracion, estado_pago')
       .eq('id_cliente', clienteId)
       .gte('fecha', inicioMes)
       .lte('fecha', finMes);
-    trabajosPorHora = data || [];
+    trabajosPorHora = (data || []).filter((t: any) => (t.estado_pago || 'pendiente') !== 'pagado');
   } else {
     // Para empresas, buscar por casos
     const { data: casos } = await supabase
@@ -114,11 +115,11 @@ async function getDatosClienteMes(
       const casoIds = casos.map(c => c.id);
       const { data } = await supabase
         .from('trabajos_por_hora')
-        .select('duracion')
+        .select('duracion, estado_pago')
         .in('caso_asignado', casoIds)
         .gte('fecha', inicioMes)
         .lte('fecha', finMes);
-      trabajosPorHora = data || [];
+      trabajosPorHora = (data || []).filter((t: any) => (t.estado_pago || 'pendiente') !== 'pagado');
     }
   }
 
@@ -129,39 +130,61 @@ async function getDatosClienteMes(
   // Obtener gastos (ya vienen con el monto final, NO se les aplica IVA)
   const { data: gastos } = await supabase
     .from('gastos' as any)
-    .select('total_cobro')
+    .select('total_cobro, estado_pago')
     .eq('id_cliente', clienteId)
     .gte('fecha', inicioMes)
     .lte('fecha', finMes);
   
-  const totalGastos = (gastos || []).reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
+  const totalGastos = (gastos || []).filter((g: any) => (g.estado_pago || 'pendiente') !== 'pagado').reduce((sum: number, g: any) => sum + (g.total_cobro || 0), 0);
 
   // Obtener servicios profesionales (ya vienen con el total calculado, incluye IVA)
-  // IMPORTANTE: Excluir servicios cancelados igual que en vista-pago
+  // IMPORTANTE: Excluir servicios cancelados y pagados igual que en datos-pago
   const { data: serviciosProfesionales } = await supabase
     .from('servicios_profesionales' as any)
-    .select('total, iva')
+    .select('total, iva, estado_pago')
     .eq('id_cliente', clienteId)
     .neq('estado_pago', 'cancelado')
     .gte('fecha', inicioMes)
     .lte('fecha', finMes);
   
-  const totalServiciosProfesionalesBruto = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.total || 0), 0);
-  const ivaServiciosProfesionales = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
+  const spFiltrados = (serviciosProfesionales || []).filter((s: any) => (s.estado_pago || 'pendiente') !== 'pagado');
+  const totalServiciosProfesionalesBruto = spFiltrados.reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+  const ivaServiciosProfesionales = spFiltrados.reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
   // Neto sin IVA, para mantener consistencia con las demás columnas (Monto Horas, Mensualidades)
   const totalServiciosProfesionales = totalServiciosProfesionalesBruto - ivaServiciosProfesionales;
 
   // Obtener mensualidades
   const { data: solicitudes } = await supabase
     .from('solicitudes')
-    .select('monto_por_cuota, se_cobra_iva')
+    .select('id, monto_por_cuota, se_cobra_iva, saldo_pendiente, estado_pago')
     .eq('id_cliente', clienteId)
     .ilike('modalidad_pago', 'mensualidad');
+
+  // Consultar qué mensualidades ya fueron pagadas para este mes (mesLabel = YYYY-MM)
+  // Fuente de verdad: tabla mensualidad_pagos (igual que datos-pago).
+  let paidSolicitudIds = new Set<string>();
+  const { data: pagosMes, error: pagosError } = await supabase
+    .from('mensualidad_pagos' as any)
+    .select('solicitud_id')
+    .eq('client_id', clienteId)
+    .eq('mes_pago', mesLabel);
+  if (pagosError) {
+    // Tabla no migrada u otro error: tratar como sin pagos (conservador, igual que datos-pago)
+    console.warn('deudas-clientes: no se pudo consultar mensualidad_pagos:', pagosError.message);
+  } else {
+    paidSolicitudIds = new Set<string>((pagosMes || []).map((p: any) => p.solicitud_id));
+  }
 
   let totalMensualidades = 0;
   let totalIVAMensualidades = 0;
   if (solicitudes && solicitudes.length > 0) {
     solicitudes.forEach(s => {
+      // Excluir mensualidades ya pagadas para este mes
+      if (paidSolicitudIds.has(s.id)) return;
+      // Excluir mensualidades totalmente canceladas o marcadas como pagadas
+      if ((s.saldo_pendiente ?? 0) <= 0) return;
+      if ((s.estado_pago || '').toLowerCase() === 'pagado') return;
+
       const montoCuota = s.monto_por_cuota || 0;
       if (s.se_cobra_iva) {
         // El monto incluye IVA, extraerlo para obtener subtotal
@@ -273,8 +296,8 @@ export async function GET(request: NextRequest) {
         const ivaPerc = usuario.iva_perc ?? 0.13;
         
         const [datosAnterior, datosActual] = await Promise.all([
-          getDatosClienteMes(usuario.id, 'usuario', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc),
-          getDatosClienteMes(usuario.id, 'usuario', inicioMesActual, finMesActual, tarifaHora, ivaPerc)
+          getDatosClienteMes(usuario.id, 'usuario', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc, mesPago),
+          getDatosClienteMes(usuario.id, 'usuario', inicioMesActual, finMesActual, tarifaHora, ivaPerc, mesActualStr)
         ]);
         
         if (datosAnterior.total > 0 || datosActual.total > 0) {
@@ -297,8 +320,8 @@ export async function GET(request: NextRequest) {
         const grupoInfo = empresaGrupoMap.get(empresa.id);
         
         const [datosAnterior, datosActual] = await Promise.all([
-          getDatosClienteMes(empresa.id, 'empresa', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc),
-          getDatosClienteMes(empresa.id, 'empresa', inicioMesActual, finMesActual, tarifaHora, ivaPerc)
+          getDatosClienteMes(empresa.id, 'empresa', inicioMesAnterior, finMesAnterior, tarifaHora, ivaPerc, mesPago),
+          getDatosClienteMes(empresa.id, 'empresa', inicioMesActual, finMesActual, tarifaHora, ivaPerc, mesActualStr)
         ]);
         
         if (datosAnterior.total > 0 || datosActual.total > 0) {
