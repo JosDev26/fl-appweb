@@ -146,8 +146,10 @@ async function getDatosClienteMes(
     .gte('fecha', inicioMes)
     .lte('fecha', finMes);
   
-  const totalServiciosProfesionales = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.total || 0), 0);
+  const totalServiciosProfesionalesBruto = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.total || 0), 0);
   const ivaServiciosProfesionales = (serviciosProfesionales || []).reduce((sum: number, s: any) => sum + (s.iva || 0), 0);
+  // Neto sin IVA, para mantener consistencia con las demás columnas (Monto Horas, Mensualidades)
+  const totalServiciosProfesionales = totalServiciosProfesionalesBruto - ivaServiciosProfesionales;
 
   // Obtener mensualidades
   const { data: solicitudes } = await supabase
@@ -172,18 +174,16 @@ async function getDatosClienteMes(
     });
   }
 
-  // Subtotal: servicios + gastos + mensualidades + servicios profesionales (todo sin IVA, excepto servicios profesionales que ya incluyen IVA)
-  // NOTA: totalServiciosProfesionales ya incluye el IVA en su total
-  const subtotal = montoHoras + totalGastos + totalMensualidades;
+  // Subtotal: horas + gastos + mensualidades + servicios profesionales (todo neto sin IVA)
+  const subtotal = montoHoras + totalGastos + totalMensualidades + totalServiciosProfesionales;
   
-  // IVA: solo de servicios por hora + IVA extraído de mensualidades
+  // IVA: horas + mensualidades + servicios profesionales
   // IMPORTANTE: Los gastos NO llevan IVA porque total_cobro ya es el monto final
-  // IMPORTANTE: Los servicios profesionales ya incluyen IVA en su total
   const ivaServicios = montoHoras * ivaPerc;
-  const iva = ivaServicios + totalIVAMensualidades;
+  const iva = ivaServicios + totalIVAMensualidades + ivaServiciosProfesionales;
   
-  // Total: subtotal + IVA + servicios profesionales (que ya incluyen IVA)
-  const total = subtotal + iva + totalServiciosProfesionales;
+  // Total: subtotal + IVA
+  const total = subtotal + iva;
 
   // Redondear todos los valores a 2 decimales para evitar errores de punto flotante
   return {
