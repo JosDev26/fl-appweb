@@ -3,6 +3,10 @@
     {
       "path": "/api/sync/auto",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/expedientes-inactivos/notify",
+      "schedule": "30 0 * * *"
     }
   ]
 }

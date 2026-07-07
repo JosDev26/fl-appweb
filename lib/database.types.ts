@@ -595,6 +595,52 @@ export interface Database {
           }
         ]
       }
+      notificaciones_inactividad: {
+        Row: {
+          id: string
+          expediente_id: string
+          tipo: string
+          dias_inactivo_notificado: number
+          correo_destino: string
+          enviado_at: string
+          resend_id: string | null
+          dry_run: boolean
+          metadata: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          expediente_id: string
+          tipo?: string
+          dias_inactivo_notificado: number
+          correo_destino: string
+          enviado_at?: string
+          resend_id?: string | null
+          dry_run?: boolean
+          metadata?: Json | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          expediente_id?: string
+          tipo?: string
+          dias_inactivo_notificado?: number
+          correo_destino?: string
+          enviado_at?: string
+          resend_id?: string | null
+          dry_run?: boolean
+          metadata?: Json | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_notificaciones_inactividad_solicitud"
+            columns: ["expediente_id"]
+            referencedRelation: "solicitudes"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
