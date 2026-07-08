@@ -307,12 +307,23 @@ type SectionType = 'comprobantes' | 'facturas' | 'plazos' | 'visto-bueno' | 'inv
 
 interface ExpedienteInactivo {
   id: string
+  tipoExpediente: 'solicitud' | 'caso'
   titulo: string | null
   modalidad_pago: string | null
   etapa_actual: string | null
   estado_pago: string | null
   id_cliente: string | null
   clienteNombre: string
+  expediente: string | null
+  // Rubro Dinero
+  diasInactivoDinero: number
+  ultimoMovDinero: string | null
+  tipoUltimoMovDinero: string | null
+  // Rubro Actualizaciones
+  diasInactivoActualizacion: number
+  ultimoMovActualizacion: string | null
+  tipoUltimoMovActualizacion: string | null
+  // Overall (compat)
   diasInactivo: number
   ultimoMovimiento: string | null
   tipoUltimoMovimiento: string | null
@@ -481,7 +492,7 @@ export default function DevPage() {
   const [totalExpedientes, setTotalExpedientes] = useState(0)
   const [paginaExpedientes, setPaginaExpedientes] = useState(1)
   const [totalPaginasExpedientes, setTotalPaginasExpedientes] = useState(0)
-  const [filtroExpModalidad, setFiltroExpModalidad] = useState<'all' | 'mensualidad' | 'pago_unico' | 'etapa'>('all')
+  const [filtroExpModalidad, setFiltroExpModalidad] = useState<'all' | 'mensualidad' | 'pago_unico' | 'etapa' | 'caso'>('all')
   const [filtroExpCliente, setFiltroExpCliente] = useState('')
 
   // Estados para Pagar por Cliente
@@ -982,6 +993,30 @@ export default function DevPage() {
       console.error('Error cargando facturas:', error)
     } finally {
       setLoadingInvoices(false)
+    }
+  }
+
+  const downloadInvoice = async (invoice: InvoiceFile) => {
+    try {
+      const response = await fetch(`/api/upload-invoice/download?path=${encodeURIComponent(invoice.path)}`, {
+        headers: {
+          'x-user-id': invoice.clientId,
+          'x-user-type': invoice.clientType
+        }
+      })
+      if (!response.ok) throw new Error('Error al descargar factura')
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = invoice.name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error descargando factura:', error)
+      alert('Error al descargar la factura')
     }
   }
 
@@ -2713,17 +2748,26 @@ export default function DevPage() {
                         </td>
                         <td>{new Date(invoice.created_at).toLocaleDateString()}</td>
                         <td>
-                          {invoice.deadlineId ? (
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
                             <button
                               className={styles.buttonSecondary}
                               style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
-                              onClick={() => openEditInvoiceModal(invoice)}
+                              onClick={() => downloadInvoice(invoice)}
                             >
-                              Editar
+                              Descargar
                             </button>
-                          ) : (
-                            <span style={{ color: '#999', fontSize: '0.8rem' }}>Sin registro</span>
-                          )}
+                            {invoice.deadlineId ? (
+                              <button
+                                className={styles.buttonSecondary}
+                                style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
+                                onClick={() => openEditInvoiceModal(invoice)}
+                              >
+                                Editar
+                              </button>
+                            ) : (
+                              <span style={{ color: '#999', fontSize: '0.8rem' }}>Sin registro</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -4487,6 +4531,7 @@ export default function DevPage() {
                   <option value="mensualidad">Mensualidad</option>
                   <option value="pago_unico">Pago Único</option>
                   <option value="etapa">Etapa</option>
+                  <option value="caso">Casos (por hora)</option>
                 </select>
               </div>
               <div className={styles.formGroup} style={{ marginBottom: 0 }}>
@@ -4538,52 +4583,76 @@ export default function DevPage() {
                       <tr>
                         <th>Cliente</th>
                         <th>Título</th>
-                        <th>Modalidad</th>
-                        <th>Etapa</th>
-                        <th>Estado Pago</th>
-                        <th>Días Inactivo</th>
-                        <th>Último Movimiento</th>
                         <th>Tipo</th>
+                        <th>Modalidad</th>
+                        <th>💰 Días Dinero</th>
+                        <th>Último mov. dinero</th>
+                        <th>📝 Días Actualización</th>
+                        <th>Último mov. actualización</th>
                         <th>Último Pago</th>
                       </tr>
                     </thead>
                     <tbody>
                       {expedientesInactivos.map(exp => {
-                        const dias = exp.diasInactivo === Infinity ? '—' : exp.diasInactivo
-                        const diasColor =
-                          exp.diasInactivo >= 60
-                            ? styles.expDiasRojo
-                            : exp.diasInactivo >= 30
-                            ? styles.expDiasNaranja
-                            : styles.expDiasAmarillo
+                        const diasDin = exp.diasInactivoDinero === Infinity ? '—' : exp.diasInactivoDinero
+                        const diasAct = exp.diasInactivoActualizacion === Infinity ? '—' : exp.diasInactivoActualizacion
+                        const colorDin = exp.diasInactivoDinero >= 60 ? styles.expDiasRojo : exp.diasInactivoDinero >= 30 ? styles.expDiasNaranja : styles.expDiasAmarillo
+                        const colorAct = exp.diasInactivoActualizacion >= 60 ? styles.expDiasRojo : exp.diasInactivoActualizacion >= 30 ? styles.expDiasNaranja : styles.expDiasAmarillo
+                        const esCaso = exp.tipoExpediente === 'caso'
 
                         return (
                           <tr key={exp.id} className={exp.nuncaTuvoActividad ? styles.expFilaSinAct : ''}>
                             <td>{exp.clienteNombre}</td>
                             <td>{exp.titulo || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin título</span>}</td>
                             <td>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '2px 8px',
+                                borderRadius: '9999px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                color: 'white',
+                                background: esCaso ? '#7c3aed' : '#2563eb',
+                              }}>
+                                {esCaso ? 'Caso' : 'Solicitud'}
+                              </span>
+                            </td>
+                            <td>
                               <span className={styles.expModalidadBadge}>
-                                {exp.modalidad_pago || '—'}
-                              </span>
-                            </td>
-                            <td>{exp.etapa_actual || '—'}</td>
-                            <td>{exp.estado_pago || <span style={{ color: '#94a3b8' }}>—</span>}</td>
-                            <td>
-                              <span className={`${styles.expDiasBadge} ${diasColor}`}>
-                                {dias === '—' ? '—' : `${dias} días`}
+                                {exp.modalidad_pago || (esCaso ? 'por hora' : '—')}
                               </span>
                             </td>
                             <td>
-                              {exp.ultimoMovimiento
-                                ? new Date(exp.ultimoMovimiento).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })
+                              <span className={`${styles.expDiasBadge} ${colorDin}`}>
+                                {diasDin === '—' ? '—' : `${diasDin}d`}
+                              </span>
+                            </td>
+                            <td>
+                              {exp.ultimoMovDinero
+                                ? <span title={exp.tipoUltimoMovDinero || ''}>
+                                    {new Date(exp.ultimoMovDinero).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
                                 : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin registro</span>
                               }
+                              {exp.tipoUltimoMovDinero && (
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{exp.tipoUltimoMovDinero}</div>
+                              )}
                             </td>
                             <td>
-                              {exp.nuncaTuvoActividad
-                                ? <span className={styles.expBadgeSinAct}>Sin actividad</span>
-                                : (exp.tipoUltimoMovimiento || '—')
+                              <span className={`${styles.expDiasBadge} ${colorAct}`}>
+                                {diasAct === '—' ? '—' : `${diasAct}d`}
+                              </span>
+                            </td>
+                            <td>
+                              {exp.ultimoMovActualizacion
+                                ? <span title={exp.tipoUltimoMovActualizacion || ''}>
+                                    {new Date(exp.ultimoMovActualizacion).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                  </span>
+                                : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Sin registro</span>
                               }
+                              {exp.tipoUltimoMovActualizacion && (
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{exp.tipoUltimoMovActualizacion}</div>
+                              )}
                             </td>
                             <td>
                               {exp.ultimoPago

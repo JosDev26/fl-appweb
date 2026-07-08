@@ -154,7 +154,10 @@ export async function PATCH(request: NextRequest) {
     const userId = (receipt as any).user_id
     const tipoCliente = (receipt as any).tipo_cliente
     const mesPago = (receipt as any).mes_pago
-    const solicitudId: string | null = (receipt as any).solicitud_id || null
+    const expedientesPagados: any = (receipt as any).solicitud_caso_id_pagados || null
+    const solPagadas: string[] = Array.isArray(expedientesPagados?.solicitudes) ? expedientesPagados.solicitudes : []
+    const casosPagadosArr: string[] = Array.isArray(expedientesPagados?.casos) ? expedientesPagados.casos : []
+    const solicitudId: string | null = (solPagadas.length === 1 && casosPagadosArr.length === 0) ? solPagadas[0] : null
     const montoDeclarado: number = (receipt as any).monto_declarado || 0
     const itemsPagados: any = (receipt as any).items_pagados || null
 
@@ -1293,6 +1296,26 @@ export async function PATCH(request: NextRequest) {
         console.error('Error in post-marking modoPago check:', postCheckErr)
       }
 
+      // ===== Poblar solicitud_caso_id_pagados con los expedientes pagados =====
+      try {
+        const expedientesPagados = await computeExpedientesPagados(supabase, {
+          userId, tipoCliente, mesPago, itemsPagados, solicitudId
+        })
+        if (expedientesPagados) {
+          const { error: updExpErr } = await (supabase as any)
+            .from('payment_receipts')
+            .update({ solicitud_caso_id_pagados: expedientesPagados })
+            .eq('id', receiptId)
+          if (updExpErr) {
+            console.error('Error poblando solicitud_caso_id_pagados:', updExpErr)
+          } else if (isDev) {
+            console.log(` solicitud_caso_id_pagados: ${expedientesPagados.solicitudes.length} sol, ${expedientesPagados.casos.length} casos`)
+          }
+        }
+      } catch (expPagErr) {
+        console.error('Error computing expedientes pagados:', expPagErr)
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Comprobante aprobado y modo pago desactivado'
@@ -1795,4 +1818,88 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: calcular la lista de expedientes (solicitudes + casos) pagados
+// por un comprobante, para poblar solicitud_caso_id_pagados.
+// ---------------------------------------------------------------------------
+
+async function computeExpedientesPagados(
+  supabase: any,
+  ctx: {
+    userId: string
+    tipoCliente: string
+    mesPago: string | null
+    itemsPagados: any
+    solicitudId: string | null
+  }
+): Promise<{ solicitudes: string[]; casos: string[] } | null> {
+  const { userId, tipoCliente, mesPago, itemsPagados, solicitudId } = ctx
+
+  if (solicitudId) return { solicitudes: [solicitudId], casos: [] }
+
+  const solicitudesSet = new Set<string>()
+  const casosSet = new Set<string>()
+  const idCasoToResolve = new Set<string>()
+
+  const addGastos = (data: any[]) => (data || []).forEach((g: any) => { if (g.id_caso) idCasoToResolve.add(g.id_caso) })
+  const addServicios = (data: any[]) => (data || []).forEach((s: any) => { if (s.id_caso) idCasoToResolve.add(s.id_caso) })
+  const addTph = (data: any[]) => (data || []).forEach((t: any) => { if (t.caso_asignado) casosSet.add(t.caso_asignado) })
+
+  if (itemsPagados) {
+    if (Array.isArray(itemsPagados.mensualidades)) {
+      itemsPagados.mensualidades.forEach((m: any) => { if (m.solicitudId) solicitudesSet.add(m.solicitudId) })
+    }
+    if (Array.isArray(itemsPagados.gastos) && itemsPagados.gastos.length) {
+      const { data } = await supabase.from('gastos').select('id_caso').in('id', itemsPagados.gastos)
+      addGastos(data)
+    }
+    if (Array.isArray(itemsPagados.servicios) && itemsPagados.servicios.length) {
+      const { data } = await supabase.from('servicios_profesionales').select('id_caso').in('id', itemsPagados.servicios)
+      addServicios(data)
+    }
+    if (Array.isArray(itemsPagados.tph) && itemsPagados.tph.length) {
+      const { data } = await supabase.from('trabajos_por_hora').select('caso_asignado').in('id', itemsPagados.tph)
+      addTph(data)
+    }
+  } else if (mesPago) {
+    const [y, m] = mesPago.split('-')
+    const start = `${y}-${m}-01`
+    const end = new Date(parseInt(y, 10), parseInt(m, 10), 0).toISOString().split('T')[0]
+
+    const { data: mensSols } = await supabase
+      .from('solicitudes').select('id').eq('id_cliente', userId).ilike('modalidad_pago', 'mensualidad')
+    ;(mensSols || []).forEach((s: any) => solicitudesSet.add(s.id))
+
+    const { data: g } = await supabase.from('gastos').select('id_caso').eq('id_cliente', userId).gte('fecha', start).lte('fecha', end)
+    addGastos(g)
+    const { data: sp } = await supabase.from('servicios_profesionales').select('id_caso').eq('id_cliente', userId).gte('fecha', start).lte('fecha', end)
+    addServicios(sp)
+
+    if (tipoCliente === 'empresa') {
+      const { data: casos } = await supabase.from('casos').select('id').eq('id_cliente', userId)
+      const casoIds = (casos || []).map((c: any) => c.id)
+      if (casoIds.length) {
+        const { data: tph } = await supabase.from('trabajos_por_hora').select('caso_asignado').in('caso_asignado', casoIds).gte('fecha', start).lte('fecha', end)
+        addTph(tph)
+      }
+    } else {
+      const { data: tph } = await supabase.from('trabajos_por_hora').select('caso_asignado').eq('id_cliente', userId).gte('fecha', start).lte('fecha', end)
+      addTph(tph)
+    }
+  }
+
+  if (idCasoToResolve.size) {
+    const ids = [...idCasoToResolve]
+    const { data: sols } = await supabase.from('solicitudes').select('id').in('id', ids)
+    ;(sols || []).forEach((s: any) => solicitudesSet.add(s.id))
+    const { data: casos } = await supabase.from('casos').select('id').in('id', ids)
+    ;(casos || []).forEach((c: any) => casosSet.add(c.id))
+  }
+
+  const solicitudes = [...solicitudesSet]
+  const casos = [...casosSet]
+  if (!solicitudes.length && !casos.length) return null
+  return { solicitudes, casos }
 }

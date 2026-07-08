@@ -8,6 +8,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 //   - El endpoint POST /api/expedientes-inactivos/notify (cron) lo use para notificar.
 //   - Los tests puedan importar las funciones puras (diasDesde, filtros, etc.)
 //     sin tocar Supabase.
+//
+// Modelo de 2 rubros:
+//   - DINERO: gastos, servicios_profesionales, trabajos_por_hora (casos),
+//             mensualidad_pagos y payment_receipts (solicitud_caso_id_pagados).
+//   - ACTUALIZACIONES: actualizaciones (solicitudes) y trabajos_por_hora (casos,
+//                      donde el tph es la actualización del caso).
+//
+// Expedientes trackeados: solicitudes (modalidad activa) + casos (trabajados por hora).
 // ============================================================================
 
 export const INACTIVITY_DAYS = 15
@@ -23,6 +31,7 @@ export const MODALIDADES_ACTIVAS = [
 ]
 
 export const ESTADOS_EXCLUIDOS = ['finalizado', 'pagado', 'cancelado']
+export const ESTADOS_EXCLUIDOS_CASOS = ['finalizado', 'cancelado']
 
 export interface SolicitudBase {
   id: string
@@ -36,8 +45,18 @@ export interface SolicitudBase {
   updated_at: string | null
 }
 
+export interface CasoBase {
+  id: string
+  nombre: string | null
+  estado: string | null
+  expediente: string | null
+  id_cliente: string | null
+  created_at: string | null
+}
+
 export interface ExpedienteInactivo {
   id: string
+  tipoExpediente: 'solicitud' | 'caso'
   titulo: string | null
   modalidad_pago: string | null
   etapa_actual: string | null
@@ -45,6 +64,15 @@ export interface ExpedienteInactivo {
   id_cliente: string | null
   clienteNombre: string
   expediente: string | null
+  // Rubro Dinero
+  diasInactivoDinero: number
+  ultimoMovDinero: string | null
+  tipoUltimoMovDinero: string | null
+  // Rubro Actualizaciones
+  diasInactivoActualizacion: number
+  ultimoMovActualizacion: string | null
+  tipoUltimoMovActualizacion: string | null
+  // Overall (compat panel): días desde la última actividad de cualquier tipo (más reciente de ambos rubros)
   diasInactivo: number
   ultimoMovimiento: string | null
   tipoUltimoMovimiento: string | null
@@ -84,6 +112,13 @@ export function estaExcluidoPorEstado(estadoPago: string | null): boolean {
   return ESTADOS_EXCLUIDOS.some(e => estado === e)
 }
 
+/** True si el estado del caso está en ESTADOS_EXCLUIDOS_CASOS (case-insensitive exacto). */
+export function estaCasoExcluido(estado: string | null): boolean {
+  const e = (estado || '').toLowerCase().trim()
+  if (!e) return false
+  return ESTADOS_EXCLUIDOS_CASOS.some(x => e === x)
+}
+
 /** Filtra las solicitudes activas por modalidad y estado (no excluido). */
 export function filtrarSolicitudesActivas<T extends SolicitudBase>(solicitudes: T[]): T[] {
   return solicitudes.filter(
@@ -91,93 +126,211 @@ export function filtrarSolicitudesActivas<T extends SolicitudBase>(solicitudes: 
   )
 }
 
-export type TipoMovimiento = 'Actualización' | 'Gasto' | 'Servicio Profesional'
+/** Filtra los casos activos (estado no excluido). */
+export function filtrarCasosActivos<T extends CasoBase>(casos: T[]): T[] {
+  return casos.filter(c => !estaCasoExcluido(c.estado))
+}
+
+export type TipoMovimiento =
+  | 'Actualización'
+  | 'Gasto'
+  | 'Servicio Profesional'
+  | 'Trabajo por Hora'
+  | 'Pago'
+  | 'Mensualidad'
 
 export interface MovimientoRow {
   id_solicitud?: string | null
   id_caso?: string | null
   id_solicitud_sheets?: string | null
+  caso_asignado?: string | null
   tiempo?: string | null
   fecha?: string | null
 }
 
+export interface MovEntry {
+  fecha: string
+  tipo: TipoMovimiento
+}
+
 /**
- * Construye un mapa `solicitud_id -> { fecha, tipo }` con la fecha más reciente
- * de actividad por expediente, a partir de actualizaciones, gastos y
- * servicios profesionales. Solo se incluyen ids que estén en `solicitudIds`.
+ * Expande los comprobantes aprobados en tuplas (expId, fecha) a partir del
+ * JSONB solicitud_caso_id_pagados = { solicitudes: [...], casos: [...] }.
+ * Solo incluye ids que estén en solicitudIds o casoIds.
  */
-export function construirMapaUltimoMovimiento(
-  actualizaciones: MovimientoRow[],
+export function expandReceiptsToTuples(
+  receipts: { reviewed_at: string | null; solicitud_caso_id_pagados: any }[],
+  solicitudIds: string[],
+  casoIds: string[]
+): { expId: string; fecha: string }[] {
+  const validSols = new Set(solicitudIds)
+  const validCasos = new Set(casoIds)
+  const tuples: { expId: string; fecha: string }[] = []
+  for (const r of receipts) {
+    if (!r.reviewed_at) continue
+    const pagados = r.solicitud_caso_id_pagados
+    if (!pagados || typeof pagados !== 'object') continue
+    const sols = Array.isArray(pagados.solicitudes) ? pagados.solicitudes : []
+    const cas = Array.isArray(pagados.casos) ? pagados.casos : []
+    for (const id of sols) {
+      if (typeof id === 'string' && validSols.has(id)) tuples.push({ expId: id, fecha: r.reviewed_at })
+    }
+    for (const id of cas) {
+      if (typeof id === 'string' && validCasos.has(id)) tuples.push({ expId: id, fecha: r.reviewed_at })
+    }
+  }
+  return tuples
+}
+
+function mergeInto(
+  map: Map<string, MovEntry>,
+  id: string | null | undefined,
+  fecha: string | null | undefined,
+  tipo: TipoMovimiento,
+  validIds: Set<string>
+): void {
+  if (!id || !fecha) return
+  if (!validIds.has(id)) return
+  const prev = map.get(id)
+  if (!prev || new Date(fecha) > new Date(prev.fecha)) {
+    map.set(id, { fecha, tipo })
+  }
+}
+
+/**
+ * Construye el mapa de último movimiento de DINERO por expediente.
+ * Combina gastos, servicios_profesionales, mensualidad_pagos y
+ * comprobantes aprobados (receiptTuples).
+ *
+ * NOTA: trabajos_por_hora NO alimenta el rubro dinero (solo actualizaciones).
+ */
+export function construirMapaUltimoMovDinero(
   gastos: MovimientoRow[],
   serviciosProfesionales: MovimientoRow[],
-  solicitudIds: string[]
-): Map<string, { fecha: string; tipo: TipoMovimiento }> {
-  const map = new Map<string, { fecha: string; tipo: TipoMovimiento }>()
+  mensualidadPagos: { solicitud_id?: string | null; created_at?: string | null }[],
+  receiptTuples: { expId: string; fecha: string }[],
+  solicitudIds: string[],
+  casoIds: string[]
+): Map<string, MovEntry> {
+  const validIds = new Set([...solicitudIds, ...casoIds])
+  const map = new Map<string, MovEntry>()
 
-  const actualizar = (solId: string, fecha: string, tipo: TipoMovimiento) => {
-    if (!solicitudIds.includes(solId)) return
-    const prev = map.get(solId)
-    if (!prev || new Date(fecha) > new Date(prev.fecha)) {
-      map.set(solId, { fecha, tipo })
-    }
+  for (const g of gastos) mergeInto(map, g.id_caso, g.fecha, 'Gasto', validIds)
+  for (const s of serviciosProfesionales) {
+    const id = s.id_solicitud_sheets || s.id_caso
+    mergeInto(map, id, s.fecha, 'Servicio Profesional', validIds)
   }
-
-  for (const row of actualizaciones) {
-    if (row.id_solicitud && row.tiempo) {
-      actualizar(row.id_solicitud, row.tiempo, 'Actualización')
-    }
-  }
-  for (const row of gastos) {
-    if (row.id_caso && row.fecha) {
-      actualizar(row.id_caso, row.fecha, 'Gasto')
-    }
-  }
-  for (const row of serviciosProfesionales) {
-    const solId = row.id_solicitud_sheets || row.id_caso
-    if (solId && row.fecha) {
-      actualizar(solId, row.fecha, 'Servicio Profesional')
-    }
-  }
+  for (const m of mensualidadPagos) mergeInto(map, m.solicitud_id, m.created_at, 'Mensualidad', validIds)
+  for (const rt of receiptTuples) mergeInto(map, rt.expId, rt.fecha, 'Pago', validIds)
 
   return map
 }
 
-/** Construye la lista final de inactivos a partir de las solicitudes activas y el mapa de movimientos. */
-export function construirListaInactivos<T extends SolicitudBase>(
-  solicitudesActivas: T[],
-  ultimoMovMap: Map<string, { fecha: string; tipo: TipoMovimiento }>,
+/**
+ * Construye el mapa de último movimiento de ACTUALIZACIONES por expediente.
+ * Combina actualizaciones (solicitudes) y trabajos_por_hora (casos).
+ */
+export function construirMapaUltimoMovActualizacion(
+  actualizaciones: MovimientoRow[],
+  trabajosPorHora: MovimientoRow[],
+  solicitudIds: string[],
+  casoIds: string[]
+): Map<string, MovEntry> {
+  const validSols = new Set(solicitudIds)
+  const validCasos = new Set(casoIds)
+  const map = new Map<string, MovEntry>()
+
+  for (const a of actualizaciones) mergeInto(map, a.id_solicitud, a.tiempo, 'Actualización', validSols)
+  // Para casos, el tph es la actualización
+  for (const t of trabajosPorHora) mergeInto(map, t.caso_asignado, t.fecha, 'Trabajo por Hora', validCasos)
+
+  return map
+}
+
+/** Construye la lista final de inactivos (solicitudes + casos) a partir de los 2 mapas. */
+export function construirListaInactivos(
+  solicitudesActivas: SolicitudBase[],
+  casosActivos: CasoBase[],
+  ultimoMovDineroMap: Map<string, MovEntry>,
+  ultimoMovActualizacionMap: Map<string, MovEntry>,
   clienteNombreMap: Map<string, string>,
   ultimoPagoMap: Map<string, { fecha: string; mes: string }>,
   inactivityDays: number = INACTIVITY_DAYS
 ): ExpedienteInactivo[] {
-  return solicitudesActivas
-    .map(sol => {
-      const movimiento = ultimoMovMap.get(sol.id) ?? null
-      const ultimaFecha = movimiento?.fecha ?? null
-      const nuncaTuvoActividad = !ultimaFecha
-      const diasInactivo = ultimaFecha ? diasDesde(ultimaFecha) : diasDesde(sol.created_at)
+  const build = (
+    id: string,
+    tipoExpediente: 'solicitud' | 'caso',
+    titulo: string | null,
+    modalidad_pago: string | null,
+    etapa_actual: string | null,
+    estado_pago: string | null,
+    id_cliente: string | null,
+    expediente: string | null,
+    created_at: string | null
+  ): ExpedienteInactivo => {
+    const movDinero = ultimoMovDineroMap.get(id) ?? null
+    const movAct = ultimoMovActualizacionMap.get(id) ?? null
+    const diasDinero = movDinero ? diasDesde(movDinero.fecha) : diasDesde(created_at)
+    const diasAct = movAct ? diasDesde(movAct.fecha) : diasDesde(created_at)
+    const nuncaTuvoActividad = !movDinero && !movAct
 
-      return {
-        id: sol.id,
-        titulo: sol.titulo,
-        modalidad_pago: sol.modalidad_pago,
-        etapa_actual: sol.etapa_actual,
-        estado_pago: sol.estado_pago,
-        id_cliente: sol.id_cliente,
-        clienteNombre: clienteNombreMap.get(sol.id_cliente ?? '') || 'Sin cliente asignado',
-        expediente: sol.expediente,
-        diasInactivo,
-        ultimoMovimiento: ultimaFecha,
-        tipoUltimoMovimiento: nuncaTuvoActividad ? null : (movimiento?.tipo ?? null),
-        nuncaTuvoActividad,
-        ultimoPago: (() => {
-          if (!sol.id_cliente) return null
-          const rec = ultimoPagoMap.get(sol.id_cliente)
-          return rec ? { fecha: rec.fecha, mes: rec.mes } : null
-        })(),
-      }
-    })
-    .filter(s => s.diasInactivo >= inactivityDays)
+    // Overall (compat panel): días desde la última actividad de cualquier tipo (más reciente)
+    const diasInactivo = Math.min(diasDinero, diasAct)
+
+    let ultimoMovimiento: string | null = null
+    let tipoUltimoMovimiento: string | null = null
+    if (movDinero && movAct) {
+      const dineroMasReciente = new Date(movDinero.fecha) >= new Date(movAct.fecha)
+      ultimoMovimiento = dineroMasReciente ? movDinero.fecha : movAct.fecha
+      tipoUltimoMovimiento = dineroMasReciente ? movDinero.tipo : movAct.tipo
+    } else if (movDinero) {
+      ultimoMovimiento = movDinero.fecha
+      tipoUltimoMovimiento = movDinero.tipo
+    } else if (movAct) {
+      ultimoMovimiento = movAct.fecha
+      tipoUltimoMovimiento = movAct.tipo
+    }
+
+    const clienteNombre = (id_cliente ? clienteNombreMap.get(id_cliente) : undefined) || 'Sin cliente asignado'
+    const ultimoPago = (() => {
+      if (!id_cliente) return null
+      const rec = ultimoPagoMap.get(id_cliente)
+      return rec ? { fecha: rec.fecha, mes: rec.mes } : null
+    })()
+
+    return {
+      id,
+      tipoExpediente,
+      titulo,
+      modalidad_pago,
+      etapa_actual,
+      estado_pago,
+      id_cliente,
+      clienteNombre,
+      expediente,
+      diasInactivoDinero: diasDinero,
+      ultimoMovDinero: movDinero?.fecha ?? null,
+      tipoUltimoMovDinero: movDinero ? movDinero.tipo : null,
+      diasInactivoActualizacion: diasAct,
+      ultimoMovActualizacion: movAct?.fecha ?? null,
+      tipoUltimoMovActualizacion: movAct ? movAct.tipo : null,
+      diasInactivo,
+      ultimoMovimiento,
+      tipoUltimoMovimiento,
+      nuncaTuvoActividad,
+      ultimoPago,
+    }
+  }
+
+  const fromSolicitudes = solicitudesActivas.map(s =>
+    build(s.id, 'solicitud', s.titulo, s.modalidad_pago, s.etapa_actual, s.estado_pago, s.id_cliente, s.expediente, s.created_at)
+  )
+  const fromCasos = casosActivos.map(c =>
+    build(c.id, 'caso', c.nombre, null, null, c.estado, c.id_cliente, c.expediente, c.created_at)
+  )
+
+  return [...fromSolicitudes, ...fromCasos]
+    .filter(e => e.diasInactivoDinero >= inactivityDays || e.diasInactivoActualizacion >= inactivityDays)
     .sort((a, b) => b.diasInactivo - a.diasInactivo)
 }
 
@@ -185,7 +338,7 @@ export function construirListaInactivos<T extends SolicitudBase>(
 // Filtros de UI + paginación (usados solo por el endpoint GET del panel /dev)
 // ---------------------------------------------------------------------------
 
-export type FiltroModalidad = 'all' | 'mensualidad' | 'pago_unico' | 'etapa'
+export type FiltroModalidad = 'all' | 'mensualidad' | 'pago_unico' | 'etapa' | 'caso'
 
 export function aplicarFiltrosUi(
   inactivos: ExpedienteInactivo[],
@@ -194,8 +347,11 @@ export function aplicarFiltrosUi(
 ): ExpedienteInactivo[] {
   let resultado = inactivos
 
-  if (filtroModalidad !== 'all') {
+  if (filtroModalidad === 'caso') {
+    resultado = resultado.filter(s => s.tipoExpediente === 'caso')
+  } else if (filtroModalidad !== 'all') {
     resultado = resultado.filter(s => {
+      if (s.tipoExpediente === 'caso') return false
       const m = (s.modalidad_pago || '').toLowerCase()
       if (filtroModalidad === 'mensualidad') return m.includes('mensual')
       if (filtroModalidad === 'pago_unico')
@@ -235,8 +391,8 @@ export interface ObtenerInactivosOptions {
  * Consulta Supabase y devuelve TODOS los expedientes inactivos (sin paginar,
  * sin filtros de UI). Ordenados por diasInactivo descendente.
  *
- * El endpoint del panel debe llamar esto y luego aplicar aplicarFiltrosUi + paginar.
- * El endpoint de notificaciones llama esto y filtra los ya notificados.
+ * Incluye solicitudes (modalidad activa) y casos (trabajados por hora).
+ * Un expediente se incluye si está inactivo en DINERO o ACTUALIZACIONES.
  */
 export async function obtenerExpedientesInactivos(
   supabase: SupabaseClient,
@@ -244,76 +400,124 @@ export async function obtenerExpedientesInactivos(
 ): Promise<ExpedienteInactivo[]> {
   const inactivityDays = options.inactivityDays ?? INACTIVITY_DAYS
 
-  // 1. Obtener todas las solicitudes
-  const { data: solicitudes, error: solError } = await supabase
-    .from('solicitudes')
-    .select(
-      'id, titulo, id_cliente, modalidad_pago, etapa_actual, estado_pago, expediente, created_at, updated_at'
-    )
-
-  if (solError) {
-    throw new Error(`Error al obtener solicitudes: ${solError.message}`)
-  }
-
-  const solicitudesActivas = filtrarSolicitudesActivas((solicitudes ?? []) as SolicitudBase[])
-  if (solicitudesActivas.length === 0) return []
-
-  const solicitudIds = solicitudesActivas.map(s => s.id)
-  const clienteIds = [...new Set(solicitudesActivas.map(s => s.id_cliente).filter(Boolean))] as string[]
-
-  // 2. Queries en paralelo para último movimiento + nombres + últimos pagos
-  const [actResult, gasResult, spResult, usuResult, empResult, ingResult] = await Promise.all([
+  // 1. Obtener solicitudes + casos
+  const [solResult, casoResult] = await Promise.all([
     supabase
-      .from('actualizaciones')
-      .select('id_solicitud, tiempo')
-      .in('id_solicitud', solicitudIds)
-      .not('tiempo', 'is', null),
-
-    supabase
-      .from('gastos')
-      .select('id_caso, fecha')
-      .in('id_caso', solicitudIds)
-      .not('fecha', 'is', null),
-
-    supabase
-      .from('servicios_profesionales')
-      .select('id_solicitud_sheets, id_caso, fecha')
-      .or(
-        `id_solicitud_sheets.in.(${solicitudIds.map(id => `"${id}"`).join(',')}),id_caso.in.(${solicitudIds
-          .map(id => `"${id}"`)
-          .join(',')})`
-      )
-      .not('fecha', 'is', null),
-
-    clienteIds.length > 0
-      ? supabase.from('usuarios').select('id, nombre').in('id', clienteIds)
-      : Promise.resolve({ data: [], error: null } as any),
-
-    clienteIds.length > 0
-      ? supabase.from('empresas').select('id, nombre').in('id', clienteIds)
-      : Promise.resolve({ data: [], error: null } as any),
-
-    clienteIds.length > 0
-      ? supabase
-          .from('payment_receipts')
-          .select('user_id, mes_pago, reviewed_at')
-          .in('user_id', clienteIds)
-          .eq('estado', 'aprobado')
-          .not('reviewed_at', 'is', null)
-      : Promise.resolve({ data: [], error: null } as any),
+      .from('solicitudes')
+      .select(
+        'id, titulo, id_cliente, modalidad_pago, etapa_actual, estado_pago, expediente, created_at, updated_at'
+      ),
+    supabase.from('casos').select('id, nombre, estado, expediente, id_cliente, created_at'),
   ])
 
-  // 3. Mapa último movimiento
-  const ultimoMovMap = construirMapaUltimoMovimiento(
-    (actResult.data ?? []) as MovimientoRow[],
+  if (solResult.error) {
+    throw new Error(`Error al obtener solicitudes: ${solResult.error.message}`)
+  }
+  if (casoResult.error) {
+    throw new Error(`Error al obtener casos: ${casoResult.error.message}`)
+  }
+
+  const solicitudesActivas = filtrarSolicitudesActivas((solResult.data ?? []) as SolicitudBase[])
+  const casosActivos = filtrarCasosActivos((casoResult.data ?? []) as CasoBase[])
+  if (solicitudesActivas.length === 0 && casosActivos.length === 0) return []
+
+  const solicitudIds = solicitudesActivas.map(s => s.id)
+  const casoIds = casosActivos.map(c => c.id)
+  const combinedIds = [...solicitudIds, ...casoIds]
+  const clienteIds = [...new Set(
+    [...solicitudesActivas, ...casosActivos].map(e => e.id_cliente).filter(Boolean)
+  )] as string[]
+
+  const empty = { data: [], error: null } as any
+
+  // 2. Queries en paralelo
+  const [actResult, gasResult, spResult, tphResult, mpResult, usuResult, empResult, recResult] =
+    await Promise.all([
+      solicitudIds.length
+        ? supabase
+            .from('actualizaciones')
+            .select('id_solicitud, tiempo')
+            .in('id_solicitud', solicitudIds)
+            .not('tiempo', 'is', null)
+        : Promise.resolve(empty),
+
+      combinedIds.length
+        ? supabase
+            .from('gastos')
+            .select('id_caso, fecha')
+            .in('id_caso', combinedIds)
+            .not('fecha', 'is', null)
+        : Promise.resolve(empty),
+
+      combinedIds.length
+        ? supabase
+            .from('servicios_profesionales')
+            .select('id_solicitud_sheets, id_caso, fecha')
+            .or(
+              `id_solicitud_sheets.in.(${combinedIds.map(id => `"${id}"`).join(',')}),id_caso.in.(${combinedIds
+                .map(id => `"${id}"`)
+                .join(',')})`
+            )
+            .not('fecha', 'is', null)
+        : Promise.resolve(empty),
+
+      casoIds.length
+        ? supabase
+            .from('trabajos_por_hora')
+            .select('caso_asignado, fecha')
+            .in('caso_asignado', casoIds)
+            .not('fecha', 'is', null)
+        : Promise.resolve(empty),
+
+      solicitudIds.length
+        ? (supabase as any)
+            .from('mensualidad_pagos')
+            .select('solicitud_id, created_at')
+            .in('solicitud_id', solicitudIds)
+        : Promise.resolve(empty),
+
+      clienteIds.length
+        ? supabase.from('usuarios').select('id, nombre').in('id', clienteIds)
+        : Promise.resolve(empty),
+
+      clienteIds.length
+        ? supabase.from('empresas').select('id, nombre').in('id', clienteIds)
+        : Promise.resolve(empty),
+
+      clienteIds.length
+        ? supabase
+            .from('payment_receipts')
+            .select('user_id, reviewed_at, mes_pago, solicitud_caso_id_pagados')
+            .in('user_id', clienteIds)
+            .eq('estado', 'aprobado')
+            .not('reviewed_at', 'is', null)
+        : Promise.resolve(empty),
+    ])
+
+  // 3. Mapas de movimientos
+  const receiptTuples = expandReceiptsToTuples(
+    (recResult.data ?? []) as any,
+    solicitudIds,
+    casoIds
+  )
+  const ultimoMovDineroMap = construirMapaUltimoMovDinero(
     (gasResult.data ?? []) as MovimientoRow[],
     (spResult.data ?? []) as MovimientoRow[],
-    solicitudIds
+    (mpResult.data ?? []) as any,
+    receiptTuples,
+    solicitudIds,
+    casoIds
+  )
+  const ultimoMovActualizacionMap = construirMapaUltimoMovActualizacion(
+    (actResult.data ?? []) as MovimientoRow[],
+    (tphResult.data ?? []) as MovimientoRow[],
+    solicitudIds,
+    casoIds
   )
 
   // 4. Mapa último pago aprobado por cliente (informativo, no afecta inactividad)
   const ultimoPagoMap = new Map<string, { fecha: string; mes: string }>()
-  for (const rec of (ingResult.data ?? []) as any[]) {
+  for (const rec of (recResult.data ?? []) as any[]) {
     if (!rec.user_id || !rec.reviewed_at) continue
     const prev = ultimoPagoMap.get(rec.user_id)
     if (!prev || new Date(rec.reviewed_at) > new Date(prev.fecha)) {
@@ -333,7 +537,9 @@ export async function obtenerExpedientesInactivos(
   // 6. Construir lista de inactivos
   return construirListaInactivos(
     solicitudesActivas,
-    ultimoMovMap,
+    casosActivos,
+    ultimoMovDineroMap,
+    ultimoMovActualizacionMap,
     clienteNombreMap,
     ultimoPagoMap,
     inactivityDays

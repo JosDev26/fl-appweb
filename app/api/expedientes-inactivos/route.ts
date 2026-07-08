@@ -16,7 +16,7 @@ const supabase = createClient(
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1)
     const filtroModalidad = (searchParams.get('filtroModalidad') || 'all') as FiltroModalidad
     const filtroCliente = (searchParams.get('filtroCliente') || '').toLowerCase().trim()
 

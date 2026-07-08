@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { obtenerExpedientesInactivos, type ExpedienteInactivo } from '@/lib/expedientes-inactivos'
-import { sendEmail, wrapWithBaseTemplate, isDryRun } from '@/lib/email'
+import { sendEmail, wrapWithBaseTemplate, isDryRun, parseEmailList } from '@/lib/email'
 
 // ============================================================================
 // POST /api/expedientes-inactivos/notify
@@ -51,19 +51,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
     }
 
-    // 2. Destinatario fijo
-    const destinatario = process.env.NOTIFICACION_INACTIVIDAD_EMAIL
-    if (!destinatario || destinatario.trim() === '') {
+    // 2. Destinatarios (soporta comma-separated en NOTIFICACION_INACTIVIDAD_EMAIL)
+    const destinatarios = parseEmailList(process.env.NOTIFICACION_INACTIVIDAD_EMAIL || '')
+    if (destinatarios.length === 0) {
       console.error(`${logPrefix} Falta NOTIFICACION_INACTIVIDAD_EMAIL`)
       return NextResponse.json(
-        { success: false, message: 'Falta configurar NOTIFICACION_INACTIVIDAD_EMAIL' },
+        { success: false, message: 'Falta configurar NOTIFICACION_INACTIVIDAD_EMAIL (uno o varios separados por coma)' },
         { status: 500 }
       )
     }
+    const destinatariosStr = destinatarios.join(', ')
 
     // En modo preview, forzamos dryRun=false (envío real) e ignoramos el tracking.
     const dryRun = previewMode ? false : isDryRun()
-    console.log(`${logPrefix} Iniciando (dryRun=${dryRun}, preview=${previewMode})`)
+    console.log(`${logPrefix} Iniciando (dryRun=${dryRun}, preview=${previewMode}, destinatarios=${destinatarios.length})`)
 
     // 3. Obtener expedientes inactivos
     const inactivos = await obtenerExpedientesInactivos(supabaseAdmin)
@@ -130,7 +131,7 @@ export async function POST(request: NextRequest) {
     const { html, text } = buildInactivityEmail(pendientes)
 
     const result = await sendEmail({
-      to: destinatario,
+      to: destinatarios,
       subject,
       html,
       text,
@@ -152,6 +153,7 @@ export async function POST(request: NextRequest) {
           errores: pendientes.length,
           dryRun,
           preview: previewMode,
+          destinatarios,
         },
         { status: 500 }
       )
@@ -168,13 +170,14 @@ export async function POST(request: NextRequest) {
               expediente_id: exp.id,
               tipo: NOTIFICACION_TIPO,
               dias_inactivo_notificado: exp.diasInactivo,
-              correo_destino: destinatario,
+              correo_destino: destinatariosStr,
               resend_id: result.id ?? null,
               dry_run: dryRun,
               metadata: {
                 asunto: subject,
                 expediente_titulo: exp.titulo,
                 cliente: exp.clienteNombre,
+                destinatarios,
               },
             })
 
@@ -207,8 +210,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: errores.length === 0,
       message: previewMode
-        ? `[PREVIEW] Correo enviado a ${destinatario} con ${pendientes.length} expediente(s). NO se registró tracking.`
-        : `Notificación enviada a ${destinatario}: ${enviados.length} expediente(s) nuevo(s), ${yaNotificadosSet.size} ya notificado(s)`,
+        ? `[PREVIEW] Correo enviado a ${destinatariosStr} con ${pendientes.length} expediente(s). NO se registró tracking.`
+        : `Notificación enviada a ${destinatariosStr}: ${enviados.length} expediente(s) nuevo(s), ${yaNotificadosSet.size} ya notificado(s)`,
       timestamp: startedAt,
       total: inactivos.length,
       pendientes: pendientes.length,
@@ -219,6 +222,7 @@ export async function POST(request: NextRequest) {
       resendId: result.id ?? null,
       dryRun,
       preview: previewMode,
+      destinatarios,
     })
   } catch (error) {
     console.error(`${logPrefix} Error interno:`, error)
@@ -235,12 +239,14 @@ export async function POST(request: NextRequest) {
 
 // Endpoint GET para verificar estado del servicio (igual que /api/sync/auto)
 export async function GET() {
+  const destinatarios = parseEmailList(process.env.NOTIFICACION_INACTIVIDAD_EMAIL || '')
   return NextResponse.json({
     success: true,
     message: 'Servicio de notificación de expedientes inactivos activo',
     timestamp: new Date().toISOString(),
     dryRun: isDryRun(),
-    destinatarioConfigurado: !!process.env.NOTIFICACION_INACTIVIDAD_EMAIL,
+    destinatariosConfigurados: destinatarios.length,
+    destinatarios,
     cronConfigurado: !!process.env.CRON_SECRET_TOKEN,
   })
 }
@@ -253,73 +259,112 @@ function buildInactivityEmail(inactivos: ExpedienteInactivo[]): { html: string; 
   const fechaCr = new Date().toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' })
   const total = inactivos.length
 
-  // Texto plano (fallback)
+  // Dividir en 2 rubros (un expediente puede estar en ambos)
+  const inactivosDinero = inactivos
+    .filter(e => e.diasInactivoDinero >= 15)
+    .sort((a, b) => b.diasInactivoDinero - a.diasInactivoDinero)
+  const inactivosActualizacion = inactivos
+    .filter(e => e.diasInactivoActualizacion >= 15)
+    .sort((a, b) => b.diasInactivoActualizacion - a.diasInactivoActualizacion)
+
+  // ---- Texto plano (fallback) ----
+  const formatRubro = (
+    lista: ExpedienteInactivo[],
+    diasField: 'diasInactivoDinero' | 'diasInactivoActualizacion',
+    movField: 'ultimoMovDinero' | 'ultimoMovActualizacion',
+    tipoField: 'tipoUltimoMovDinero' | 'tipoUltimoMovActualizacion'
+  ): string =>
+    lista
+      .map(
+        (e, i) =>
+          `${i + 1}. ${e.clienteNombre} - ${e.titulo ?? '(sin título)'} [${e.expediente ?? e.id}]
+   Tipo: ${e.tipoExpediente} | Modalidad: ${e.modalidad_pago ?? 'n/a'} | Etapa: ${e.etapa_actual ?? 'n/a'}
+   Días inactivo: ${e[diasField]} | Último movimiento: ${e[movField] ?? 'nunca'} (${e[tipoField] ?? 'sin registro'})`
+      )
+      .join('\n\n')
+
   const text = `Fusion Legal CR - Notificación de expedientes inactivos
 
-Se detectaron ${total} expediente(s) sin actividad por 15 o más días al ${fechaCr}:
+Se detectaron ${total} expediente(s) inactivos (15+ días) al ${fechaCr}.
 
-${inactivos
-  .map(
-    (e, i) =>
-      `${i + 1}. ${e.clienteNombre} - ${e.titulo ?? '(sin título)'} [${e.expediente ?? e.id}]
-   Modalidad: ${e.modalidad_pago ?? 'n/a'} | Etapa: ${e.etapa_actual ?? 'n/a'}
-   Días inactivo: ${e.diasInactivo} | Último movimiento: ${e.ultimoMovimiento ?? 'nunca'} (${e.tipoUltimoMovimiento ?? 'sin registro'})`
-  )
-  .join('\n\n')}
+=== DESACTUALIZADOS POR DINERO (${inactivosDinero.length}) ===
+${inactivosDinero.length ? formatRubro(inactivosDinero, 'diasInactivoDinero', 'ultimoMovDinero', 'tipoUltimoMovDinero') : 'Ninguno.'}
+
+=== DESACTUALIZADOS POR ACTUALIZACIONES (${inactivosActualizacion.length}) ===
+${inactivosActualizacion.length ? formatRubro(inactivosActualizacion, 'diasInactivoActualizacion', 'ultimoMovActualizacion', 'tipoUltimoMovActualizacion') : 'Ninguno.'}
 
 Revisa el panel /dev para más detalles.
 
 Saludos,
 Fusion Legal CR`
 
-  // HTML con tabla
-  const filas = inactivos
-    .map(e => {
-      const diasColor =
-        e.diasInactivo >= 60 ? '#dc2626' : e.diasInactivo >= 30 ? '#ea580c' : '#ca8a04'
-      const ultimoMov = e.ultimoMovimiento
-        ? new Date(e.ultimoMovimiento).toLocaleDateString('es-CR', {
-            timeZone: 'America/Costa_Rica',
-          })
-        : '<em style="color:#94a3b8;">Sin actividad registrada</em>'
-      const tipoMov = e.tipoUltimoMovimiento
-        ? escapeHtml(e.tipoUltimoMovimiento)
-        : '<em style="color:#94a3b8;">—</em>'
+  // ---- HTML con 2 secciones ----
+  const diasColor = (d: number) => (d >= 60 ? '#dc2626' : d >= 30 ? '#ea580c' : '#ca8a04')
+  const fmtFecha = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleDateString('es-CR', { timeZone: 'America/Costa_Rica' })
+      : '<em style="color:#94a3b8;">Sin registro</em>'
+  const fmtTipo = (t: string | null) =>
+    t ? escapeHtml(t) : '<em style="color:#94a3b8;">—</em>'
+  const tipoBadge = (e: ExpedienteInactivo) =>
+    e.tipoExpediente === 'caso'
+      ? '<span style="display:inline-block; background:#7c3aed; color:white; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:600;">Caso</span>'
+      : '<span style="display:inline-block; background:#2563eb; color:white; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:600;">Solicitud</span>'
 
-      return `<tr>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#0f172a;">${escapeHtml(e.clienteNombre)}</td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#0f172a;">${escapeHtml(e.titulo ?? '(sin título)')}</td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${escapeHtml(e.expediente ?? e.id)}</td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${escapeHtml(e.modalidad_pago ?? 'n/a')}</td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${escapeHtml(e.etapa_actual ?? 'n/a')}</td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center;"><span style="display:inline-block; background:${diasColor}; color:white; padding:3px 10px; border-radius:9999px; font-weight:600; font-size:13px;">${e.diasInactivo}d</span></td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${ultimoMov}</td>
-        <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${tipoMov}</td>
-      </tr>`
-    })
-    .join('')
-
-  const contenido = `
-    <p style="margin: 0 0 15px 0;">Se detectaron <strong style="color:#19304B;">${total} expediente(s)</strong> sin actividad por <strong>15 o más días</strong> al ${fechaCr}.</p>
-    <p style="margin: 0 0 20px 0; color:#64748b; font-size:14px;">Revisa el panel <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">/dev &rarr; Expedientes Inactivos</code> para gestionar estos casos.</p>
-
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; font-size: 14px;">
+  const buildTabla = (
+    lista: ExpedienteInactivo[],
+    diasField: 'diasInactivoDinero' | 'diasInactivoActualizacion',
+    movField: 'ultimoMovDinero' | 'ultimoMovActualizacion',
+    tipoField: 'tipoUltimoMovDinero' | 'tipoUltimoMovActualizacion'
+  ): string => {
+    if (lista.length === 0) {
+      return '<p style="margin:0 0 10px 0; color:#64748b; font-size:14px;">Ningún expediente en este rubro.</p>'
+    }
+    const filas = lista
+      .map(e => {
+        const d = e[diasField]
+        return `<tr>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#0f172a;">${escapeHtml(e.clienteNombre)}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#0f172a;">${escapeHtml(e.titulo ?? '(sin título)')}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${escapeHtml(e.expediente ?? e.id)}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center;">${tipoBadge(e)}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${escapeHtml(e.modalidad_pago ?? 'n/a')}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:center;"><span style="display:inline-block; background:${diasColor(d)}; color:white; padding:3px 10px; border-radius:9999px; font-weight:600; font-size:13px;">${d}d</span></td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${fmtFecha(e[movField])}</td>
+          <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#475569; font-size:13px;">${fmtTipo(e[tipoField])}</td>
+        </tr>`
+      })
+      .join('')
+    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; font-size: 14px;">
       <thead>
         <tr style="background: #19304B; color: white;">
           <th style="padding: 12px; text-align: left; font-weight: 600;">Cliente</th>
           <th style="padding: 12px; text-align: left; font-weight: 600;">Título</th>
           <th style="padding: 12px; text-align: left; font-weight: 600;">Expediente</th>
+          <th style="padding: 12px; text-align: center; font-weight: 600;">Tipo</th>
           <th style="padding: 12px; text-align: left; font-weight: 600;">Modalidad</th>
-          <th style="padding: 12px; text-align: left; font-weight: 600;">Etapa</th>
           <th style="padding: 12px; text-align: center; font-weight: 600;">Días</th>
           <th style="padding: 12px; text-align: left; font-weight: 600;">Último movimiento</th>
-          <th style="padding: 12px; text-align: left; font-weight: 600;">Tipo</th>
+          <th style="padding: 12px; text-align: left; font-weight: 600;">Tipo mov</th>
         </tr>
       </thead>
       <tbody>
         ${filas}
       </tbody>
-    </table>
+    </table>`
+  }
+
+  const contenido = `
+    <p style="margin: 0 0 15px 0;">Se detectaron <strong style="color:#19304B;">${total} expediente(s)</strong> inactivos por <strong>15 o más días</strong> al ${fechaCr}.</p>
+    <p style="margin: 0 0 20px 0; color:#64748b; font-size:14px;">Revisa el panel <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">/dev &rarr; Expedientes Inactivos</code> para gestionar estos casos.</p>
+
+    <h2 style="margin: 25px 0 12px 0; font-size: 18px; color: #19304B; border-bottom: 2px solid #FAD02C; padding-bottom: 6px;">💰 Desactualizados por dinero (${inactivosDinero.length})</h2>
+    <p style="margin: 0 0 12px 0; color:#64748b; font-size:13px;">Sin gastos, servicios profesionales, mensualidades ni pagos en los últimos 15+ días.</p>
+    ${buildTabla(inactivosDinero, 'diasInactivoDinero', 'ultimoMovDinero', 'tipoUltimoMovDinero')}
+
+    <h2 style="margin: 30px 0 12px 0; font-size: 18px; color: #19304B; border-bottom: 2px solid #FAD02C; padding-bottom: 6px;">📝 Desactualizados por actualizaciones (${inactivosActualizacion.length})</h2>
+    <p style="margin: 0 0 12px 0; color:#64748b; font-size:13px;">Sin actualizaciones escritas (solicitudes) ni trabajos por hora (casos) en los últimos 15+ días.</p>
+    ${buildTabla(inactivosActualizacion, 'diasInactivoActualizacion', 'ultimoMovActualizacion', 'tipoUltimoMovActualizacion')}
 
     <p style="margin-top: 25px; font-size: 13px; color: #64748b;">
       Este correo fue generado automáticamente por el cron diario de Fusion Legal. Cada expediente se notifica una sola vez (tracking en <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;">notificaciones_inactividad</code>).
@@ -327,7 +372,7 @@ Fusion Legal CR`
 
   const html = wrapWithBaseTemplate(contenido, {
     title: 'Expedientes Inactivos',
-    subtitle: `${total} caso(s) sin actividad por 15+ días`,
+    subtitle: `${total} expediente(s) — Dinero: ${inactivosDinero.length} | Actualizaciones: ${inactivosActualizacion.length}`,
   })
 
   return { html, text }

@@ -15,7 +15,8 @@ const REPLY_TO = 'soporte@fusionlegalcr.com'
 export type EmailPriority = 'high' | 'normal' | 'low'
 
 export interface SendEmailParams {
-  to: string
+  /** Destinatario único (string) o múltiples (string[] o string separado por comas). */
+  to: string | string[]
   subject: string
   html: string
   text?: string
@@ -123,17 +124,35 @@ export function wrapWithBaseTemplate(contentHtml: string, options?: {
 // Envío
 // ---------------------------------------------------------------------------
 
-export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-  const { to, subject, html, text, replyTo = REPLY_TO, priority = 'normal', forceSend = false } = params
+/**
+ * Normaliza el campo `to` a un array de correos válidos.
+ * Acepta: string único, string separado por comas, o string[].
+ * Elimina espacios y vacíos.
+ */
+export function parseEmailList(to: string | string[]): string[] {
+  const input = Array.isArray(to) ? to : [to]
+  return input
+    .flatMap(s => s.split(','))
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+}
 
-  if (!to || !subject || !html) {
+export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
+  const { subject, html, text, replyTo = REPLY_TO, priority = 'normal', forceSend = false } = params
+
+  const recipients = parseEmailList(params.to)
+  if (recipients.length === 0) {
+    return { success: false, error: 'Faltan campos requeridos (to, subject, html)' }
+  }
+  if (!subject || !html) {
     return { success: false, error: 'Faltan campos requeridos (to, subject, html)' }
   }
 
   // Modo dry-run: no toca la API de Resend. Útil para pruebas y dev.
   // forceSend lo bypassa (modo preview).
   if (!forceSend && isDryRun()) {
-    console.log(`[email:dry-run] (no enviado) To: ${to} | Subject: ${subject} | Priority: ${priority}`)
+    const toPreview = recipients.join(', ')
+    console.log(`[email:dry-run] (no enviado) To: ${toPreview} | Subject: ${subject} | Priority: ${priority}`)
     if (text) {
       console.log(`[email:dry-run] Text preview:\n${text.slice(0, 500)}${text.length > 500 ? '...' : ''}`)
     }
@@ -142,9 +161,12 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
 
   try {
     const resend = getResend()
+    // Resend acepta `to` como string o string[]. Si hay un solo destinatario
+    // pasamos string; si hay varios, pasamos array.
+    const toField = recipients.length === 1 ? recipients[0] : recipients
     const { data, error } = await resend.emails.send({
       from: FROM_ADDRESS,
-      to,
+      to: toField as any,
       replyTo,
       subject,
       html,
@@ -156,7 +178,8 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
       return { success: false, error: error.message }
     }
 
-    console.log(`[email] Correo enviado a ${to} | id=${data?.id ?? 'n/a'}`)
+    const toLog = recipients.join(', ')
+    console.log(`[email] Correo enviado a ${toLog} | id=${data?.id ?? 'n/a'}`)
     return { success: true, id: data?.id, dryRun: false }
   } catch (err: any) {
     console.error('[email] Excepción enviando correo:', err)

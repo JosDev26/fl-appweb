@@ -16,12 +16,17 @@ import {
   tieneModalidadActiva,
   estaExcluidoPorEstado,
   filtrarSolicitudesActivas,
-  construirMapaUltimoMovimiento,
+  estaCasoExcluido,
+  filtrarCasosActivos,
+  construirMapaUltimoMovDinero,
+  construirMapaUltimoMovActualizacion,
+  expandReceiptsToTuples,
   construirListaInactivos,
   aplicarFiltrosUi,
   paginar,
   INACTIVITY_DAYS,
   type SolicitudBase,
+  type CasoBase,
 } from '@/lib/expedientes-inactivos'
 
 describe('diasDesde', () => {
@@ -130,50 +135,133 @@ describe('filtrarSolicitudesActivas', () => {
   })
 })
 
-describe('construirMapaUltimoMovimiento', () => {
-  it('construye mapa con la fecha más reciente por solicitud', () => {
-    const acts = [
-      { id_solicitud: 's1', tiempo: '2026-06-01T00:00:00Z' },
-      { id_solicitud: 's1', tiempo: '2026-06-10T00:00:00Z' },
-      { id_solicitud: 's2', tiempo: '2026-06-05T00:00:00Z' },
-    ]
+describe('estaCasoExcluido', () => {
+  it('true para finalizado y cancelado', () => {
+    expect(estaCasoExcluido('finalizado')).toBe(true)
+    expect(estaCasoExcluido('Cancelado')).toBe(true)
+  })
+
+  it('false para otros estados', () => {
+    expect(estaCasoExcluido('activo')).toBe(false)
+    expect(estaCasoExcluido('en proceso')).toBe(false)
+  })
+
+  it('false para null o vacío', () => {
+    expect(estaCasoExcluido(null)).toBe(false)
+    expect(estaCasoExcluido('')).toBe(false)
+  })
+})
+
+describe('filtrarCasosActivos', () => {
+  const baseCaso = (over: Partial<CasoBase> = {}): CasoBase => ({
+    id: 'c1',
+    nombre: 'Caso 1',
+    estado: 'activo',
+    expediente: 'EXP1',
+    id_cliente: 'cl1',
+    created_at: '2026-01-01T00:00:00Z',
+    ...over,
+  })
+
+  it('excluye finalizado y cancelado', () => {
+    const res = filtrarCasosActivos([
+      baseCaso({ id: 'a', estado: 'activo' }),
+      baseCaso({ id: 'b', estado: 'finalizado' }),
+      baseCaso({ id: 'c', estado: 'Cancelado' }),
+    ])
+    expect(res.map(c => c.id)).toEqual(['a'])
+  })
+})
+
+describe('construirMapaUltimoMovDinero', () => {
+  it('combina gastos, sp, mensualidad y receipts por expediente', () => {
     const gastos = [{ id_caso: 's2', fecha: '2026-06-20T00:00:00Z' }]
-    const sp: any[] = []
+    const sp = [{ id_solicitud_sheets: 's1', id_caso: null, fecha: '2026-06-01T00:00:00Z' }]
+    const mp = [{ solicitud_id: 's1', created_at: '2026-07-01T00:00:00Z' }]
+    const receipts = [{ expId: 'c1', fecha: '2026-07-10T00:00:00Z' }]
 
-    const map = construirMapaUltimoMovimiento(acts as any, gastos as any, sp, ['s1', 's2'])
+    const map = construirMapaUltimoMovDinero(gastos as any, sp as any, mp as any, receipts, ['s1', 's2'], ['c1'])
 
-    expect(map.get('s1')).toEqual({ fecha: '2026-06-10T00:00:00Z', tipo: 'Actualización' })
+    expect(map.get('s1')).toEqual({ fecha: '2026-07-01T00:00:00Z', tipo: 'Mensualidad' })
     expect(map.get('s2')).toEqual({ fecha: '2026-06-20T00:00:00Z', tipo: 'Gasto' })
+    expect(map.get('c1')).toEqual({ fecha: '2026-07-10T00:00:00Z', tipo: 'Pago' })
   })
 
-  it('ignora ids que no están en solicitudIds', () => {
-    const acts = [
-      { id_solicitud: 's1', tiempo: '2026-06-01T00:00:00Z' },
-      { id_solicitud: 's3', tiempo: '2026-06-10T00:00:00Z' },
-    ]
-    const map = construirMapaUltimoMovimiento(acts as any, [], [], ['s1'])
-    expect(map.has('s3')).toBe(false)
-    expect(map.has('s1')).toBe(true)
+  it('toma la fecha más reciente cuando hay varias fuentes', () => {
+    const gastos = [{ id_caso: 's1', fecha: '2026-06-01T00:00:00Z' }]
+    const mp = [{ solicitud_id: 's1', created_at: '2026-07-01T00:00:00Z' }]
+    const map = construirMapaUltimoMovDinero(gastos as any, [] as any, mp as any, [], ['s1'], [])
+    expect(map.get('s1')?.tipo).toBe('Mensualidad')
   })
 
-  it('ignora filas sin fecha o sin id', () => {
-    const acts = [
-      { id_solicitud: 's1', tiempo: null },
-      { id_solicitud: null, tiempo: '2026-06-01T00:00:00Z' },
-      { id_solicitud: 's1', tiempo: '2026-06-01T00:00:00Z' },
-    ]
-    const map = construirMapaUltimoMovimiento(acts as any, [], [], ['s1'])
-    expect(map.size).toBe(1)
-    expect(map.has('s1')).toBe(true)
+  it('ignora ids que no están en solicitudIds/casoIds', () => {
+    const gastos = [{ id_caso: 'sX', fecha: '2026-06-01T00:00:00Z' }]
+    const map = construirMapaUltimoMovDinero(gastos as any, [] as any, [] as any, [], ['s1'], ['c1'])
+    expect(map.size).toBe(0)
   })
 
-  it('usa id_solicitud_sheets primero, luego id_caso', () => {
-    const sp = [
-      { id_solicitud_sheets: 's1', id_caso: 's2', fecha: '2026-06-01T00:00:00Z' },
-    ]
-    const map = construirMapaUltimoMovimiento([], [], sp, ['s1', 's2'])
+  it('usa id_solicitud_sheets primero, luego id_caso para sp', () => {
+    const sp = [{ id_solicitud_sheets: 's1', id_caso: 's2', fecha: '2026-06-01T00:00:00Z' }]
+    const map = construirMapaUltimoMovDinero([] as any, sp as any, [] as any, [], ['s1', 's2'], [])
     expect(map.get('s1')?.tipo).toBe('Servicio Profesional')
     expect(map.has('s2')).toBe(false)
+  })
+
+  it('NO incluye trabajos_por_hora (tph solo alimenta actualizaciones)', () => {
+    const gastos = [{ id_caso: 'c1', fecha: '2026-06-01T00:00:00Z' }]
+    const mapConGasto = construirMapaUltimoMovDinero(gastos as any, [] as any, [] as any, [], ['c1'], [])
+    expect(mapConGasto.has('c1')).toBe(true)
+    // tph no se pasa al mapa de dinero; un caso con solo tph no aparece en dinero
+    const mapSoloTph = construirMapaUltimoMovDinero([] as any, [] as any, [] as any, [], [], ['c1'])
+    expect(mapSoloTph.has('c1')).toBe(false)
+    expect(mapSoloTph.size).toBe(0)
+  })
+})
+
+describe('construirMapaUltimoMovActualizacion', () => {
+  it('combina actualizaciones (solicitudes) y tph (casos)', () => {
+    const acts = [
+      { id_solicitud: 's1', tiempo: '2026-06-10T00:00:00Z' },
+      { id_solicitud: 's1', tiempo: '2026-06-01T00:00:00Z' },
+    ]
+    const tph = [{ caso_asignado: 'c1', fecha: '2026-06-20T00:00:00Z' }]
+    const map = construirMapaUltimoMovActualizacion(acts as any, tph as any, ['s1'], ['c1'])
+    expect(map.get('s1')).toEqual({ fecha: '2026-06-10T00:00:00Z', tipo: 'Actualización' })
+    expect(map.get('c1')).toEqual({ fecha: '2026-06-20T00:00:00Z', tipo: 'Trabajo por Hora' })
+  })
+
+  it('tph solo cuenta para casos, no para solicitudes', () => {
+    const tph = [{ caso_asignado: 's1', fecha: '2026-06-20T00:00:00Z' }]
+    const map = construirMapaUltimoMovActualizacion([] as any, tph as any, ['s1'], ['c1'])
+    expect(map.has('s1')).toBe(false)
+  })
+})
+
+describe('expandReceiptsToTuples', () => {
+  it('expande solicitudes y casos del JSONB', () => {
+    const receipts = [
+      { reviewed_at: '2026-07-01T00:00:00Z', solicitud_caso_id_pagados: { solicitudes: ['s1', 's2'], casos: ['c1'] } },
+      { reviewed_at: '2026-07-05T00:00:00Z', solicitud_caso_id_pagados: null },
+    ]
+    const tuples = expandReceiptsToTuples(receipts, ['s1', 's2'], ['c1'])
+    expect(tuples).toEqual([
+      { expId: 's1', fecha: '2026-07-01T00:00:00Z' },
+      { expId: 's2', fecha: '2026-07-01T00:00:00Z' },
+      { expId: 'c1', fecha: '2026-07-01T00:00:00Z' },
+    ])
+  })
+
+  it('filtra ids que no están activos', () => {
+    const receipts = [
+      { reviewed_at: '2026-07-01T00:00:00Z', solicitud_caso_id_pagados: { solicitudes: ['s1', 'sX'], casos: [] } },
+    ]
+    const tuples = expandReceiptsToTuples(receipts, ['s1'], [])
+    expect(tuples).toEqual([{ expId: 's1', fecha: '2026-07-01T00:00:00Z' }])
+  })
+
+  it('ignora receipts sin reviewed_at', () => {
+    const receipts = [{ reviewed_at: null, solicitud_caso_id_pagados: { solicitudes: ['s1'], casos: [] } }]
+    expect(expandReceiptsToTuples(receipts, ['s1'], [])).toEqual([])
   })
 })
 
@@ -191,21 +279,26 @@ describe('construirListaInactivos', () => {
     ...over,
   })
 
-  it('filtra los que no cumplen el umbral', () => {
+  it('incluye solo los inactivos en algún rubro', () => {
     const hoy = new Date()
-    const hace10 = new Date(hoy); hace10.setDate(hace10.getDate() - 10)
+    const hace5 = new Date(hoy); hace5.setDate(hace5.getDate() - 5)
     const hace20 = new Date(hoy); hace20.setDate(hace20.getDate() - 20)
+    const hace2 = new Date(hoy); hace2.setDate(hace2.getDate() - 2)
 
-    const solicitudes = [base({ id: 'a' }), base({ id: 'b' })]
-    const movMap = new Map([
-      ['a', { fecha: hace10.toISOString(), tipo: 'Actualización' as const }],
-      ['b', { fecha: hace20.toISOString(), tipo: 'Actualización' as const }],
+    const solicitudes = [
+      base({ id: 'a', created_at: hace2.toISOString() }),
+      base({ id: 'b', created_at: hace2.toISOString() }),
+    ]
+    const dineroMap = new Map([
+      ['a', { fecha: hace5.toISOString(), tipo: 'Gasto' as const }],
+      ['b', { fecha: hace20.toISOString(), tipo: 'Gasto' as const }],
     ])
-    const clientes = new Map([['c1', 'Cliente 1']])
-    const pagos = new Map()
-
-    const res = construirListaInactivos(solicitudes, movMap, clientes, pagos)
-
+    const actMap = new Map([
+      ['a', { fecha: hace5.toISOString(), tipo: 'Actualización' as const }],
+    ])
+    const res = construirListaInactivos(solicitudes, [], dineroMap, actMap, new Map([['c1', 'Cliente 1']]), new Map())
+    // a: dinero 5d + act 5d -> no inactivo en ninguno -> excluido
+    // b: dinero 20d (inactivo) -> incluido
     expect(res.length).toBe(1)
     expect(res[0].id).toBe('b')
   })
@@ -213,25 +306,30 @@ describe('construirListaInactivos', () => {
   it('usa created_at como fallback si no hay actividad', () => {
     const muyViejo = new Date(); muyViejo.setDate(muyViejo.getDate() - 30)
     const solicitudes = [base({ id: 'a', created_at: muyViejo.toISOString() })]
-    const movMap = new Map()
-    const res = construirListaInactivos(solicitudes, movMap, new Map([['c1', 'X']]), new Map())
+    const res = construirListaInactivos(solicitudes, [], new Map(), new Map(), new Map([['c1', 'X']]), new Map())
     expect(res.length).toBe(1)
     expect(res[0].nuncaTuvoActividad).toBe(true)
     expect(res[0].tipoUltimoMovimiento).toBeNull()
     expect(res[0].diasInactivo).toBe(30)
+    expect(res[0].diasInactivoDinero).toBe(30)
+    expect(res[0].diasInactivoActualizacion).toBe(30)
   })
 
-  it('ordena por diasInactivo descendente', () => {
+  it('ordena por diasInactivo (última actividad) descendente', () => {
     const hoy = new Date()
     const hace30 = new Date(hoy); hace30.setDate(hace30.getDate() - 30)
     const hace60 = new Date(hoy); hace60.setDate(hace60.getDate() - 60)
 
     const solicitudes = [base({ id: 'a' }), base({ id: 'b' })]
-    const movMap = new Map([
-      ['a', { fecha: hace30.toISOString(), tipo: 'Actualización' as const }],
+    const dineroMap = new Map([
+      ['a', { fecha: hace30.toISOString(), tipo: 'Gasto' as const }],
       ['b', { fecha: hace60.toISOString(), tipo: 'Gasto' as const }],
     ])
-    const res = construirListaInactivos(solicitudes, movMap, new Map([['c1', 'X']]), new Map())
+    const actMap = new Map([
+      ['a', { fecha: hace30.toISOString(), tipo: 'Actualización' as const }],
+      ['b', { fecha: hace60.toISOString(), tipo: 'Actualización' as const }],
+    ])
+    const res = construirListaInactivos(solicitudes, [], dineroMap, actMap, new Map([['c1', 'X']]), new Map())
     expect(res[0].id).toBe('b') // 60 días primero
     expect(res[1].id).toBe('a')
   })
@@ -240,9 +338,10 @@ describe('construirListaInactivos', () => {
     const hoy = new Date()
     const hace20 = new Date(hoy); hace20.setDate(hace20.getDate() - 20)
     const solicitudes = [base({ id: 'a' })]
-    const movMap = new Map([['a', { fecha: hace20.toISOString(), tipo: 'Actualización' as const }]])
-    const res30 = construirListaInactivos(solicitudes, movMap, new Map([['c1', 'X']]), new Map(), 30)
-    const res15 = construirListaInactivos(solicitudes, movMap, new Map([['c1', 'X']]), new Map(), 15)
+    const dineroMap = new Map([['a', { fecha: hace20.toISOString(), tipo: 'Gasto' as const }]])
+    const actMap = new Map([['a', { fecha: hace20.toISOString(), tipo: 'Actualización' as const }]])
+    const res30 = construirListaInactivos(solicitudes, [], dineroMap, actMap, new Map([['c1', 'X']]), new Map(), 30)
+    const res15 = construirListaInactivos(solicitudes, [], dineroMap, actMap, new Map([['c1', 'X']]), new Map(), 15)
     expect(res30.length).toBe(0)
     expect(res15.length).toBe(1)
   })
@@ -251,10 +350,51 @@ describe('construirListaInactivos', () => {
     const hoy = new Date()
     const hace20 = new Date(hoy); hace20.setDate(hace20.getDate() - 20)
     const solicitudes = [base({ id: 'a', id_cliente: 'c1' })]
-    const movMap = new Map([['a', { fecha: hace20.toISOString(), tipo: 'Actualización' as const }]])
+    const dineroMap = new Map([['a', { fecha: hace20.toISOString(), tipo: 'Gasto' as const }]])
     const pagos = new Map([['c1', { fecha: '2026-06-01T00:00:00Z', mes: '2026-06' }]])
-    const res = construirListaInactivos(solicitudes, movMap, new Map([['c1', 'X']]), pagos)
+    const res = construirListaInactivos(solicitudes, [], dineroMap, new Map(), new Map([['c1', 'X']]), pagos)
     expect(res[0].ultimoPago).toEqual({ fecha: '2026-06-01T00:00:00Z', mes: '2026-06' })
+  })
+
+  it('incluye casos inactivos por actualizacion (tph) sin dinero', () => {
+    const hoy = new Date()
+    const hace30 = new Date(hoy); hace30.setDate(hace30.getDate() - 30)
+    const casos = [{
+      id: 'c1', nombre: 'Caso X', estado: 'activo', expediente: 'EXP',
+      id_cliente: 'cl1', created_at: hace30.toISOString(),
+    }] as CasoBase[]
+    // tph solo alimenta actualizaciones; dinero vacío -> fallback created_at (30d)
+    const tphEntry = { fecha: hace30.toISOString(), tipo: 'Trabajo por Hora' as const }
+    const dineroMap = new Map<string, any>()
+    const actMap = new Map([['c1', tphEntry]])
+    const res = construirListaInactivos([], casos, dineroMap, actMap, new Map([['cl1', 'Cliente Caso']]), new Map())
+    expect(res.length).toBe(1)
+    expect(res[0].tipoExpediente).toBe('caso')
+    expect(res[0].titulo).toBe('Caso X')
+    // Dinero: sin movimiento -> fallback created_at (30d)
+    expect(res[0].diasInactivoDinero).toBe(30)
+    expect(res[0].ultimoMovDinero).toBeNull()
+    // Actualización: tph de hace 30d
+    expect(res[0].diasInactivoActualizacion).toBe(30)
+    expect(res[0].ultimoMovActualizacion).toBe(hace30.toISOString())
+  })
+
+  it('caso con tph reciente NO es inactivo por actualizacion (solo por dinero si created_at viejo)', () => {
+    const hoy = new Date()
+    const hace2 = new Date(hoy); hace2.setDate(hace2.getDate() - 2)
+    const hace60 = new Date(hoy); hace60.setDate(hace60.getDate() - 60)
+    const casos = [{
+      id: 'c1', nombre: 'Caso Act', estado: 'activo', expediente: 'EXP',
+      id_cliente: 'cl1', created_at: hace60.toISOString(),
+    }] as CasoBase[]
+    const tphReciente = { fecha: hace2.toISOString(), tipo: 'Trabajo por Hora' as const }
+    const dineroMap = new Map<string, any>()
+    const actMap = new Map([['c1', tphReciente]])
+    const res = construirListaInactivos([], casos, dineroMap, actMap, new Map([['cl1', 'X']]), new Map())
+    // Actualización fresca (2d) pero dinero fallback created_at (60d) -> inactivo por dinero
+    expect(res.length).toBe(1)
+    expect(res[0].diasInactivoActualizacion).toBe(2)
+    expect(res[0].diasInactivoDinero).toBe(60)
   })
 
   it('INACTIVITY_DAYS es 15', () => {

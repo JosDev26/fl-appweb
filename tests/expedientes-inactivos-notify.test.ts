@@ -46,6 +46,7 @@ vi.mock('@/lib/email', () => ({
   sendEmail: mockSendEmail,
   wrapWithBaseTemplate: (content: string) => `<div>${content}</div>`,
   isDryRun: mockIsDryRun,
+  parseEmailList: (s: string) => s.split(',').map(x => x.trim()).filter(Boolean),
 }))
 
 // ----- Helpers -------------------------------------------------------------
@@ -53,6 +54,7 @@ vi.mock('@/lib/email', () => ({
 function buildExpediente(over: Partial<any> = {}): any {
   return {
     id: 'sol-1',
+    tipoExpediente: 'solicitud',
     titulo: 'Expediente de prueba',
     modalidad_pago: 'mensualidad',
     etapa_actual: 'Preparatoria',
@@ -63,6 +65,14 @@ function buildExpediente(over: Partial<any> = {}): any {
     diasInactivo: 20,
     ultimoMovimiento: '2026-06-15T00:00:00Z',
     tipoUltimoMovimiento: 'Actualización',
+    // Rubro dinero (inactivo por defecto)
+    diasInactivoDinero: 20,
+    ultimoMovDinero: '2026-06-15T00:00:00Z',
+    tipoUltimoMovDinero: 'Gasto',
+    // Rubro actualizaciones (inactivo por defecto)
+    diasInactivoActualizacion: 20,
+    ultimoMovActualizacion: '2026-06-15T00:00:00Z',
+    tipoUltimoMovActualizacion: 'Actualización',
     nuncaTuvoActividad: false,
     ultimoPago: null,
     ...over,
@@ -205,7 +215,7 @@ describe('POST /api/expedientes-inactivos/notify', () => {
     // Un único correo consolidado
     expect(mockSendEmail).toHaveBeenCalledTimes(1)
     const emailArgs = mockSendEmail.mock.calls[0][0]
-    expect(emailArgs.to).toBe('admin@fusionlegalcr.com')
+    expect(emailArgs.to).toEqual(['admin@fusionlegalcr.com'])
     expect(emailArgs.subject).toContain('2 expediente(s)')
     expect(emailArgs.html).toContain('Otro Cliente')
     expect(emailArgs.text).toContain('Otro Cliente')
@@ -215,8 +225,8 @@ describe('POST /api/expedientes-inactivos/notify', () => {
 
   it('no reenvía inactivos ya notificados', async () => {
     const inactivos = [
-      buildExpediente({ id: 'sol-1', diasInactivo: 20, clienteNombre: 'Cliente Alpha' }),
-      buildExpediente({ id: 'sol-2', diasInactivo: 18, clienteNombre: 'Cliente Beta' }),
+      buildExpediente({ id: 'sol-1', diasInactivo: 20, diasInactivoDinero: 20, diasInactivoActualizacion: 20, clienteNombre: 'Cliente Alpha' }),
+      buildExpediente({ id: 'sol-2', diasInactivo: 18, diasInactivoDinero: 18, diasInactivoActualizacion: 18, clienteNombre: 'Cliente Beta' }),
     ]
     mockObtenerExpedientesInactivos.mockResolvedValue(inactivos)
     setupSupabaseMock({
@@ -235,12 +245,15 @@ describe('POST /api/expedientes-inactivos/notify', () => {
     expect(mockSendEmail).toHaveBeenCalledTimes(1)
     const emailHtml = mockSendEmail.mock.calls[0][0].html
     const emailText = mockSendEmail.mock.calls[0][0].text
-    // HTML usa badges "Nd"
+    // El correo de 2 secciones incluye badges "Nd" en ambas secciones
     expect(emailHtml).toContain('18d')
     expect(emailHtml).not.toContain('20d')
-    // Texto plano usa "Días inactivo: N"
+    // Texto plano usa "Días inactivo: N" en ambas secciones
     expect(emailText).toContain('Días inactivo: 18')
     expect(emailText).not.toContain('Días inactivo: 20')
+    // El correo tiene las 2 secciones
+    expect(emailText).toContain('DESACTUALIZADOS POR DINERO')
+    expect(emailText).toContain('DESACTUALIZADOS POR ACTUALIZACIONES')
     // Identidad del pendiente
     expect(emailText).toContain('Cliente Beta')
     expect(emailText).not.toContain('Cliente Alpha')
@@ -361,7 +374,8 @@ describe('GET /api/expedientes-inactivos/notify (status)', () => {
     expect(res.status).toBe(200)
     expect(body.success).toBe(true)
     expect(body).toHaveProperty('dryRun')
-    expect(body).toHaveProperty('destinatarioConfigurado')
+    expect(body).toHaveProperty('destinatariosConfigurados')
+    expect(body).toHaveProperty('destinatarios')
     expect(body).toHaveProperty('cronConfigurado')
   })
 })

@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
         .from('payment_receipts')
         .select('id, estado')
         .eq('user_id', userId)
-        .eq('solicitud_id' as any, solicitudId)
+        .contains('solicitud_caso_id_pagados' as any, { solicitudes: [solicitudId] })
         .eq('mes_pago', mesPago)
         .in('estado', ['pendiente', 'aprobado'])
 
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
         .eq('user_id', userId)
         .eq('tipo_cliente', tipoCliente)
         .eq('mes_pago', mesPago)
-        .is('solicitud_id' as any, null)
+        .is('items_pagados' as any, null)
         .in('estado', ['pendiente', 'aprobado'])
 
       console.log('🔍 Verificando comprobantes mensuales:', { userId, tipoCliente, mesPago, count: existingReceipts?.length || 0 })
@@ -358,7 +358,7 @@ export async function POST(request: NextRequest) {
         monto_declarado: montoPago ? parseFloat(montoPago) : null,
         estado: 'pendiente',
         uploaded_at: uploadedAt,
-        ...(solicitudId ? { solicitud_id: solicitudId } : {}),
+        ...(solicitudId ? { solicitud_caso_id_pagados: { solicitudes: [solicitudId], casos: [] } } : {}),
         ...(itemsPagados ? { items_pagados: itemsPagados } : {})
       } as any)
       .select()
