@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { validateCronAuth, isCronAuthConfigured } from '@/lib/cron-auth';
 
 // Esta ruta puede ser llamada por un cron job externo (ej. Vercel Cron, GitHub Actions)
 export async function POST(request: NextRequest) {
   try {
-    // Verificar que la request viene de una fuente autorizada
-    const authHeader = request.headers.get('authorization');
-    const expectedToken = process.env.CRON_SECRET_TOKEN;
-    
-    // Si hay token configurado, verificarlo. Si no hay token, permitir acceso (desarrollo)
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    // Auth: CRON_SECRET (Vercel Cron) o CRON_SECRET_TOKEN (GitHub Actions).
+    // En producción sin token -> 401 (fail-closed).
+    const unauthorized = validateCronAuth(request);
+    if (unauthorized) return unauthorized;
 
     console.log('🕐 Ejecutando sincronización automática programada');
     
@@ -124,6 +118,7 @@ export async function GET() {
     success: true,
     message: 'Servicio de sincronización automática activo',
     timestamp: new Date().toISOString(),
+    cronAuthConfigurado: isCronAuthConfigured(),
     endpoints: {
       manual_sync: '/api/sync',
       auto_sync: '/api/sync/auto',

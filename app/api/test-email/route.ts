@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sendEmail, wrapWithBaseTemplate, isDryRun } from '@/lib/email'
+import { validateCronAuth, isCronAuthConfigured } from '@/lib/cron-auth'
 
 // ============================================================================
 // POST /api/test-email
@@ -11,7 +12,7 @@ import { sendEmail, wrapWithBaseTemplate, isDryRun } from '@/lib/email'
 //   - Resend está configurado correctamente (RESEND_API_KEY válida).
 //   - El dominio verificado responde.
 //   - NOTIFICACION_INACTIVIDAD_EMAIL llega correctamente.
-//   - El flag EMAIL_DRY_RUN funciona como se espera.
+//   - El flag EMAIL_DRY_RUN funciona como se espera (no es bypasseable).
 //
 // No depende de que haya expedientes inactivos.
 //
@@ -20,22 +21,19 @@ import { sendEmail, wrapWithBaseTemplate, isDryRun } from '@/lib/email'
 //   { "subject": "Asunto custom" } -> sobreescribe el asunto
 //
 // Seguridad:
-//   - En producción debería protegerse. Por ahora, si CRON_SECRET_TOKEN está
-//     configurado, lo valida (igual que /api/sync/auto). Si no, permite acceso
-//     (modo dev).
+//   - Auth por Bearer token (CRON_SECRET o CRON_SECRET_TOKEN). En producción
+//     sin token -> 401 (fail-closed). Ver lib/cron-auth.ts.
+//   - Respeta EMAIL_DRY_RUN de forma estricta: no existe forma de forzar el
+//     envío real desde el request.
 // ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
-    // Auth opcional (igual que /api/sync/auto)
-    const authHeader = request.headers.get('authorization')
-    const expectedToken = process.env.CRON_SECRET_TOKEN
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-    }
+    // Auth (CRON_SECRET o CRON_SECRET_TOKEN; fail-closed en prod)
+    const unauthorized = validateCronAuth(request)
+    if (unauthorized) return unauthorized
 
-    // ?force=true fuerza el envío real ignorando EMAIL_DRY_RUN
-    const forceSend = request.nextUrl.searchParams.get('force') === 'true'
+    // EMAIL_DRY_RUN no es bypasseable desde el request.
 
     // Parsear body (opcional)
     let body: any = {}
@@ -59,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     const subject = body.subject || `[Prueba] Fusion Legal - Test de correo ${new Date().toISOString()}`
-    const dryRun = forceSend ? false : isDryRun()
+    const dryRun = isDryRun()
 
     const contentHtml = `
       <p style="margin: 0 0 15px 0;">Este es un <strong style="color:#19304B;">correo de prueba</strong> del sistema de notificaciones de Fusion Legal.</p>
@@ -105,7 +103,6 @@ Si ves este mensaje, Resend funciona correctamente.`
       subject,
       html,
       text,
-      forceSend,
     })
 
     if (!result.success) {
@@ -148,7 +145,7 @@ export async function GET() {
     dryRun: isDryRun(),
     destinatarioConfigurado: !!process.env.NOTIFICACION_INACTIVIDAD_EMAIL,
     resendConfigurado: !!process.env.RESEND_API_KEY,
-    cronConfigurado: !!process.env.CRON_SECRET_TOKEN,
+    cronAuthConfigurado: isCronAuthConfigured(),
   })
 }
 

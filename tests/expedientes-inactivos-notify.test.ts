@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { NextRequest } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 // ============================================================================
 // Tests para POST /api/expedientes-inactivos/notify
@@ -10,8 +10,8 @@ import { NextRequest } from 'next/server'
 //   - Inactivos ya notificados -> no reenvia.
 //   - Falla el envio -> error 500, no registra tracking.
 //   - Falta NOTIFICACION_INACTIVIDAD_EMAIL -> 500.
-//   - Auth: falta CRON_SECRET_TOKEN -> 401 (si token configurado).
-//   - Sin token configurado -> permite acceso (modo dev, igual que /api/sync/auto).
+//   - Auth: token incorrecto -> 401 (si token configurado).
+//   - Sin token configurado -> permite acceso (modo dev).
 // ============================================================================
 
 // ----- Mocks -------------------------------------------------------------
@@ -48,6 +48,33 @@ vi.mock('@/lib/email', () => ({
   isDryRun: mockIsDryRun,
   parseEmailList: (s: string) => s.split(',').map(x => x.trim()).filter(Boolean),
 }))
+
+// Mock de @/lib/cron-auth
+const { mockValidateCronAuth, mockIsCronAuthConfigured } = vi.hoisted(() => ({
+  mockValidateCronAuth: vi.fn().mockReturnValue(null),
+  mockIsCronAuthConfigured: vi.fn().mockReturnValue(false),
+}))
+
+vi.mock('@/lib/cron-auth', () => ({
+  validateCronAuth: mockValidateCronAuth,
+  isCronAuthConfigured: mockIsCronAuthConfigured,
+}))
+
+// Helper: simula el comportamiento real de validateCronAuth para un token dado.
+function setValidToken(token: string | null) {
+  if (token === null) {
+    mockValidateCronAuth.mockReturnValue(null)
+    mockIsCronAuthConfigured.mockReturnValue(false)
+    return
+  }
+  mockIsCronAuthConfigured.mockReturnValue(true)
+  mockValidateCronAuth.mockImplementation((req: NextRequest) => {
+    const auth = req.headers.get('authorization')
+    return auth === `Bearer ${token}`
+      ? null
+      : NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
+  })
+}
 
 // ----- Helpers -------------------------------------------------------------
 
@@ -147,11 +174,14 @@ beforeEach(() => {
   mockFrom.mockReset()
   mockIsDryRun.mockReturnValue(false)
   mockSendEmail.mockResolvedValue({ success: true, id: 'resend-abc' })
+  // Auth: por defecto modo dev sin token (permite acceso)
+  setValidToken(null)
   logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
   errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   // Env defaults
   process.env.NOTIFICACION_INACTIVIDAD_EMAIL = 'admin@fusionlegalcr.com'
+  delete process.env.CRON_SECRET
   delete process.env.CRON_SECRET_TOKEN
   delete process.env.EMAIL_DRY_RUN
 })
@@ -161,6 +191,7 @@ afterEach(() => {
   errorSpy.mockRestore()
   warnSpy.mockRestore()
   delete process.env.NOTIFICACION_INACTIVIDAD_EMAIL
+  delete process.env.CRON_SECRET
   delete process.env.CRON_SECRET_TOKEN
   delete process.env.EMAIL_DRY_RUN
 })
@@ -306,8 +337,8 @@ describe('POST /api/expedientes-inactivos/notify', () => {
     expect(warnSpy).toHaveBeenCalled()
   })
 
-  it('rechaza 401 si CRON_SECRET_TOKEN configurado y header incorrecto', async () => {
-    process.env.CRON_SECRET_TOKEN = 'secret-token-123'
+  it('rechaza 401 si hay token configurado y header incorrecto', async () => {
+    setValidToken('secret-token-123')
     const { POST } = await import('@/app/api/expedientes-inactivos/notify/route')
 
     const res = await POST(makeRequest('POST', 'wrong-token'))
@@ -318,8 +349,8 @@ describe('POST /api/expedientes-inactivos/notify', () => {
     expect(mockObtenerExpedientesInactivos).not.toHaveBeenCalled()
   })
 
-  it('permite acceso con token correcto', async () => {
-    process.env.CRON_SECRET_TOKEN = 'secret-token-123'
+  it('permite acceso con token correcto (CRON_SECRET_TOKEN)', async () => {
+    setValidToken('secret-token-123')
     mockObtenerExpedientesInactivos.mockResolvedValue([])
     const { POST } = await import('@/app/api/expedientes-inactivos/notify/route')
 
@@ -327,8 +358,17 @@ describe('POST /api/expedientes-inactivos/notify', () => {
     expect(res.status).toBe(200)
   })
 
+  it('permite acceso con token correcto (CRON_SECRET)', async () => {
+    setValidToken('vercel-cron-secret')
+    mockObtenerExpedientesInactivos.mockResolvedValue([])
+    const { POST } = await import('@/app/api/expedientes-inactivos/notify/route')
+
+    const res = await POST(makeRequest('POST', 'vercel-cron-secret'))
+    expect(res.status).toBe(200)
+  })
+
   it('permite acceso sin token configurado (modo dev)', async () => {
-    delete process.env.CRON_SECRET_TOKEN
+    setValidToken(null)
     mockObtenerExpedientesInactivos.mockResolvedValue([])
     const { POST } = await import('@/app/api/expedientes-inactivos/notify/route')
 
@@ -376,6 +416,6 @@ describe('GET /api/expedientes-inactivos/notify (status)', () => {
     expect(body).toHaveProperty('dryRun')
     expect(body).toHaveProperty('destinatariosConfigurados')
     expect(body).toHaveProperty('destinatarios')
-    expect(body).toHaveProperty('cronConfigurado')
+    expect(body).toHaveProperty('cronAuthConfigurado')
   })
 })

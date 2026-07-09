@@ -6,6 +6,7 @@ import { Resend } from 'resend'
 // - Cliente Resend validado fail-fast (patrón de dev-auth/login).
 // - Plantilla base HTML reutilizable con paleta FL (#19304B + #FAD02C).
 // - Flag EMAIL_DRY_RUN: si es 'true' se loguea en lugar de enviar (testing).
+//   Es la única fuente de verdad para dry-run: NINGÚN endpoint puede bypassarlo.
 // - Función sendEmail() reutilizable por todos los endpoints.
 // ============================================================================
 
@@ -22,12 +23,6 @@ export interface SendEmailParams {
   text?: string
   replyTo?: string
   priority?: EmailPriority
-  /**
-   * Fuerza el envío real ignorando EMAIL_DRY_RUN.
-   * Útil para modos preview/test donde se quiere enviar un correo real
-   * sin importar el flag global de dry-run.
-   */
-  forceSend?: boolean
 }
 
 export interface SendEmailResult {
@@ -138,7 +133,7 @@ export function parseEmailList(to: string | string[]): string[] {
 }
 
 export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
-  const { subject, html, text, replyTo = REPLY_TO, priority = 'normal', forceSend = false } = params
+  const { subject, html, text, replyTo = REPLY_TO, priority = 'normal' } = params
 
   const recipients = parseEmailList(params.to)
   if (recipients.length === 0) {
@@ -149,8 +144,8 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   }
 
   // Modo dry-run: no toca la API de Resend. Útil para pruebas y dev.
-  // forceSend lo bypassa (modo preview).
-  if (!forceSend && isDryRun()) {
+  // EMAIL_DRY_RUN es la única fuente de verdad; ningún caller puede bypassarlo.
+  if (isDryRun()) {
     const toPreview = recipients.join(', ')
     console.log(`[email:dry-run] (no enviado) To: ${toPreview} | Subject: ${subject} | Priority: ${priority}`)
     if (text) {

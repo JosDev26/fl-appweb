@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { obtenerExpedientesInactivos, type ExpedienteInactivo } from '@/lib/expedientes-inactivos'
 import { sendEmail, wrapWithBaseTemplate, isDryRun, parseEmailList } from '@/lib/email'
+import { validateCronAuth, isCronAuthConfigured } from '@/lib/cron-auth'
 
 // ============================================================================
 // POST /api/expedientes-inactivos/notify
@@ -9,13 +10,8 @@ import { sendEmail, wrapWithBaseTemplate, isDryRun, parseEmailList } from '@/lib
 // Disparado por Vercel Cron (diario 00:30 UTC, después del sync 00:00).
 // También invocable manualmente para pruebas.
 //
-// Query params:
-//   ?preview=true  -> Modo preview: envía correo real (ignora EMAIL_DRY_RUN),
-//                     NO registra tracking, NO filtra los ya notificados.
-//                     Útil para ver el formato del correo sin afectar al cron.
-//
-// Flujo (modo normal):
-//   1. Valida CRON_SECRET_TOKEN (auth del cron).
+// Flujo:
+//   1. Valida CRON_SECRET / CRON_SECRET_TOKEN (auth del cron).
 //   2. Valida NOTIFICACION_INACTIVIDAD_EMAIL (destinatario fijo).
 //   3. Obtiene todos los expedientes inactivos (>= 15 días).
 //   4. Consulta notificaciones_inactividad para excluir los ya notificados.
@@ -23,15 +19,15 @@ import { sendEmail, wrapWithBaseTemplate, isDryRun, parseEmailList } from '@/lib
 //   6. Devuelve resumen.
 //
 // Seguridad:
-//   - Auth por Bearer token (CRON_SECRET_TOKEN). Si no está configurado,
-//     permite acceso (modo desarrollo, igual que /api/sync/auto).
+//   - Auth por Bearer token (CRON_SECRET o CRON_SECRET_TOKEN). En producción
+//     sin token -> 401 (fail-closed). Ver lib/cron-auth.ts.
 //   - Usa supabaseAdmin (service-role) para omitir RLS.
+//   - Respeta EMAIL_DRY_RUN de forma estricta: no existe forma de forzar el
+//     envío real desde el request (sin bypass tipo ?preview / ?force).
 //
-// Idempotencia (modo normal):
+// Idempotencia:
 //   - Constraint UNIQUE (expediente_id, tipo) en notificaciones_inactividad
 //     imposibilita doble notificación incluso bajo concurrencia.
-//   - Modo preview NO es idempotente: no toca la tabla, así que puede
-//     dispararse cuantas veces se quiera sin afectar al cron.
 // ============================================================================
 
 const NOTIFICACION_TIPO = 'inactividad_15d'
@@ -40,16 +36,10 @@ export async function POST(request: NextRequest) {
   const startedAt = new Date().toISOString()
   const logPrefix = '[expedientes-inactivos/notify]'
 
-  // Modo preview: ?preview=true
-  const previewMode = request.nextUrl.searchParams.get('preview') === 'true'
-
   try {
-    // 1. Auth del cron
-    const authHeader = request.headers.get('authorization')
-    const expectedToken = process.env.CRON_SECRET_TOKEN
-    if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
-      return NextResponse.json({ success: false, message: 'Unauthorized' }, { status: 401 })
-    }
+    // 1. Auth del cron (CRON_SECRET o CRON_SECRET_TOKEN; fail-closed en prod)
+    const unauthorized = validateCronAuth(request)
+    if (unauthorized) return unauthorized
 
     // 2. Destinatarios (soporta comma-separated en NOTIFICACION_INACTIVIDAD_EMAIL)
     const destinatarios = parseEmailList(process.env.NOTIFICACION_INACTIVIDAD_EMAIL || '')
@@ -62,9 +52,8 @@ export async function POST(request: NextRequest) {
     }
     const destinatariosStr = destinatarios.join(', ')
 
-    // En modo preview, forzamos dryRun=false (envío real) e ignoramos el tracking.
-    const dryRun = previewMode ? false : isDryRun()
-    console.log(`${logPrefix} Iniciando (dryRun=${dryRun}, preview=${previewMode}, destinatarios=${destinatarios.length})`)
+    const dryRun = isDryRun()
+    console.log(`${logPrefix} Iniciando (dryRun=${dryRun}, destinatarios=${destinatarios.length})`)
 
     // 3. Obtener expedientes inactivos
     const inactivos = await obtenerExpedientesInactivos(supabaseAdmin)
@@ -80,34 +69,28 @@ export async function POST(request: NextRequest) {
         omitidos: 0,
         errores: 0,
         dryRun,
-        preview: previewMode,
       })
     }
 
     // 4. Consultar cuáles ya fueron notificados (para no repetir)
-    //    EN MODO PREVIEW: saltamos este paso -> enviamos TODOS los inactivos.
     let yaNotificadosSet = new Set<string>()
-    if (!previewMode) {
-      const expedienteIds = inactivos.map(i => i.id)
-      const { data: yaNotificados, error: notifError } = await supabaseAdmin
-        .from('notificaciones_inactividad')
-        .select('expediente_id')
-        .in('expediente_id', expedienteIds)
-        .eq('tipo', NOTIFICACION_TIPO)
+    const expedienteIds = inactivos.map(i => i.id)
+    const { data: yaNotificados, error: notifError } = await supabaseAdmin
+      .from('notificaciones_inactividad')
+      .select('expediente_id')
+      .in('expediente_id', expedienteIds)
+      .eq('tipo', NOTIFICACION_TIPO)
 
-      if (notifError) {
-        console.error(`${logPrefix} Error consultando notificaciones previas:`, notifError)
-        // No abortamos: intentamos notificar todos (el constraint UNIQUE protegerá)
-      }
-
-      yaNotificadosSet = new Set((yaNotificados ?? []).map((n: any) => n.expediente_id))
+    if (notifError) {
+      console.error(`${logPrefix} Error consultando notificaciones previas:`, notifError)
+      // No abortamos: intentamos notificar todos (el constraint UNIQUE protegerá)
     }
 
-    const pendientes = previewMode ? inactivos : inactivos.filter(i => !yaNotificadosSet.has(i.id))
+    yaNotificadosSet = new Set((yaNotificados ?? []).map((n: any) => n.expediente_id))
 
-    console.log(
-      `${logPrefix} Ya notificados: ${yaNotificadosSet.size} | Pendientes: ${pendientes.length}${previewMode ? ' (preview: todos)' : ''}`
-    )
+    const pendientes = inactivos.filter(i => !yaNotificadosSet.has(i.id))
+
+    console.log(`${logPrefix} Ya notificados: ${yaNotificadosSet.size} | Pendientes: ${pendientes.length}`)
 
     if (pendientes.length === 0) {
       return NextResponse.json({
@@ -119,7 +102,6 @@ export async function POST(request: NextRequest) {
         omitidos: yaNotificadosSet.size,
         errores: 0,
         dryRun,
-        preview: previewMode,
       })
     }
 
@@ -127,7 +109,7 @@ export async function POST(request: NextRequest) {
     const enviados: ExpedienteInactivo[] = []
     const errores: { expedienteId: string; error: string }[] = []
 
-    const subject = `[Fusion Legal] ${pendientes.length} expediente(s) inactivo(s) - ${new Date().toLocaleDateString('es-CR', { timeZone: 'America/Costa_Rica' })}${previewMode ? ' [PREVIEW]' : ''}`
+    const subject = `[Fusion Legal] ${pendientes.length} expediente(s) inactivo(s) - ${new Date().toLocaleDateString('es-CR', { timeZone: 'America/Costa_Rica' })}`
     const { html, text } = buildInactivityEmail(pendientes)
 
     const result = await sendEmail({
@@ -136,8 +118,6 @@ export async function POST(request: NextRequest) {
       html,
       text,
       priority: 'high',
-      // En modo preview, forzamos el envío real ignorando EMAIL_DRY_RUN
-      forceSend: previewMode,
     })
 
     if (!result.success) {
@@ -152,66 +132,57 @@ export async function POST(request: NextRequest) {
           omitidos: yaNotificadosSet.size,
           errores: pendientes.length,
           dryRun,
-          preview: previewMode,
           destinatarios,
         },
         { status: 500 }
       )
     }
 
-    // El envío consolidado fue OK
-    // EN MODO PREVIEW: NO registramos tracking (es solo para ver el formato).
-    if (!previewMode) {
-      for (const exp of pendientes) {
-        try {
-          const { error: insertError } = await supabaseAdmin
-            .from('notificaciones_inactividad')
-            .insert({
-              expediente_id: exp.id,
-              tipo: NOTIFICACION_TIPO,
-              dias_inactivo_notificado: exp.diasInactivo,
-              correo_destino: destinatariosStr,
-              resend_id: result.id ?? null,
-              dry_run: dryRun,
-              metadata: {
-                asunto: subject,
-                expediente_titulo: exp.titulo,
-                cliente: exp.clienteNombre,
-                destinatarios,
-              },
-            })
+    // El envío consolidado fue OK -> registramos tracking por expediente.
+    for (const exp of pendientes) {
+      try {
+        const { error: insertError } = await supabaseAdmin
+          .from('notificaciones_inactividad')
+          .insert({
+            expediente_id: exp.id,
+            tipo: NOTIFICACION_TIPO,
+            dias_inactivo_notificado: exp.diasInactivo,
+            correo_destino: destinatariosStr,
+            resend_id: result.id ?? null,
+            dry_run: dryRun,
+            metadata: {
+              asunto: subject,
+              expediente_titulo: exp.titulo,
+              cliente: exp.clienteNombre,
+              destinatarios,
+            },
+          })
 
-          if (insertError) {
-            // Si es violación del UNIQUE, significa que otro proceso ya lo
-            // notificó concurrentemente -> no es un error real.
-            if (insertError.code === '23505') {
-              console.warn(`${logPrefix} ${exp.id} ya notificado concurrentemente, omitiendo tracking`)
-            } else {
-              console.error(`${logPrefix} Error registrando tracking para ${exp.id}:`, insertError)
-              errores.push({ expedienteId: exp.id, error: insertError.message })
-            }
-            continue
+        if (insertError) {
+          // Si es violación del UNIQUE, significa que otro proceso ya lo
+          // notificó concurrentemente -> no es un error real.
+          if (insertError.code === '23505') {
+            console.warn(`${logPrefix} ${exp.id} ya notificado concurrentemente, omitiendo tracking`)
+          } else {
+            console.error(`${logPrefix} Error registrando tracking para ${exp.id}:`, insertError)
+            errores.push({ expedienteId: exp.id, error: insertError.message })
           }
-          enviados.push(exp)
-        } catch (err: any) {
-          console.error(`${logPrefix} Excepción registrando tracking para ${exp.id}:`, err)
-          errores.push({ expedienteId: exp.id, error: err?.message || 'Error desconocido' })
+          continue
         }
+        enviados.push(exp)
+      } catch (err: any) {
+        console.error(`${logPrefix} Excepción registrando tracking para ${exp.id}:`, err)
+        errores.push({ expedienteId: exp.id, error: err?.message || 'Error desconocido' })
       }
-    } else {
-      // Preview: todos "enviados" (sin tracking)
-      enviados.push(...pendientes)
     }
 
     console.log(
-      `${logPrefix} Finalizado. Enviados: ${enviados.length}/${pendientes.length} | Errores tracking: ${errores.length}${previewMode ? ' (preview: sin tracking)' : ''}`
+      `${logPrefix} Finalizado. Enviados: ${enviados.length}/${pendientes.length} | Errores tracking: ${errores.length}`
     )
 
     return NextResponse.json({
       success: errores.length === 0,
-      message: previewMode
-        ? `[PREVIEW] Correo enviado a ${destinatariosStr} con ${pendientes.length} expediente(s). NO se registró tracking.`
-        : `Notificación enviada a ${destinatariosStr}: ${enviados.length} expediente(s) nuevo(s), ${yaNotificadosSet.size} ya notificado(s)`,
+      message: `Notificación enviada a ${destinatariosStr}: ${enviados.length} expediente(s) nuevo(s), ${yaNotificadosSet.size} ya notificado(s)`,
       timestamp: startedAt,
       total: inactivos.length,
       pendientes: pendientes.length,
@@ -221,7 +192,6 @@ export async function POST(request: NextRequest) {
       erroresDetalle: errores.length > 0 ? errores : undefined,
       resendId: result.id ?? null,
       dryRun,
-      preview: previewMode,
       destinatarios,
     })
   } catch (error) {
@@ -247,7 +217,7 @@ export async function GET() {
     dryRun: isDryRun(),
     destinatariosConfigurados: destinatarios.length,
     destinatarios,
-    cronConfigurado: !!process.env.CRON_SECRET_TOKEN,
+    cronAuthConfigurado: isCronAuthConfigured(),
   })
 }
 
