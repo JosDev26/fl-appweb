@@ -827,19 +827,19 @@ export async function PATCH(request: NextRequest) {
     // Validar archivo si se proporciona
     let newFilePath: string | null = null
     if (file) {
-      // Validar extensión XML
+      // Validar extensión (XML o PDF)
       const fileExtension = file.name.split('.').pop()?.toLowerCase()
-      if (fileExtension !== 'xml') {
+      if (!fileExtension || !['xml', 'pdf'].includes(fileExtension)) {
         return NextResponse.json(
-          { error: 'Solo se permiten archivos XML' },
+          { error: 'Solo se permiten archivos XML o PDF' },
           { status: 400 }
         )
       }
 
       // Validar tipo MIME
-      if (!['application/xml', 'text/xml'].includes(file.type)) {
+      if (!Object.keys(ALLOWED_MIME_TYPES).includes(file.type)) {
         return NextResponse.json(
-          { error: 'Tipo de archivo no permitido. Solo XML' },
+          { error: 'Tipo de archivo no permitido. Solo XML o PDF' },
           { status: 400 }
         )
       }
@@ -856,20 +856,29 @@ export async function PATCH(request: NextRequest) {
       const buffer = Buffer.from(arrayBuffer)
 
       // Validar firma (magic bytes)
-      if (!validateFileSignature(buffer, 'xml')) {
+      if (!validateFileSignature(buffer, fileExtension)) {
         return NextResponse.json(
-          { error: 'El archivo no es un XML válido' },
+          { error: `El archivo no es un ${fileExtension.toUpperCase()} válido o está corrupto` },
           { status: 400 }
         )
       }
 
-      // Validar contenido XML
-      const content = buffer.toString('utf-8')
-      if (!validateXmlContent(content)) {
-        return NextResponse.json(
-          { error: 'El archivo XML contiene contenido no permitido' },
-          { status: 400 }
-        )
+      // Validaciones específicas por tipo de archivo
+      if (fileExtension === 'xml') {
+        const content = buffer.toString('utf-8')
+        if (!validateXmlContent(content)) {
+          return NextResponse.json(
+            { error: 'El archivo XML contiene contenido no permitido o es inválido' },
+            { status: 400 }
+          )
+        }
+      } else if (fileExtension === 'pdf') {
+        if (!validatePdfContent(buffer)) {
+          return NextResponse.json(
+            { error: 'El archivo PDF contiene contenido no permitido o es inválido' },
+            { status: 400 }
+          )
+        }
       }
 
       // Upload nuevo archivo

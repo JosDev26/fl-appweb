@@ -1039,10 +1039,10 @@ export default function DevPage() {
     const file = e.target.files?.[0]
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase()
-      if (ext === 'xml') {
+      if (ext === 'xml' || ext === 'pdf') {
         setSelectedFile(file)
       } else {
-        alert('Solo se permiten archivos XML')
+        alert('Solo se permiten archivos XML o PDF')
         e.target.value = ''
       }
     }
@@ -1117,10 +1117,10 @@ export default function DevPage() {
     const file = e.target.files?.[0]
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase()
-      if (ext === 'xml') {
+      if (ext === 'xml' || ext === 'pdf') {
         setEditInvoiceFile(file)
       } else {
-        alert('Solo se permiten archivos XML')
+        alert('Solo se permiten archivos XML o PDF')
         e.target.value = ''
       }
     }
@@ -2698,7 +2698,7 @@ export default function DevPage() {
             <div className={styles.sectionHeader}>
               <div>
                 <h2 className={styles.sectionTitle}>Facturas Electrónicas del Mes</h2>
-                <p className={styles.sectionDescription}>Sube facturas XML para clientes con modoPago activo</p>
+                <p className={styles.sectionDescription}>Sube facturas XML o PDF para clientes con modoPago activo</p>
               </div>
               <button className={styles.button} onClick={() => setShowInvoiceModal(true)}>
                 Subir Factura
@@ -5994,11 +5994,11 @@ export default function DevPage() {
                 </small>
               </div>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Archivo XML</label>
+                <label className={styles.formLabel}>Archivo XML o PDF</label>
                 <input 
                   type="file"
                   className={styles.input}
-                  accept=".xml"
+                  accept=".xml,.pdf"
                   onChange={handleFileSelect}
                 />
               </div>
@@ -6379,11 +6379,11 @@ export default function DevPage() {
 
               {/* Reemplazar archivo */}
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Reemplazar archivo XML (opcional)</label>
+                <label className={styles.formLabel}>Reemplazar archivo XML o PDF (opcional)</label>
                 <input
                   type="file"
                   className={styles.input}
-                  accept=".xml"
+                  accept=".xml,.pdf"
                   onChange={handleEditFileSelect}
                 />
                 {editInvoiceFile && (
