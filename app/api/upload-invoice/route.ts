@@ -419,9 +419,12 @@ export async function GET(request: Request) {
 
       // Agregar facturas que están en la DB (invoice_payment_deadlines) pero no fueron
       // encontradas en el escaneo de storage. Esto ocurre cuando el nombre del archivo
-      // usa la fecha de emisión (ej. 2026-01) pero el mes de factura es diferente (ej. 2025-12).
+      // usa la fecha de emisión (ej. 2026-01) pero el mes de factura es diferente (ej. 2025-12),
+      // o cuando el archivo fue eliminado de storage pero el registro en BD persiste.
+      // Marcamos estas últimas con fileMissing=true para que el UI no muestre botón Descargar.
+      const storagePaths = new Set(invoices.map(inv => inv.path))
       if (allDeadlines) {
-        const existingPaths = new Set(invoices.map(inv => inv.path))
+        const existingPaths = new Set(storagePaths)
         for (const deadline of allDeadlines) {
           if (deadline.file_path && !existingPaths.has(deadline.file_path)) {
             const pathParts = deadline.file_path.split('/')
@@ -433,6 +436,7 @@ export async function GET(request: Request) {
               clientId: deadline.client_id,
               clientType: deadline.client_type,
               path: deadline.file_path,
+              fileMissing: true,
             })
             existingPaths.add(deadline.file_path)
           }
@@ -490,6 +494,7 @@ export async function GET(request: Request) {
 
         return {
           ...invoice,
+          fileMissing: invoice.fileMissing ?? false,
           clientName: clientInfo?.nombre || 'Desconocido',
           clientCedula: clientInfo?.cedula || 'N/A',
           deadlineId: deadline?.id || null,

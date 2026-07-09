@@ -77,6 +77,7 @@ interface InvoiceFile {
   clientName: string
   clientCedula: string
   path: string
+  fileMissing?: boolean
   deadlineId: string | null
   estadoPago: 'pendiente' | 'pagado' | null
   nota: string | null
@@ -998,13 +999,27 @@ export default function DevPage() {
 
   const downloadInvoice = async (invoice: InvoiceFile) => {
     try {
+      if (!invoice.path) {
+        alert('La factura no tiene un archivo asociado (path vacío)')
+        return
+      }
       const response = await fetch(`/api/upload-invoice/download?path=${encodeURIComponent(invoice.path)}`, {
         headers: {
           'x-user-id': invoice.clientId,
           'x-user-type': invoice.clientType
         }
       })
-      if (!response.ok) throw new Error('Error al descargar factura')
+      if (!response.ok) {
+        let msg = `Error ${response.status} al descargar factura`
+        try {
+          const data = await response.json()
+          if (data?.error) msg = data.error
+        } catch {}
+        if (response.status === 404) {
+          msg = 'El archivo no existe en storage. El path puede estar desactualizado. Revisa los logs del servidor.'
+        }
+        throw new Error(msg)
+      }
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -1016,7 +1031,7 @@ export default function DevPage() {
       window.URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Error descargando factura:', error)
-      alert('Error al descargar la factura')
+      alert(error instanceof Error ? error.message : 'Error al descargar la factura')
     }
   }
 
@@ -2737,6 +2752,11 @@ export default function DevPage() {
                               editada
                             </span>
                           )}
+                          {invoice.fileMissing && (
+                            <span className={styles.badge} style={{ marginLeft: '0.5rem', background: '#fee2e2', color: '#991b1b', fontSize: '0.7rem' }}>
+                              sin archivo
+                            </span>
+                          )}
                         </td>
                         <td>
                           <span className={styles.badge} style={{
@@ -2748,14 +2768,20 @@ export default function DevPage() {
                         </td>
                         <td>{new Date(invoice.created_at).toLocaleDateString()}</td>
                         <td>
-                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <button
-                              className={styles.buttonSecondary}
-                              style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
-                              onClick={() => downloadInvoice(invoice)}
-                            >
-                              Descargar
-                            </button>
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            {invoice.fileMissing ? (
+                              <span style={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: 500 }}>
+                                ⚠ Archivo no encontrado
+                              </span>
+                            ) : (
+                              <button
+                                className={styles.buttonSecondary}
+                                style={{ fontSize: '0.8rem', padding: '0.3rem 0.6rem' }}
+                                onClick={() => downloadInvoice(invoice)}
+                              >
+                                Descargar
+                              </button>
+                            )}
                             {invoice.deadlineId ? (
                               <button
                                 className={styles.buttonSecondary}
