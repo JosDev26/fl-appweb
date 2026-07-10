@@ -60,7 +60,7 @@ function validateXmlContent(content: string): boolean {
   // Los patrones son específicos para evitar falsos positivos con
   // contenido legítimo de facturas electrónicas (firmas XML, Base64, etc.)
   const dangerousPatterns = [
-    /<script[^>]*>.*?<\/script>/gis,
+    /<script[^>]*>[\s\S]*?<\/script>/gi,
     /javascript:/gi,
     /\son(?:click|error|load|mouseover|mouseout|submit|change|focus|blur)\s*=/gi, // event handlers en atributos (con espacio antes)
     /<!DOCTYPE[^>]*\[/gi, // External DTD entities
