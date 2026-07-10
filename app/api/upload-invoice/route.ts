@@ -57,10 +57,12 @@ function sanitizeFileName(fileName: string): string {
 // Validar contenido XML (básico)
 function validateXmlContent(content: string): boolean {
   // Verificar que no contenga scripts o contenido sospechoso
+  // Los patrones son específicos para evitar falsos positivos con
+  // contenido legítimo de facturas electrónicas (firmas XML, Base64, etc.)
   const dangerousPatterns = [
-    /<script[^>]*>.*?<\/script>/gi,
+    /<script[^>]*>.*?<\/script>/gis,
     /javascript:/gi,
-    /on\w+\s*=/gi, // event handlers (onclick, onerror, etc)
+    /\son(?:click|error|load|mouseover|mouseout|submit|change|focus|blur)\s*=/gi, // event handlers en atributos (con espacio antes)
     /<!DOCTYPE[^>]*\[/gi, // External DTD entities
     /<!ENTITY/gi // Entity declarations
   ]
@@ -89,12 +91,14 @@ function validatePdfContent(buffer: Buffer): boolean {
   }
 
   // Verificar que no contenga JavaScript embebido
+  // Los patrones usan \b para evitar falsos positivos con nombres de fuentes
+  // como /AAAAAA+Arial (que contiene "/AA" pero no es un Auto-Action malicioso).
   const dangerousPatterns = [
-    /\/JavaScript/gi,
-    /\/JS/gi,
-    /\/Launch/gi,
-    /\/OpenAction/gi,
-    /\/AA/gi // Auto Actions
+    /\/JavaScript\b/gi,
+    /\/JS\b/gi,
+    /\/Launch\b/gi,
+    /\/OpenAction\b/gi,
+    /\b\/AA\b/gi // Auto Actions (word-boundary para no matchear /AAAAAA)
   ]
 
   for (const pattern of dangerousPatterns) {

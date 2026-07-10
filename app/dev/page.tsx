@@ -2698,9 +2698,12 @@ export default function DevPage() {
             <div className={styles.sectionHeader}>
               <div>
                 <h2 className={styles.sectionTitle}>Facturas Electrónicas del Mes</h2>
-                <p className={styles.sectionDescription}>Sube facturas XML o PDF para clientes con modoPago activo</p>
+                <p className={styles.sectionDescription}>Sube facturas XML o PDF para cualquier cliente o empresa</p>
               </div>
-              <button className={styles.button} onClick={() => setShowInvoiceModal(true)}>
+              <button className={styles.button} onClick={() => {
+                if (clientesParaPago.length === 0) loadClientesParaPago()
+                setShowInvoiceModal(true)
+              }}>
                 Subir Factura
               </button>
             </div>
@@ -5969,16 +5972,32 @@ export default function DevPage() {
                   className={styles.input}
                   value={selectedClient?.id || ''}
                   onChange={(e) => {
-                    const cliente = clientesModoPago.find(c => c.id === e.target.value)
-                    setSelectedClient(cliente || null)
+                    const cliente = clientesParaPago.find(c => c.id === e.target.value)
+                    if (cliente) {
+                      setSelectedClient({
+                        id: cliente.id,
+                        nombre: cliente.nombre,
+                        cedula: cliente.cedula || '',
+                        correo: null,
+                        modoPago: false,
+                        tipo: cliente.tipo
+                      })
+                    } else {
+                      setSelectedClient(null)
+                    }
                   }}
                 >
                   <option value="">Seleccionar cliente...</option>
-                  {(clientesModoPago || []).filter(c => c.modoPago).map((cliente) => (
-                    <option key={cliente.id} value={cliente.id}>
-                      {cliente.nombre} ({cliente.cedula}) - {cliente.tipo}
-                    </option>
-                  ))}
+                  <optgroup label="Empresas">
+                    {clientesParaPago.filter(c => c.tipo === 'empresa').map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}{c.cedula ? ` (${c.cedula})` : ''}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Clientes">
+                    {clientesParaPago.filter(c => c.tipo === 'cliente').map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}{c.cedula ? ` (${c.cedula})` : ''}</option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
               <div className={styles.formGroup}>
