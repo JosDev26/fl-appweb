@@ -98,7 +98,7 @@ function validatePdfContent(buffer: Buffer): boolean {
     /\/JS\b/gi,
     /\/Launch\b/gi,
     /\/OpenAction\b/gi,
-    /\b\/AA\b/gi // Auto Actions (word-boundary para no matchear /AAAAAA)
+    /\/AA\s*<</gi // Auto-Actions: exigir << evita falsos positivos en streams comprimidos
   ]
 
   for (const pattern of dangerousPatterns) {
