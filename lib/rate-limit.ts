@@ -19,12 +19,12 @@ export const isRedisConfigured = () => {
 // ============================================
 
 /**
- * Standard rate limiter: 100 requests per hour
+ * Standard rate limiter: 300 requests per hour
  * Used for: Most authenticated API routes
  */
 export const standardRateLimit = new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(100, '1 h'),
+  limiter: Ratelimit.slidingWindow(300, '1 h'),
   analytics: true,
   prefix: 'ratelimit:standard',
 })
@@ -65,12 +65,12 @@ export const sessionVerifyRateLimit = new Ratelimit({
 })
 
 /**
- * Upload rate limiter: 10 uploads per hour
+ * Upload rate limiter: 100 uploads per hour
  * Used for: /api/upload-factura, /api/upload-comprobante
  */
 export const uploadRateLimit = new Ratelimit({
   redis,
-  limiter: Ratelimit.slidingWindow(10, '1 h'),
+  limiter: Ratelimit.slidingWindow(100, '1 h'),
   analytics: true,
   prefix: 'ratelimit:upload',
 })
